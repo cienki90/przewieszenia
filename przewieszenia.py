@@ -21,6 +21,7 @@ import sys
 
 import plan as plan_mod
 from baza import Baza
+from geokod import Geokoder
 from plan import Plan
 from rysunek import Dane, SKALA_X, zbuduj
 from zapis import Wyjscie
@@ -60,6 +61,11 @@ def main(argv=None):
     ap.add_argument("--obrot-od", type=float, default=50.0,
                     help="przęsła dłuższe niż ta wartość [m] rysowane są pionowo (obrót 90°); 0 = nigdy")
     ap.add_argument("--rozstaw", type=float, default=100.0, help="odstęp kolumn rysunków [j]")
+    ap.add_argument("--adresy", default="uug,osm",
+                    help="źródła nazw miejscowości/ulic z internetu: uug (GUGiK), osm (OpenStreetMap); "
+                         "'brak' = bez internetu (domyślnie uug,osm)")
+    ap.add_argument("--odswiez-adresy", action="store_true",
+                    help="pobierz miejscowości i ulice ponownie dla wszystkich przewieszeń (nadpisuje CSV)")
     a = ap.parse_args(argv)
 
     wynik = a.wynik or os.path.splitext(a.plan)[0] + " wynik.dxf"
@@ -76,6 +82,10 @@ def main(argv=None):
     if not B.rysunki:
         print("Uwaga: brak bazy - użyto domyślnych reguł zwisów.", file=sys.stderr)
     opisy = wczytaj_opisy(opisy_path)
+
+    G = None
+    if a.adresy.strip().lower() not in ("", "brak", "nie", "0"):
+        G = Geokoder(os.path.splitext(a.plan)[0] + "_adresy.json", zrodla=a.adresy.lower().split(","))
 
     W = Wyjscie(a.szablon or a.baza)
     wiersze = []
@@ -95,6 +105,13 @@ def main(argv=None):
             for k in POLA[3:]:
                 if k in ("miejscowosc", "ulica") or (r.get(k) or "").strip():
                     auto[k] = (r.get(k) or "").strip()
+        # miejscowość i ulica z internetu: gdy brak wiersza w CSV, pusta miejscowość lub --odswiez-adresy
+        if G and (a.odswiez_adresy or not r or not auto["miejscowosc"]):
+            adr = G.adres(z.x, z.y)
+            if adr:
+                auto["miejscowosc"] = adr[0]
+                if a.odswiez_adresy or not r or not auto["ulica"]:
+                    auto["ulica"] = adr[1]
         wiersze.append(auto)
 
         L = int(auto["rozpietosc"])
@@ -130,6 +147,11 @@ def main(argv=None):
 
     W.zapisz(wynik)
     zapisz_opisy(opisy_path, wiersze)
+    if G:
+        G.zapisz()
+        if G.bledy:
+            print(f"Uwaga: nie udało się pobrać części adresów ({len(G.bledy)} błędów), np.: {G.bledy[0]}",
+                  file=sys.stderr)
 
     print(f"Utworzono {len(lista)} rysunków przewieszeń -> {wynik}")
     print(f"Opisy (do edycji): {opisy_path}")

@@ -26,12 +26,29 @@ Z pliku `przewieszenia baza.dxf` (157 gotowych rysunków) program pobiera:
 - wysokość linii nN i słupa dla danego typu słupa (np. słupy 10,5 m: 8,2 m; 10 m: 7,7 m),
 - nagłówek, warstwy, rodzaje linii i style DXF, które służą jako szablon pliku wynikowego.
 
+## Miejscowości i ulice z internetu
+
+Środek okręgu (współrzędne PUWG 2000, strefa z pierwszej cyfry X) jest przeliczany na WGS84. Program pobiera
+najbliższy punkt adresowy:
+
+1. z usługi GUGiK UUG (`GetAddressReverse`, dane PRG); „ulica Wspólna” jest skracana do „ul. Wspólna”,
+2. a gdy to się nie uda, z OpenStreetMap Nominatim (najwyżej 1 zapytanie na sekundę).
+
+Pobrane adresy trafiają do pamięci podręcznej `<plan>_adresy.json`. Program odpytuje internet tylko dla przewieszeń,
+które nie mają miejscowości w pliku CSV. Opcje:
+
+- `--odswiez-adresy` pobiera adresy ponownie dla wszystkich przewieszeń,
+- `--adresy brak` wyłącza internet,
+- `--adresy osm` używa tylko OpenStreetMap.
+
+Bez internetu program działa normalnie, tylko wypisuje ostrzeżenie.
+
 ## Plik opisów (CSV)
 
-Miejscowości i ulic nie ma w planie, więc wpisuje się je w pliku CSV (separator `;`, UTF‑8). Plik jest tworzony
-przy pierwszym uruchomieniu. Po jego uzupełnieniu uruchom program ponownie. Wiersze są dopasowywane po współrzędnych
-okręgu. Każde niepuste pole (np. `stacja`, `typ_l`, `rozpietosc`) nadpisuje wartość ustaloną automatycznie.
-Pola `stacja2`/`obwod2` są używane, gdy przęsło łączy dwa obwody.
+Plik CSV (separator `;`, UTF‑8) jest tworzony przy pierwszym uruchomieniu i zawiera wszystkie ustalone dane.
+Można go poprawić (np. usunąć ulicę, której nie chcesz w tytule) i uruchomić program ponownie. Wiersze są
+dopasowywane po współrzędnych okręgu. Każde niepuste pole (np. `stacja`, `typ_l`, `rozpietosc`) nadpisuje wartość
+ustaloną automatycznie. Pola `stacja2`/`obwod2` są używane, gdy przęsło łączy dwa obwody.
 
 Jeśli stacji nie da się ustalić (opis obwodu jest dalej niż 150 m od stacji), program wpisze `ST ?` i wypisze ostrzeżenie.
 
@@ -52,4 +69,5 @@ Jeśli stacji nie da się ustalić (opis obwodu jest dalej niż 150 m od stacji)
 - `plan.py` – analiza planu (słupy, przęsła, obwody)
 - `baza.py` – parametry odczytane z bazy rysunków
 - `rysunek.py` – geometria pojedynczego rysunku (siatka, linijki, słupy, krzywe zwisu, opisy)
+- `geokod.py` – przeliczenie PUWG 2000 → WGS84 i pobieranie adresów (GUGiK / OSM)
 - `zapis.py`, `dxfio.py` – odczyt i zapis DXF
