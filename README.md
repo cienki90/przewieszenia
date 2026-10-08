@@ -1,5 +1,10 @@
 # Przewieszenia – generator rysunków zwisów
 
+**Program dla Windows:** [Przewieszenia.exe](https://github.com/cienki90/przewieszenia/releases/latest/download/Przewieszenia.exe).
+Uruchom go dwuklikiem, wskaż plik planu DXF i miejsce zapisu. Nie trzeba niczego instalować. Pliki bazy i arkuszy
+są wbudowane w program. Plik budowany jest automatycznie przez GitHub Actions (`.github/workflows/exe.yml`) po każdej
+zmianie kodu.
+
 Program tworzy rysunki przewieszeń (zwisów przęseł linii nN z projektowanym światłowodem) na podstawie planu DXF.
 Wymaga tylko Pythona 3.9+, bez dodatkowych bibliotek.
 
@@ -43,6 +48,17 @@ które nie mają miejscowości w pliku CSV. Opcje:
 
 Bez internetu program działa normalnie, tylko wypisuje ostrzeżenie.
 
+## Arkusze
+
+Wynik powstaje na bazie `arkusze.dxf`. Przewieszenia trafiają do istniejących arkuszy (karty 1, 2, 3, …): po dwa
+poziome rysunki na arkusz albo jeden pionowy. Rysunki są umieszczane w modelu dokładnie pod rzutnią każdego arkusza.
+Układ arkuszy, rzutnie, skala i ustawienia drukarki (DWG To PDF, A4) pozostają bez zmian.
+
+- Arkusze, które zostały puste, są usuwane. Opcja `--zostaw-puste-arkusze` je zachowuje.
+- Gdy przewieszeń jest więcej niż arkuszy, program dodaje kopie ostatniego arkusza.
+- Przęsła dłuższe niż 50 m albo za szerokie na arkusz są rysowane pionowo.
+- Opisy słupów przy długich przęsłach są przesuwane, żeby zmieściły się w rzutni.
+
 ## Plik opisów (CSV)
 
 Plik CSV (separator `;`, UTF‑8) jest tworzony przy pierwszym uruchomieniu i zawiera wszystkie ustalone dane.
@@ -57,7 +73,8 @@ Jeśli stacji nie da się ustalić (opis obwodu jest dalej niż 150 m od stacji)
 ```
 -o, --wynik     plik wynikowy DXF
 --baza          plik bazy (domyślnie "przewieszenia baza.dxf" obok programu)
---szablon       inny plik DXF jako szablon (domyślnie baza)
+--arkusze       plik z arkuszami (domyślnie "arkusze.dxf" obok programu)
+--zostaw-puste-arkusze
 --opisy         plik CSV z opisami
 --obrot-od 50   przęsła dłuższe niż 50 m są rysowane pionowo (0 = nigdy)
 --warstwa, --warstwa-trasy   inne nazwy warstw
@@ -65,7 +82,8 @@ Jeśli stacji nie da się ustalić (opis obwodu jest dalej niż 150 m od stacji)
 
 ## Pliki
 
-- `przewieszenia.py` – program główny
+- `przewieszenia_gui.py` – wersja okienkowa (exe)
+- `przewieszenia.py` – program główny (wiersz poleceń)
 - `plan.py` – analiza planu (słupy, przęsła, obwody)
 - `baza.py` – parametry odczytane z bazy rysunków
 - `rysunek.py` – geometria pojedynczego rysunku (siatka, linijki, słupy, krzywe zwisu, opisy)
