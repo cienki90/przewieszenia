@@ -1,0 +1,43 @@
+name: Buduj program Przewieszenia.exe
+
+on:
+  push:
+    branches: [main, generator-przewieszen]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  exe:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalacja PyInstaller
+        run: python -m pip install pyinstaller
+
+      - name: Test (wiersz poleceń)
+        run: python przewieszenia.py "przewieszenia plan.dxf" -o test.dxf --adresy brak
+
+      - name: Budowa exe
+        run: >
+          pyinstaller --onefile --windowed --name Przewieszenia
+          --add-data "przewieszenia baza.dxf;."
+          --add-data "arkusze.dxf;."
+          przewieszenia_gui.py
+
+      - name: Publikacja (Releases)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          TAG="v1.${{ github.run_number }}"
+          gh release create "$TAG" dist/Przewieszenia.exe \
+            --target "${{ github.sha }}" --latest \
+            --title "Przewieszenia $TAG" \
+            --notes "Program Przewieszenia.exe - uruchom dwuklikiem, wybierz plik planu DXF i miejsce zapisu. Gałąź: ${{ github.ref_name }}."
