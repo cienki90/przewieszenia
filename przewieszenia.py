@@ -47,6 +47,11 @@ def zapisz_opisy(path, wiersze):
 
 
 def main(argv=None):
+    for strumien in (sys.stdout, sys.stderr):  # konsola Windows (cp1252/cp852) - polskie znaki
+        try:
+            strumien.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
     tu = os.path.dirname(os.path.abspath(__file__))
     ap = argparse.ArgumentParser(description="Generator rysunków przewieszeń (zwisów) z pliku planu DXF.")
     ap.add_argument("plan", help="plik DXF planu z okręgami na warstwie _PRZEWIESZENIA")
