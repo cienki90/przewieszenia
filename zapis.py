@@ -8,7 +8,7 @@ from __future__ import annotations
 import math
 from decimal import ROUND_HALF_UP, Decimal
 
-from dxfio import fmt, get, join_entities, read_tags, split_entities, split_sections, write_tags
+from dxfio import fmt, get, getf, join_entities, read_tags, split_entities, split_sections, write_tags
 from rysunek import Rysunek
 
 MODEL = "*Model_Space"
@@ -66,8 +66,12 @@ class Wyjscie:
                         self._max = max(self._max, int(v, 16))
                     except ValueError:
                         pass
-        # ENTITIES -> wszystko usuwamy
+        # ENTITIES: usuwamy obiekty modelu, zostawiamy encje arkusza aktywnego (kod 67 = 1)
+        self.encje_papier = []
         for t, d in split_entities(S["ENTITIES"]):
+            if (get(d, 67) or "").strip() == "1":
+                self.encje_papier.append((t, d))
+                continue
             h = get(d, 5)
             if h:
                 self.usuniete.add(h)
@@ -101,8 +105,12 @@ class Wyjscie:
                     self.usuniete.add(h)
                 continue
             self.bloki_szablonu.append((t, d))
-        # OBJECTS: usuń obiekty należące (pośrednio) do usuniętych encji
-        O = split_entities(S["OBJECTS"])
+        self.obiekty_szablonu = split_entities(S["OBJECTS"])
+        self._arkusze_szablonu()
+
+    def _filtruj_obiekty(self):
+        """OBJECTS: usuń obiekty należące (pośrednio) do usuniętych encji i wpisy słowników do nich."""
+        O = self.obiekty_szablonu
         zmiana = True
         while zmiana:
             zmiana = False
@@ -116,7 +124,6 @@ class Wyjscie:
             if get(d, 5) in self.usuniete:
                 continue
             if t == "DICTIONARY":
-                # usuń wpisy wskazujące na usunięte obiekty
                 nd, i = [], 0
                 while i < len(d):
                     c, v = d[i]
@@ -127,7 +134,110 @@ class Wyjscie:
                     i += 1
                 d = nd
             obj.append((t, d))
-        self.obiekty = obj
+        return obj
+
+    # ------------------------------------------------------------------
+    # Arkusze (układy papieru) z szablonu
+    def _arkusze_szablonu(self):
+        """Odczyt arkuszy: kolejność kart, rzutnia z widokiem modelu (środek, szerokość, wysokość)."""
+        self.arkusze = []
+        self.slownik_ukladow = None
+        lay_by_br = {}
+        for t, d in self.obiekty_szablonu:
+            if t == "LAYOUT":
+                br = [v for c, v in d if c == 330][-1]
+                nazwa = [v for c, v in d if c == 1][-1]
+                lay_by_br[br] = dict(lay_h=get(d, 5), nazwa=nazwa, kol=int(get(d, 71, "0")), lay=d,
+                                     wlasc=_owner(d))
+        rzutnie = {}
+        for t, d in self.bloki_szablonu + self.encje_papier:
+            if t == "VIEWPORT" and (get(d, 69) or "").strip() != "1":
+                rzutnie.setdefault(get(d, 330), []).append(d)
+        for br, L in lay_by_br.items():
+            if L["kol"] == 0 or br not in rzutnie:
+                continue  # Model lub arkusz bez rzutni
+            vp = max(rzutnie[br], key=lambda d: getf(d, 40) * getf(d, 41))
+            H = getf(vp, 45)
+            W = H * getf(vp, 40) / getf(vp, 41)
+            L.update(br=br, cx=getf(vp, 12), cy=getf(vp, 22), W=W, H=H)
+            self.arkusze.append(L)
+        self.arkusze.sort(key=lambda a: a["kol"])
+        self.uzyte = 0
+        self.klony = []
+
+    def arkusz(self, i: int):
+        """Zwraca (cx, cy, szer, wys) widoku modelu i-tego arkusza (0..); w razie potrzeby kopiuje ostatni."""
+        while i >= len(self.arkusze):
+            self._klonuj_arkusz()
+        self.uzyte = max(self.uzyte, i + 1)
+        a = self.arkusze[i]
+        return a["cx"], a["cy"], a["W"], a["H"]
+
+    def _klonuj_arkusz(self):
+        if not self.arkusze:
+            raise RuntimeError("Szablon nie zawiera arkuszy z rzutnią")
+        wz = self.arkusze[-1]
+        if len(self.arkusze) > 1:
+            dx = (self.arkusze[-1]["cx"] - self.arkusze[0]["cx"]) / (len(self.arkusze) - 1)
+        else:
+            dx = 100.0
+        dx = dx if abs(dx) > wz["W"] else wz["W"] + 70.0
+        kol = wz["kol"] + 1
+        nazwa = str(kol)
+        istn = {a["nazwa"] for a in self.arkusze}
+        while nazwa in istn:
+            kol += 1
+            nazwa = str(kol)
+        br, lay_h = self._h(), self._h()
+        # encje arkusza wzorcowego (z bloku lub z sekcji ENTITIES, gdy to arkusz aktywny)
+        zrodlo = [(t, d) for t, d in self.bloki_szablonu + self.encje_papier
+                  if get(d, 330) == wz["br"] and t not in ("BLOCK", "ENDBLK")]
+        nowe, vp_glowna = [], None
+        for t, d in zrodlo:
+            nd, skip = [], False
+            nh = self._h()
+            for c, v in d:
+                if c == 102 and v in ("{ACAD_XDICTIONARY", "{ACAD_REACTORS"):
+                    skip = True
+                    continue
+                if skip:
+                    if c == 102 and v == "}":
+                        skip = False
+                    continue
+                if c in (360, 361):
+                    continue
+                if c == 5:
+                    v = nh
+                elif c == 330:
+                    v = br
+                elif c == 67:
+                    continue
+                nd.append((c, v))
+            if t == "VIEWPORT" and (get(d, 69) or "").strip() != "1":
+                nd = [(c, fmt(float(v) + dx) if c == 12 else v) for c, v in nd]
+                vp_glowna = nh
+            nowe.append((t, nd))
+        lay = []
+        ost330 = max(i for i, (c, v) in enumerate(wz["lay"]) if c == 330)
+        ost1 = max(i for i, (c, v) in enumerate(wz["lay"]) if c == 1)
+        for i, (c, v) in enumerate(wz["lay"]):
+            if c == 5:
+                v = lay_h
+            elif i == ost330:
+                v = br
+            elif i == ost1:
+                v = nazwa
+            elif c == 71:
+                v = f"{kol:>6}"
+            elif c == 331:
+                if vp_glowna is None:
+                    continue
+                v = vp_glowna
+            lay.append((c, v))
+        self.klony.append(dict(br=br, lay_h=lay_h, nazwa=nazwa, encje=nowe, lay=lay, wlasc=wz["wlasc"],
+                               nr=len(self.klony)))
+        self.arkusze.append(dict(lay_h=lay_h, nazwa=nazwa, kol=kol, lay=lay, wlasc=wz["wlasc"], br=br,
+                                 cx=wz["cx"] + dx, cy=wz["cy"], W=wz["W"], H=wz["H"], klon=True))
 
     # ------------------------------------------------------------------
     def _rozszerz(self, x, y):
@@ -259,33 +369,79 @@ class Wyjscie:
             self._wymiar(w["u"], w["v"], P, rot)
 
     # ------------------------------------------------------------------
-    def zapisz(self, path: str):
+    def zapisz(self, path: str, usun_puste_arkusze: bool = True):
         S = self.S
-        # TABLES + nowe rekordy bloków wymiarów
-        tab = list(self.tabele)
+        aktywny = {get(d, 330) for t, d in self.encje_papier}
+        if usun_puste_arkusze:
+            for a in self.arkusze[self.uzyte:]:
+                if a.get("klon") or a["br"] in aktywny:
+                    continue
+                self.usuniete |= {a["br"], a["lay_h"]}
+        klony = [k for k in self.klony if k["nr"] < max(0, self.uzyte - (len(self.arkusze) - len(self.klony)))]
+        # nazwy bloków dla nowych arkuszy
+        nr_ps = 0
+        for t, d in self.tabele:
+            nm = get(d, 2) or ""
+            if t == "BLOCK_RECORD" and nm.upper().startswith("*PAPER_SPACE") and nm[12:].isdigit():
+                nr_ps = max(nr_ps, int(nm[12:]))
+        for k in klony:
+            nr_ps += 1
+            k["blok"] = f"*Paper_Space{nr_ps}"
+        # TABLES
+        tab = [(t, d) for t, d in self.tabele if not (t == "BLOCK_RECORD" and get(d, 5) in self.usuniete)]
         out_tab = []
         cur_table = None
         for t, d in tab:
             if t == "TABLE":
                 cur_table = get(d, 2)
                 if cur_table == "BLOCK_RECORD":
-                    n = sum(1 for tt, _ in tab if tt == "BLOCK_RECORD") + len(self.bloki)
+                    n = sum(1 for tt, _ in tab if tt == "BLOCK_RECORD") + len(self.bloki) + len(klony)
                     d = [(c, (f"{n:>6}" if c == 70 else v)) for c, v in d]
             if t == "ENDTAB" and cur_table == "BLOCK_RECORD":
+                for k in klony:
+                    out_tab.append(("BLOCK_RECORD", [(5, k["br"]), (330, self.br_table), (100, "AcDbSymbolTableRecord"),
+                                                     (100, "AcDbBlockTableRecord"), (2, k["blok"]), (340, k["lay_h"]),
+                                                     (70, "     0"), (280, "     1"), (281, "     0")]))
                 for nazwa, br, _ in self.bloki:
                     out_tab.append(("BLOCK_RECORD", [(5, br), (330, self.br_table), (100, "AcDbSymbolTableRecord"),
                                                      (100, "AcDbBlockTableRecord"), (2, nazwa), (340, "0"),
                                                      (70, "     0"), (280, "     1"), (281, "     0")]))
             out_tab.append((t, d))
-        blk = list(self.bloki_szablonu)
+        # BLOCKS
+        blk = [(t, d) for t, d in self.bloki_szablonu if _owner(d) not in self.usuniete]
+        for t, d in self.bloki_szablonu:
+            if _owner(d) in self.usuniete and get(d, 5):
+                self.usuniete.add(get(d, 5))
+        for k in klony:
+            blk.append(("BLOCK", [(5, self._h()), (330, k["br"]), (100, "AcDbEntity"), (67, "     1"), (8, "0"),
+                                  (100, "AcDbBlockBegin"), (2, k["blok"]), (70, "     0"), (10, "0.0"), (20, "0.0"),
+                                  (30, "0.0"), (3, k["blok"]), (1, "")]))
+            for t, d in k["encje"]:
+                d = list(d)
+                d.insert(next(i for i, (c, v) in enumerate(d) if c == 100) + 1, (67, "     1"))
+                blk.append((t, d))
+            blk.append(("ENDBLK", [(5, self._h()), (330, k["br"]), (100, "AcDbEntity"), (67, "     1"), (8, "0"),
+                                   (100, "AcDbBlockEnd")]))
         for nazwa, br, bt in self.bloki:
             blk.append(("BLOCK", [(5, self._h()), (330, br), (100, "AcDbEntity"), (8, "0"), (100, "AcDbBlockBegin"),
                                   (2, nazwa), (70, "     1"), (10, "0.0"), (20, "0.0"), (30, "0.0"), (3, nazwa),
                                   (1, "")]))
-            blk_tags = bt
-            blk.extend(split_entities(blk_tags))
+            blk.extend(split_entities(bt))
             blk.append(("ENDBLK", [(5, self._h()), (330, br), (100, "AcDbEntity"), (8, "0"),
                                    (100, "AcDbBlockEnd")]))
+        # OBJECTS (+ układy nowych arkuszy i wpisy w słowniku układów)
+        obj = self._filtruj_obiekty()
+        if klony:
+            out_obj = []
+            for t, d in obj:
+                if t == "DICTIONARY" and get(d, 5) == klony[0]["wlasc"]:
+                    d = list(d)
+                    for k in klony:
+                        d += [(3, k["nazwa"]), (350, k["lay_h"])]
+                out_obj.append((t, d))
+            obj = out_obj
+            idx = max(i for i, (t, d) in enumerate(obj) if t == "LAYOUT")
+            obj[idx + 1:idx + 1] = [("LAYOUT", k["lay"]) for k in klony]
         # HEADER
         hdr = list(S["HEADER"])
         nowe_h = format(self._max + 1, "X")
@@ -297,7 +453,7 @@ class Wyjscie:
                 hdr[i + 1] = (10, fmt(xs[0]))
                 hdr[i + 2] = (20, fmt(xs[1]))
         sekcje = {"HEADER": hdr, "TABLES": join_entities(out_tab), "BLOCKS": join_entities(blk),
-                  "ENTITIES": self.encje, "OBJECTS": join_entities(self.obiekty)}
+                  "ENTITIES": join_entities(self.encje_papier) + self.encje, "OBJECTS": join_entities(obj)}
         tags = []
         for name in self.kolejnosc:
             tags += [(0, "SECTION"), (2, name)] + sekcje.get(name, S[name]) + [(0, "ENDSEC")]

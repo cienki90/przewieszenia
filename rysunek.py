@@ -31,6 +31,7 @@ class Dane:
     h_nn: tuple = (7.7, 7.7)          # wysokość zawieszenia istniejącej linii nN (L, P)
     zwis_nn: float = 0.0
     h_slup: tuple = (8.0, 8.0)        # wysokość słupa na rysunku (L, P)
+    szer_okna: float | None = None    # szerokość widoku arkusza wzdłuż przęsła (rysunek wyśrodkowany)
 
 
 @dataclass
@@ -43,6 +44,12 @@ class Rysunek:
 
     def tekst(self, u, v, h, txt, align=0, **kw):
         self.encje.append(("TEXT", dict(p=(u, v), h=h, txt=txt, align=align, **kw)))
+
+
+def szer_tekstu(txt: str, h: float) -> float:
+    """Przybliżona szerokość tekstu czcionką Arial."""
+    waskie = sum(ch in "ilj.,:;!|'1/ -()rtfI" for ch in txt)
+    return h * (0.56 * (len(txt) - waskie) + 0.3 * waskie)
 
 
 def luk_przez(h1, h2, w, s):
@@ -114,10 +121,18 @@ def zbuduj(d: Dane) -> Rysunek:
         R.encje.append(("MTEXT", dict(p=(u - 0.708, 1.786), h=0.4, txt="SŁUP", width=1.537, attach=5)))
     R.encje.append(("MTEXT", dict(p=(-1.603, 2.102), h=0.28, txt="wysokość zawieszenia przewodu [m]",
                                   width=9.28, attach=5, kier=(0.0, 1.0))))
-    R.tekst(-2.296, -0.902, 0.4, f"Słup nr {d.slup_l}")
-    R.tekst(-2.334, -1.569, 0.4, d.typ_l or "")
-    R.tekst(w + 0.592, -0.969, 0.4, f"Słup nr {d.slup_p}")
-    R.tekst(w + 0.561, -1.574, 0.4, d.typ_p or "")
+    # opisy słupów - przesuwane do środka, gdy nie mieszczą się w widoku arkusza
+    ul, up = -2.30, w + 0.58
+    if d.szer_okna:
+        lim_l = w / 2 - d.szer_okna / 2 + 0.3
+        lim_p = w / 2 + d.szer_okna / 2 - 0.3
+        dl_p = max(szer_tekstu(f"Słup nr {d.slup_p}", 0.4), szer_tekstu(d.typ_p or "", 0.4))
+        ul = max(ul, lim_l)
+        up = min(up, lim_p - dl_p)
+    R.tekst(ul, -0.902, 0.4, f"Słup nr {d.slup_l}")
+    R.tekst(ul - 0.034, -1.569, 0.4, d.typ_l or "")
+    R.tekst(up, -0.969, 0.4, f"Słup nr {d.slup_p}")
+    R.tekst(up - 0.031, -1.574, 0.4, d.typ_p or "")
 
     # --- legenda ---
     R.linia(0.105, -2.63, 1.036, -2.63, color=KOLOR_SWIATLOWODU, lw=25)
@@ -152,11 +167,21 @@ def zbuduj(d: Dane) -> Rysunek:
 
 
 def obwiednia(R: Rysunek):
-    """Przybliżona obwiednia rysunku w układzie lokalnym."""
+    """Obwiednia rysunku w układzie lokalnym (z przybliżoną szerokością tekstów)."""
     us, vs = [], []
     for t, e in R.encje:
-        for k in ("p1", "p2", "p"):
-            if k in e:
+        if t == "LINE":
+            for k in ("p1", "p2"):
                 us.append(e[k][0])
                 vs.append(e[k][1])
-    return min(us) - 1.0, min(vs) - 0.5, max(us) + 2.0, max(vs) + 1.0
+        elif t == "TEXT":
+            u, v = e["p"]
+            sz = szer_tekstu(e["txt"], e["h"])
+            u0 = u - sz / 2 if e.get("align") == 1 else u - sz if e.get("align") == 2 else u
+            us += [u0, u0 + sz]
+            vs += [v, v + e["h"]]
+        elif t == "MTEXT" and "kier" not in e:
+            u, v = e["p"]
+            us += [u, u + szer_tekstu(e["txt"], e["h"])]
+            vs += [v - e["h"], v]
+    return min(us), min(vs), max(us), max(vs)

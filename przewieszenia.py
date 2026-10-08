@@ -23,7 +23,7 @@ import plan as plan_mod
 from baza import Baza
 from geokod import Geokoder
 from plan import Plan
-from rysunek import Dane, SKALA_X, zbuduj
+from rysunek import Dane, SKALA_X, obwiednia, zbuduj
 from zapis import Wyjscie
 
 POLA = ["nr", "x", "y", "slup_l", "typ_l", "slup_p", "typ_p", "rozpietosc",
@@ -53,14 +53,17 @@ def main(argv=None):
     ap.add_argument("-o", "--wynik", default=None, help="plik wynikowy DXF")
     ap.add_argument("--baza", default=os.path.join(tu, "przewieszenia baza.dxf"),
                     help="plik DXF bazy (gotowe rysunki) - parametry zwisów oraz szablon DXF")
-    ap.add_argument("--szablon", default=None, help="plik DXF szablonu (domyślnie = baza)")
+    ap.add_argument("--arkusze", default=os.path.join(tu, "arkusze.dxf"),
+                    help="plik DXF z przygotowanymi arkuszami (układ, drukarka) - szablon wyniku")
+    ap.add_argument("--zostaw-puste-arkusze", action="store_true",
+                    help="nie usuwaj arkuszy, na których nie ma przewieszeń")
     ap.add_argument("--opisy", default=None,
                     help="plik CSV z opisami (domyślnie <plan>_opisy.csv); tworzony gdy nie istnieje")
     ap.add_argument("--warstwa", default=plan_mod.WARSTWA_PRZEWIESZEN, help="warstwa z okręgami")
     ap.add_argument("--warstwa-trasy", default=plan_mod.WARSTWA_TRASY, help="warstwa trasy światłowodu")
     ap.add_argument("--obrot-od", type=float, default=50.0,
-                    help="przęsła dłuższe niż ta wartość [m] rysowane są pionowo (obrót 90°); 0 = nigdy")
-    ap.add_argument("--rozstaw", type=float, default=100.0, help="odstęp kolumn rysunków [j]")
+                    help="przęsła dłuższe niż ta wartość [m] rysowane są pionowo (obrót 90°); 0 = tylko gdy "
+                         "rysunek nie mieści się poziomo w arkuszu")
     ap.add_argument("--adresy", default="uug,osm",
                     help="źródła nazw miejscowości/ulic z internetu: uug (GUGiK), osm (OpenStreetMap); "
                          "'brak' = bez internetu (domyślnie uug,osm)")
@@ -87,10 +90,25 @@ def main(argv=None):
     if a.adresy.strip().lower() not in ("", "brak", "nie", "0"):
         G = Geokoder(os.path.splitext(a.plan)[0] + "_adresy.json", zrodla=a.adresy.lower().split(","))
 
-    W = Wyjscie(a.szablon or a.baza)
+    szablon = a.arkusze if os.path.exists(a.arkusze) else a.baza
+    W = Wyjscie(szablon)
+    if W.arkusze:
+        a0 = W.arkusze[0]
+        SZER, WYS = a0["W"], a0["H"]
+    else:
+        print(f"Uwaga: brak arkuszy w {szablon} - rysunki ułożone bez arkuszy.", file=sys.stderr)
+        SZER, WYS = 29.1, 43.95
+    DY_GORA, DY_DOL = 8.37, -9.51   # położenie rysunków względem środka widoku arkusza
     wiersze = []
-    kol, wiersz_kol = 0, 0     # pozycja w siatce: kolumna, 0 = górny / 1 = dolny rząd
-    Y_GORA, Y_DOL = 17.88, 0.0
+    ark, slot = 0, 0                # bieżący arkusz i miejsce (0 = górne, 1 = dolne)
+    rozmieszczenie = []             # (nr przewieszenia, nazwa arkusza)
+
+    def srodek(i):
+        if W.arkusze:
+            cx, cy, _, _ = W.arkusz(i)
+            return cx, cy, W.arkusze[i]["nazwa"]
+        return i * 100.0, 8.9, str(i + 1)
+
     for z in lista:
         auto = dict(nr=z.nr, x=f"{z.x:.2f}", y=f"{z.y:.2f}",
                     slup_l=z.slup_l.numer or "?", typ_l=z.slup_l.typ or "",
@@ -126,26 +144,30 @@ def main(argv=None):
                  auto["miejscowosc"], auto["ulica"],
                  h_swiatl=(hs, hs), zwis_swiatl=zs, h_nn=(drut_l, drut_p), zwis_nn=B.zwis_nn(L, drut_l, drut_p),
                  h_slup=(slup_l, slup_p))
+        w = L * SKALA_X
+        pionowo = (a.obrot_od > 0 and L > a.obrot_od) or w + 2.6 > SZER
+        d.szer_okna = WYS if pionowo else SZER
         R = zbuduj(d)
-
-        pionowo = a.obrot_od > 0 and L > a.obrot_od
         if pionowo:
-            if wiersz_kol == 1:
-                kol, wiersz_kol = kol + 1, 0
-            x0 = kol * a.rozstaw + 10.0
-            y0 = Y_DOL - 3.0 + max(0.0, (Y_GORA + 13.0 - L * SKALA_X) / 2)
-            W.dodaj(R, x0, y0, rot=90)
-            kol += 1
+            if slot == 1:
+                ark, slot = ark + 1, 0
+            cx, cy, nazwa = srodek(ark)
+            u0, v0, u1, v1 = obwiednia(R)
+            if u1 - u0 > WYS:
+                P.ostrzezenia.append(f"Przewieszenie {z.nr} ({L} m) nie mieści się w całości w arkuszu {nazwa}")
+            W.dodaj(R, cx + (v0 + v1) / 2, cy - (u0 + u1) / 2, rot=90)
+            rozmieszczenie.append((z.nr, nazwa))
+            ark += 1
         else:
-            x0 = kol * a.rozstaw
-            y0 = Y_GORA if wiersz_kol == 0 else Y_DOL
-            W.dodaj(R, x0, y0, rot=0)
-            if wiersz_kol == 0:
-                wiersz_kol = 1
+            cx, cy, nazwa = srodek(ark)
+            W.dodaj(R, cx - w / 2, cy + (DY_GORA if slot == 0 else DY_DOL), rot=0)
+            rozmieszczenie.append((z.nr, nazwa))
+            if slot == 0:
+                slot = 1
             else:
-                kol, wiersz_kol = kol + 1, 0
+                ark, slot = ark + 1, 0
 
-    W.zapisz(wynik)
+    W.zapisz(wynik, usun_puste_arkusze=not a.zostaw_puste_arkusze)
     zapisz_opisy(opisy_path, wiersze)
     if G:
         G.zapisz()
@@ -153,11 +175,13 @@ def main(argv=None):
             print(f"Uwaga: nie udało się pobrać części adresów ({len(G.bledy)} błędów), np.: {G.bledy[0]}",
                   file=sys.stderr)
 
-    print(f"Utworzono {len(lista)} rysunków przewieszeń -> {wynik}")
+    n_ark = len({n for _, n in rozmieszczenie})
+    print(f"Utworzono {len(lista)} rysunków przewieszeń na {n_ark} arkuszach -> {wynik}")
     print(f"Opisy (do edycji): {opisy_path}")
+    ark_nr = dict(rozmieszczenie)
     for w in wiersze:
         obw = f"{w['stacja']} {w['obwod']}" + (f" + {w['stacja2']} {w['obwod2']}" if w["stacja2"] else "")
-        print(f"  {w['nr']:>3}. Słup {w['slup_l']} ({w['typ_l']}) - Słup {w['slup_p']} ({w['typ_p']}), "
+        print(f"  {w['nr']:>3}. [arkusz {ark_nr.get(w['nr'], '?')}] Słup {w['slup_l']} ({w['typ_l']}) - Słup {w['slup_p']} ({w['typ_p']}), "
               f"{w['rozpietosc']} m, {obw}  {w['miejscowosc']} {w['ulica']}".rstrip())
     for o in P.ostrzezenia:
         print("Uwaga:", o, file=sys.stderr)
