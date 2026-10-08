@@ -84,7 +84,10 @@ def main(argv=None):
     P = Plan(a.plan)
     lista = P.przewieszenia()
     if not lista:
-        print(f"Brak okręgów na warstwie {a.warstwa} w pliku {a.plan}", file=sys.stderr)
+        print(f"Brak zaznaczeń przewieszeń (okręgów lub kresek) na warstwie {a.warstwa} w pliku {a.plan}",
+              file=sys.stderr)
+        for o in P.ostrzezenia:
+            print("Uwaga:", o, file=sys.stderr)
         return 1
     B = Baza(a.baza if os.path.exists(a.baza) else None)
     if not B.rysunki:
@@ -126,7 +129,7 @@ def main(argv=None):
         r = opisy.get((round(z.x, 2), round(z.y, 2)))
         if r:  # wartości z CSV mają pierwszeństwo (puste pole = wartość automatyczna, poza opisami)
             for k in POLA[3:]:
-                if k in ("miejscowosc", "ulica") or (r.get(k) or "").strip():
+                if k in ("miejscowosc", "ulica") or (r.get(k) or "").strip() not in ("", "?", "ST ?"):
                     auto[k] = (r.get(k) or "").strip()
         # miejscowość i ulica z internetu: gdy brak wiersza w CSV, pusta miejscowość lub --odswiez-adresy
         if G and (a.odswiez_adresy or not r or not auto["miejscowosc"]):

@@ -18,12 +18,14 @@ Wynik: `przewieszenia plan wynik.dxf` oraz plik opisów `przewieszenia plan_opis
 
 | Dane | Źródło w planie |
 |---|---|
-| lokalizacja przewieszenia | okrąg na warstwie `_PRZEWIESZENIA` (środek na przęśle) |
-| przęsło i jego długość | polilinia trasy na warstwie `!TELE` (odcinek między słupami najbliższy okręgowi) |
-| słupy | bloki `ZN`, `E`, `R` |
+| lokalizacja przewieszenia | na warstwie `_PRZEWIESZENIA`: **kreska (LINE/polilinia) przecinająca przęsło** – zalecane; albo okrąg (środek na przęśle). Jedna kreska może przeciąć kilka przęseł – powstanie rysunek dla każdego |
+| przęsło | polilinia trasy na warstwie `!TELE`; słupy leżące na trasie (w wierzchołku lub na odcinku) dzielą ją na przęsła |
+| długość przęsła | wymiar narysowany między słupami (np. warstwa `!wymiary`); gdy go brak – długość trasy |
+| słupy | bloki `ZN`, `E`, `R`, także zagnieżdżone w innych blokach (np. `q` = słup + opis typu) |
 | numery słupów | teksty na warstwie `_numery` (dopasowanie po odległości) |
 | typy słupów | multileadery „słup nN / typ” (grot wskazuje słup) |
-| obwód i stacja | multileadery „obw. nr X” i „STACJA TRAFO / nr”; obwód jest śledzony po trasie zgodnie z numeracją słupów (1 → 2 → 2.1 → 2.2 …) |
+| stacja | obszar stacji – zamknięta polilinia na warstwie `!trafo_<nr>` (np. `!trafo_05-0355`); gdy go brak – najbliższy opis „STACJA TRAFO / nr” |
+| obwód | multileadery „obw. nr X”; obwód jest śledzony po trasie zgodnie z numeracją słupów (1 → 2 → 2.1 → 2.2 …) |
 
 Z pliku `przewieszenia baza.dxf` (157 gotowych rysunków) program pobiera:
 
