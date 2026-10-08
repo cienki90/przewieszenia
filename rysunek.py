@@ -118,9 +118,9 @@ def zbuduj(d: Dane) -> Rysunek:
     R.linia(0.0, 0.0, 0.0, d.h_slup[0], lw=100)
     R.linia(w, 0.0, w, d.h_slup[1], lw=100)
     for u in (0.0, w):
-        R.encje.append(("MTEXT", dict(p=(u - 0.708, 1.786), h=0.4, txt="SŁUP", width=1.537, attach=5)))
+        R.encje.append(("MTEXT", dict(p=(u - 0.708, 1.786), h=0.4, txt="SŁUP", width=1.537, attach=1)))
     R.encje.append(("MTEXT", dict(p=(-1.603, 2.102), h=0.28, txt="wysokość zawieszenia przewodu [m]",
-                                  width=9.28, attach=5, kier=(0.0, 1.0))))
+                                  width=9.28, attach=1, kier=(0.0, 1.0))))
     # opisy słupów - przesuwane do środka, gdy nie mieszczą się w widoku arkusza
     ul, up = -2.30, w + 0.58
     if d.szer_okna:
