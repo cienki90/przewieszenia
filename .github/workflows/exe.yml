@@ -1,8 +1,8 @@
-name: Buduj program Przewieszenia.exe
+name: Buduj program GeneratorNN.exe
 
 on:
   push:
-    branches: [main, generator-przewieszen]
+    branches: [program-polaczony]
   workflow_dispatch:
 
 permissions:
@@ -19,17 +19,22 @@ jobs:
           python-version: "3.12"
 
       - name: Instalacja PyInstaller
-        run: python -m pip install pyinstaller
+        run: python -m pip install --upgrade pip pyinstaller
 
-      - name: Test (wiersz poleceń)
-        run: python przewieszenia.py "przewieszenia plan.dxf" -o test.dxf --adresy brak
+      - name: Test wiersza poleceń (cały łańcuch, bez internetu)
+        shell: bash
+        run: |
+          python generator_cli.py "przewieszenia plan.dxf" -o _test --adresy brak --seed 1
+          test -s "_test/przewieszenia plan - przewieszenia.dxf"
+          test -s "_test/zestawienie przewieszenia plan.xlsx"
+          test -s "_test/Obliczenia - zestawienie przewieszenia plan.xlsx"
 
       - name: Budowa exe
         run: >
-          pyinstaller --onefile --windowed --name Przewieszenia
+          pyinstaller --onefile --windowed --name GeneratorNN
           --add-data "przewieszenia baza.dxf;."
           --add-data "arkusze.dxf;."
-          przewieszenia_gui.py
+          generator_gui.py
 
       - name: Publikacja (Releases)
         env:
@@ -37,7 +42,7 @@ jobs:
         shell: bash
         run: |
           TAG="v1.${{ github.run_number }}"
-          gh release create "$TAG" dist/Przewieszenia.exe \
+          gh release create "$TAG" dist/GeneratorNN.exe \
             --target "${{ github.sha }}" --latest \
-            --title "Przewieszenia $TAG" \
-            --notes "Program Przewieszenia.exe - uruchom dwuklikiem, wybierz plik planu DXF i miejsce zapisu. Gałąź: ${{ github.ref_name }}."
+            --title "GeneratorNN $TAG" \
+            --notes "Program GeneratorNN.exe - uruchom dwuklikiem, wskaż plik planu DXF, zaznacz co wygenerować (przewieszenia / zestawienie / obliczenia) i wybierz katalog zapisu. Gałąź: ${{ github.ref_name }}."

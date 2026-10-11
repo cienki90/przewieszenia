@@ -1,93 +1,109 @@
-# Przewieszenia – generator rysunków zwisów
+# Generator projektów nN — przewieszenia · zestawienie · obliczenia
 
-**Program dla Windows:** [Przewieszenia.exe](https://github.com/cienki90/przewieszenia/releases/latest/download/Przewieszenia.exe).
-Uruchom go dwuklikiem, wskaż plik planu DXF i miejsce zapisu. Nie trzeba niczego instalować. Pliki bazy i arkuszy
-są wbudowane w program. Plik budowany jest automatycznie przez GitHub Actions (`.github/workflows/exe.yml`) po każdej
-zmianie kodu.
+Jeden program, który z **jednego pliku planu DXF** tworzy trzy opracowania projektu linii nN
+z projektowanym światłowodem:
 
-Program tworzy rysunki przewieszeń (zwisów przęseł linii nN z projektowanym światłowodem) na podstawie planu DXF.
-Wymaga tylko Pythona 3.9+, bez dodatkowych bibliotek.
+| Krok | Co powstaje | Plik |
+|---|---|---|
+| **Przewieszenia** | rysunki zwisów (profile przęseł) linii nN ze światłowodem | `<plan> - przewieszenia.dxf` |
+| **Zestawienie** | zestawienie słupów nN w podziale na stacje transformatorowe | `zestawienie <plan>.xlsx` |
+| **Obliczenia** | obliczenia nośności słupów na podstawie zestawienia | `Obliczenia - zestawienie <plan>.xlsx` |
+
+Program łączy trzy wcześniejsze narzędzia (generator przewieszeń oraz programy „zestawienie”
+i „obliczenia” z repozytorium `mm`) w jedną aplikację z prostym oknem. Wymaga tylko
+**Pythona 3.9+** ze standardowym modułem `tkinter` — bez żadnych dodatkowych bibliotek.
+
+## Program dla Windows (.exe)
+
+Plik `GeneratorNN.exe` jest budowany automatycznie przez GitHub Actions po każdej zmianie kodu
+(zakładka **Releases**). Uruchom go dwuklikiem — pliki bazy i arkuszy są wbudowane w program,
+nie trzeba niczego instalować.
+
+## Uruchomienie z kodu (Windows)
+
+- `setup.bat` — sprawdza Pythona i `tkinter` (oraz opcjonalnie instaluje PyInstaller),
+- `uruchom.bat` — otwiera **okno** programu,
+- `generuj.bat "plan.dxf"` — wersja **wiersza poleceń** (można przeciągnąć plik DXF na `.bat`),
+- `sprawdz.bat` — test: uruchamia cały łańcuch na pliku przykładowym i sprawdza wyniki.
+
+Pliki `.bat` obsługują polskie znaki (`chcp 65001`) i same wykrywają Pythona (`py -3` lub `python`).
+
+## Uruchomienie z kodu (dowolny system)
+
+```bash
+# okno programu
+python -m generator            # albo: python generator_gui.py
+
+# wiersz poleceń (cały łańcuch)
+python -m generator.pipeline "przewieszenia plan.dxf"
+
+# tylko wybrane kroki, inny katalog zapisu
+python generator_cli.py "przewieszenia plan.dxf" --tylko zestawienie,obliczenia -o wyniki
+```
+
+Najważniejsze opcje wiersza poleceń:
 
 ```
-python przewieszenia.py "przewieszenia plan.dxf"
+-o, --katalog         katalog zapisu wyników (domyślnie obok planu)
+--tylko a,b,c         które kroki: przewieszenia,zestawienie,obliczenia
+--adresy uug,osm      źródła nazw miejscowości/ulic (albo "brak" = bez internetu)
+--obrot-od 50         przęsła dłuższe niż 50 m rysowane pionowo
+--seed 1              powtarzalne obliczenia (kąty słupów narożnych)
+--kabel 3             domyślny rodzaj kabla w obliczeniach (1-11)
 ```
 
-Wynik: `przewieszenia plan wynik.dxf` oraz plik opisów `przewieszenia plan_opisy.csv`.
+> **Obliczenia** potrzebują zestawienia. Jeśli włączysz je bez kroku „zestawienie”, program
+> zbuduje zestawienie w pliku tymczasowym, wykona obliczenia i plik tymczasowy usunie.
 
-## Skąd pochodzą dane
+## Jak program czyta dane z planu DXF
+
+Wszystkie kroki działają na tym samym rysunku planu. Rozpoznawanie stacji transformatorowych,
+do których należą słupy, jest wspólnym, mocnym punktem narzędzi `mm` i generatora przewieszeń.
 
 | Dane | Źródło w planie |
 |---|---|
-| lokalizacja przewieszenia | na warstwie `_PRZEWIESZENIA`: **kreska (LINE/polilinia) przecinająca przęsło** – zalecane; albo okrąg (środek na przęśle). Jedna kreska może przeciąć kilka przęseł – powstanie rysunek dla każdego |
-| przęsło | polilinia trasy na warstwie `!TELE`; słupy leżące na trasie (w wierzchołku lub na odcinku) dzielą ją na przęsła |
-| długość przęsła | wymiar narysowany między słupami (np. warstwa `!wymiary`); gdy go brak – długość trasy |
-| słupy | bloki `ZN`, `E`, `R`, także zagnieżdżone w innych blokach (np. `q` = słup + opis typu) |
-| numery słupów | teksty na warstwie `_numery` (dopasowanie po odległości) |
-| typy słupów | multileadery „słup nN / typ” (grot wskazuje słup) |
-| stacja | obszar stacji – zamknięta polilinia na warstwie `!trafo_<nr>` (np. `!trafo_05-0355`); gdy go brak – najbliższy opis „STACJA TRAFO / nr” |
-| obwód | multileadery „obw. nr X”; obwód jest śledzony po trasie zgodnie z numeracją słupów (1 → 2 → 2.1 → 2.2 …) |
+| lokalizacja przewieszenia | warstwa `_PRZEWIESZENIA`: kreska przecinająca przęsło (zalecane) lub okrąg |
+| przęsło / trasa | polilinia na warstwie `!TELE`; słupy na trasie dzielą ją na przęsła |
+| długość przęsła | wymiar między słupami (np. warstwa `!wymiary`); gdy brak — długość trasy |
+| słupy | bloki `ZN`, `E`, `R` (także zagnieżdżone w innych blokach, np. `q`) |
+| numery słupów | teksty na warstwie `_numery` |
+| typy słupów | multileadery „słup nN / typ” |
+| stacja | obszar `!trafo_<nr>` (np. `!trafo_05-0355`); gdy brak — opis „STACJA TRAFO / nr” |
+| obwód | multileadery „obw. nr X”; śledzony po trasie zgodnie z numeracją słupów |
 
-Z pliku `przewieszenia baza.dxf` (157 gotowych rysunków) program pobiera:
+### Przewieszenia — baza i arkusze
 
-- wysokość zawieszenia i zwis światłowodu dla danej rozpiętości (≤22 m: 6,2 m; 23–40 m: 6,7 m; >40 m: 7,2 m; zwis 3% / 2,5%),
-- wysokość linii nN i słupa dla danego typu słupa (np. słupy 10,5 m: 8,2 m; 10 m: 7,7 m),
-- nagłówek, warstwy, rodzaje linii i style DXF, które służą jako szablon pliku wynikowego.
+Z `przewieszenia baza.dxf` pobierane są wysokości zawieszenia i zwisy (dla rozpiętości i typów
+słupów) oraz style DXF. Wynik powstaje w układzie arkuszy z `arkusze.dxf` (po dwa poziome rysunki
+na arkusz albo jeden pionowy; puste arkusze są usuwane).
 
-## Miejscowości i ulice z internetu
+Środek znacznika (PUWG 2000) jest przeliczany na WGS84 i program pobiera najbliższy adres z
+GUGiK UUG, a gdy się nie uda — z OpenStreetMap. Adresy trafiają do pamięci podręcznej
+`<plan>_adresy.json`. Bez internetu program działa normalnie (opcja „bez internetu” / `--adresy brak`).
 
-Środek okręgu (współrzędne PUWG 2000, strefa z pierwszej cyfry X) jest przeliczany na WGS84. Program pobiera
-najbliższy punkt adresowy:
+### Zestawienie — kontrola poprawności
 
-1. z usługi GUGiK UUG (`GetAddressReverse`, dane PRG); „ulica Wspólna” jest skracana do „ul. Wspólna”,
-2. a gdy to się nie uda, z OpenStreetMap Nominatim (najwyżej 1 zapytanie na sekundę).
+Zestawienie tworzy arkusz zbiorczy, osobny arkusz dla każdej stacji (Nr słupa, Oznaczenie, Typ,
+Odległość, Mufa, Obwód) oraz arkusz **„kontrola”** z automatycznym sprawdzeniem (błędy/uwagi ze
+współrzędnymi miejsca na rysunku; wiersze są kolorowane).
 
-Pobrane adresy trafiają do pamięci podręcznej `<plan>_adresy.json`. Program odpytuje internet tylko dla przewieszeń,
-które nie mają miejscowości w pliku CSV. Opcje:
+### Obliczenia — nośność słupów
 
-- `--odswiez-adresy` pobiera adresy ponownie dla wszystkich przewieszeń,
-- `--adresy brak` wyłącza internet,
-- `--adresy osm` używa tylko OpenStreetMap.
+Obliczenia czytają zestawienie (`.xls`/`.xlsx`) i dla każdej stacji liczą nośność i obciążenie
+słupów, zestawienie osprzętu oraz sumy, w układzie zgodnym z dotychczasowymi obliczeniami, wraz
+z podpisami projektantów. Słupy niespełniające warunku nośności są wyróżniane.
 
-Bez internetu program działa normalnie, tylko wypisuje ostrzeżenie.
-
-## Arkusze
-
-Wynik powstaje na bazie `arkusze.dxf`. Przewieszenia trafiają do istniejących arkuszy (karty 1, 2, 3, …): po dwa
-poziome rysunki na arkusz albo jeden pionowy. Rysunki są umieszczane w modelu dokładnie pod rzutnią każdego arkusza.
-Układ arkuszy, rzutnie, skala i ustawienia drukarki (DWG To PDF, A4) pozostają bez zmian.
-
-- Arkusze, które zostały puste, są usuwane. Opcja `--zostaw-puste-arkusze` je zachowuje.
-- Gdy przewieszeń jest więcej niż arkuszy, program dodaje kopie ostatniego arkusza.
-- Przęsła dłuższe niż 50 m albo za szerokie na arkusz są rysowane pionowo.
-- Opisy słupów przy długich przęsłach są przesuwane, żeby zmieściły się w rzutni.
-
-## Plik opisów (CSV)
-
-Plik CSV (separator `;`, UTF‑8) jest tworzony przy pierwszym uruchomieniu i zawiera wszystkie ustalone dane.
-Można go poprawić (np. usunąć ulicę, której nie chcesz w tytule) i uruchomić program ponownie. Wiersze są
-dopasowywane po współrzędnych okręgu. Każde niepuste pole (np. `stacja`, `typ_l`, `rozpietosc`) nadpisuje wartość
-ustaloną automatycznie. Pola `stacja2`/`obwod2` są używane, gdy przęsło łączy dwa obwody.
-
-Jeśli stacji nie da się ustalić (opis obwodu jest dalej niż 150 m od stacji), program wpisze `ST ?` i wypisze ostrzeżenie.
-
-## Opcje
+## Pliki programu
 
 ```
--o, --wynik     plik wynikowy DXF
---baza          plik bazy (domyślnie "przewieszenia baza.dxf" obok programu)
---arkusze       plik z arkuszami (domyślnie "arkusze.dxf" obok programu)
---zostaw-puste-arkusze
---opisy         plik CSV z opisami
---obrot-od 50   przęsła dłuższe niż 50 m są rysowane pionowo (0 = nigdy)
---warstwa, --warstwa-trasy   inne nazwy warstw
+generator_gui.py        – start okna (używany też przy budowie .exe)
+generator_cli.py        – start wiersza poleceń
+generator/
+  pipeline.py           – łańcuch: DXF -> przewieszenia + zestawienie + obliczenia
+  gui.py                – interfejs okienkowy (jedno okno, pasek postępu, log)
+  przewieszenia.py      – generator rysunków przewieszeń
+  plan.py, baza.py, rysunek.py, zapis.py, dxfio.py, geokod.py – obsługa przewieszeń
+  zestawienie.py        – zestawienie słupów nN z DXF (z programu "mm")
+  obliczenia.py         – obliczenia nośności słupów (z programu "mm")
+  zasoby.py             – odnajdywanie plików bazy/arkuszy (kod źródłowy lub .exe)
 ```
-
-## Pliki
-
-- `przewieszenia_gui.py` – wersja okienkowa (exe)
-- `przewieszenia.py` – program główny (wiersz poleceń)
-- `plan.py` – analiza planu (słupy, przęsła, obwody)
-- `baza.py` – parametry odczytane z bazy rysunków
-- `rysunek.py` – geometria pojedynczego rysunku (siatka, linijki, słupy, krzywe zwisu, opisy)
-- `geokod.py` – przeliczenie PUWG 2000 → WGS84 i pobieranie adresów (GUGiK / OSM)
-- `zapis.py`, `dxfio.py` – odczyt i zapis DXF

@@ -1,2 +1,17 @@
 __pycache__/
 *.pyc
+
+# katalogi i pliki wynikowe / testowe
+_test/
+_out/
+build/
+dist/
+*.spec
+
+# pliki tworzone przy uruchomieniu na pliku przykładowym
+przewieszenia plan wynik.dxf
+*_opisy.csv
+*_adresy.json
+przewieszenia plan - przewieszenia.dxf
+zestawienie przewieszenia plan.xlsx
+Obliczenia - zestawienie przewieszenia plan.xlsx
