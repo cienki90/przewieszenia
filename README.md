@@ -146,6 +146,21 @@ do których należą słupy, jest wspólnym, mocnym punktem narzędzi `mm` i gen
 | stacja | obszar `!trafo_<nr>` (np. `!trafo_05-0355`); gdy brak — opis „STACJA TRAFO / nr” |
 | obwód | multileadery „obw. nr X”; śledzony po trasie zgodnie z numeracją słupów |
 
+#### Rozpoznawanie po wyglądzie (odporność na nazwy warstw)
+
+Program nie wymaga ściśle określonych nazw warstw — rozpoznaje elementy po **wyglądzie**
+(typ encji + geometria + kolor), a nazwa warstwy jest tylko jedną z wielu wskazówek:
+
+- **trasa** – polilinie o nazwie warstwy z „tele/świat…” albo (gdy brak) **koloru 30** (pomarańczowe),
+- **przewieszenia** – **zielone okręgi** (kolor 3) albo okręgi na warstwie z „przewiesz”,
+- **zakres stacji** – zamknięte polilinie magenta (kolor 6) lub z „trafo” w nazwie; numer stacji
+  z nazwy warstwy `!trafo_<nr>`, a gdy jej brak – z opisu „STACJA TRAFO” leżącego w poligonie,
+- **słupy** – zawsze po blokach `ZN/E/R/q…`,
+- **stacje/obwody** – po treści opisów („STACJA TRAFO”, „obw. nr”), nie po warstwie.
+
+Dzięki temu projekt z inaczej nazwanymi warstwami nadal działa. (Zweryfikowane: po
+przemianowaniu wszystkich warstw na losowe nazwy wynik jest identyczny jak dla oryginału.)
+
 #### Kontrola stacji trafo (po numeracji)
 
 Po ustaleniu numeracji program **ponownie sprawdza stację trafo** dopisaną do każdego
