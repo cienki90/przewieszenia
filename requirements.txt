@@ -1,0 +1,4 @@
+# Program działa na samym Pythonie 3.10+ (biblioteka standardowa + tkinter).
+# Jedyna zewnętrzna zależność jest OPCJONALNA i dotyczy tylko kroku "Rysunki stałe"
+# (orientacje) przy pobieraniu podkładu mapowego z internetu:
+Pillow>=9.0

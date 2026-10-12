@@ -8,6 +8,14 @@ z projektowanym światłowodem:
 | **Przewieszenia** | rysunki zwisów (profile przęseł) linii nN ze światłowodem | `<plan> - przewieszenia.dxf` |
 | **Zestawienie** | zestawienie słupów nN w podziale na stacje transformatorowe | `zestawienie <plan>.xlsx` |
 | **Obliczenia** | obliczenia nośności słupów na podstawie zestawienia | `Obliczenia - zestawienie <plan>.xlsx` |
+| **Rysunki stałe** | osobny plan orientacyjny DXF dla każdej stacji trafo + zestawienie | `rysunki stałe/<nr>.dxf`, `rysunki stałe/zestawienie_stacji.xlsx` |
+
+> **Uwaga o rysunkach stałych (orientacjach):** ten krok działa na **szablonie rysunków stałych**
+> (`szablon.dxf` – wszystkie stacje na jednym rysunku, z odnośnikami „STACJA TRAFO” i obrysami
+> zasięgu na warstwie `!trafo`), a nie na planie tras. W oknie można wskazać własny szablon;
+> gdy pole zostanie puste, użyty jest **dołączony `szablon.dxf`**. Pobieranie podkładu mapowego
+> (OSM / Geoportal) wymaga internetu i biblioteki **Pillow** — bez nich krok działa z opcją
+> „bez podkładu”. W pliku .exe Pillow i szablon są już wbudowane.
 
 Dodatkowo krok **Przewieszenia** tworzy plik **kontrolny** `<plan> - kontrola.dxf` — kopię planu
 (oryginał pozostaje nietknięty) z **numerem przewieszenia wpisanym w miejscu każdego zaznaczenia**,
@@ -44,13 +52,18 @@ python -m generator.pipeline "przewieszenia plan.dxf"
 
 # tylko wybrane kroki, inny katalog zapisu
 python generator_cli.py "przewieszenia plan.dxf" --tylko zestawienie,obliczenia -o wyniki
+
+# rysunki stałe z wybranego szablonu, bez pobierania podkładu z internetu
+python generator_cli.py plan.dxf --tylko orientacje --szablon-orientacji szablon.dxf --bez-podkladu
 ```
 
 Najważniejsze opcje wiersza poleceń:
 
 ```
 -o, --katalog         katalog zapisu wyników (domyślnie obok planu)
---tylko a,b,c         które kroki: przewieszenia,zestawienie,obliczenia
+--tylko a,b,c         które kroki: przewieszenia,zestawienie,obliczenia,orientacje
+--szablon-orientacji  szablon DXF dla rysunków stałych (domyślnie dołączony szablon.dxf)
+--bez-podkladu        rysunki stałe bez pobierania podkładu mapowego (bez internetu/Pillow)
 --adresy uug,osm      źródła nazw miejscowości/ulic (albo "brak" = bez internetu)
 --obrot-od 50         przęsła dłuższe niż 50 m rysowane pionowo
 --seed 1              powtarzalne obliczenia (kąty słupów narożnych)
@@ -129,5 +142,6 @@ generator/
   plan.py, baza.py, rysunek.py, zapis.py, dxfio.py, geokod.py – obsługa przewieszeń
   zestawienie.py        – zestawienie słupów nN z DXF (z programu "mm")
   obliczenia.py         – obliczenia nośności słupów (z programu "mm")
-  zasoby.py             – odnajdywanie plików bazy/arkuszy (kod źródłowy lub .exe)
+  orientacje.py         – rysunki stałe: plan orientacyjny per stacja + podkład mapowy (z repo Orientacje-arkusze)
+  zasoby.py             – odnajdywanie plików bazy/arkuszy/szablonu (kod źródłowy lub .exe)
 ```

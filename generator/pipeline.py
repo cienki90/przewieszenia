@@ -28,11 +28,12 @@ from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import dataclass, field
 
 from . import obliczenia as mod_obliczenia
+from . import orientacje as mod_orientacje
 from . import przewieszenia as mod_przewieszenia
 from . import zestawienie as mod_zestawienie
 
 # nazwy kroków (kolejność ma znaczenie)
-KROKI = ("przewieszenia", "zestawienie", "obliczenia")
+KROKI = ("przewieszenia", "zestawienie", "obliczenia", "orientacje")
 
 
 # ---------------------------------------------------------------------------
@@ -49,6 +50,9 @@ class Opcje:
     # obliczenia
     seed: int | None = None
     kabel: int = mod_obliczenia.DOMYSLNY_KABEL
+    # orientacje (rysunki stałe)
+    orient_podklad: bool = True                  # pobierać podkład mapowy (wymaga internetu + Pillow)
+    orient_szablon: str | None = None            # szablon rysunków stałych (gdy inny niż plan; None = dołączony)
     log: object = print                          # funkcja logowania (podmieniana w GUI)
 
 
@@ -89,6 +93,7 @@ def domyslne_wyjscia(plan: str, katalog: str | None = None) -> dict:
         "przewieszenia": os.path.join(kat, f"{baza} - przewieszenia.dxf"),
         "zestawienie": os.path.join(kat, f"zestawienie {baza}.xlsx"),
         "obliczenia": os.path.join(kat, f"Obliczenia - zestawienie {baza}.xlsx"),
+        "orientacje": os.path.join(kat, "rysunki stałe"),   # podfolder z planami stacji + zestawieniem
     }
 
 
@@ -134,6 +139,12 @@ def uruchom(opcje: Opcje) -> Wynik:
                 if not zestawienie_plik:
                     raise RuntimeError("Brak zestawienia - nie można wykonać obliczeń.")
                 r = _krok_obliczenia(zestawienie_plik, wyj["obliczenia"], opcje)
+            elif krok == "orientacje":
+                szablon = opcje.orient_szablon
+                if not szablon:
+                    from . import zasoby
+                    szablon = zasoby.szablon_orientacji_dxf() or plan
+                r = _krok_orientacje(szablon, wyj["orientacje"], opcje)
             else:
                 continue
         except Exception as ex:  # noqa: BLE001 - raport trafia do użytkownika
@@ -198,6 +209,25 @@ def _krok_obliczenia(zestawienie_plik: str, wyjscie: str, opcje: Opcje) -> Wynik
                       blad=None if ok else "Nie udało się wykonać obliczeń.")
 
 
+def _krok_orientacje(dxf: str, wyjscie_dir: str, opcje: Opcje) -> WynikKroku:
+    """Rysunki stałe (orientacje): dla każdej stacji trafo z rysunku - osobny plan DXF + zestawienie.
+
+    Jako szablon używany jest ten sam plik DXF co w pozostałych krokach (musi zawierać
+    odnośniki 'STACJA TRAFO' i obrysy zasięgu na warstwie !trafo)."""
+    os.makedirs(wyjscie_dir, exist_ok=True)
+    argv = [dxf, "--wyniki", wyjscie_dir, "--bez-pytania"]
+    if not opcje.orient_podklad:
+        argv.append("--bez-podkladu")
+    kod, raport = _przechwyc(mod_orientacje.main, argv)
+    # sukces: powstało zestawienie_stacji.xlsx albo przynajmniej jeden plik .dxf
+    zest = os.path.join(wyjscie_dir, "zestawienie_stacji.xlsx")
+    pliki_dxf = [f for f in os.listdir(wyjscie_dir)] if os.path.isdir(wyjscie_dir) else []
+    ok = (kod == 0) and (os.path.exists(zest) or any(f.lower().endswith(".dxf") for f in pliki_dxf))
+    return WynikKroku("orientacje", ok=ok, wyjscie=wyjscie_dir if ok else None, raport=raport,
+                      blad=None if ok else "Nie udało się utworzyć rysunków stałych "
+                                           "(czy rysunek zawiera opisy STACJA TRAFO i obrysy !trafo?).")
+
+
 # ---------------------------------------------------------------------------
 def main(argv=None):
     for strumien in (sys.stdout, sys.stderr):  # polskie znaki w konsoli Windows
@@ -223,6 +253,10 @@ def main(argv=None):
                     help="ziarno losowania kątów słupów narożnych (powtarzalne obliczenia)")
     ap.add_argument("--kabel", type=int, default=mod_obliczenia.DOMYSLNY_KABEL,
                     help="domyślny rodzaj kabla w obliczeniach (1-11)")
+    ap.add_argument("--bez-podkladu", action="store_true",
+                    help="rysunki stałe (orientacje) bez pobierania podkładu mapowego z internetu")
+    ap.add_argument("--szablon-orientacji", default=None,
+                    help="plik szablonu DXF dla rysunków stałych (domyślnie dołączony 'szablon.dxf')")
     a = ap.parse_args(argv)
 
     wybrane = tuple(k.strip().lower() for k in a.tylko.split(",") if k.strip())
@@ -232,7 +266,8 @@ def main(argv=None):
 
     opcje = Opcje(plan=a.plan, katalog=a.katalog, kroki=wybrane, adresy=a.adresy,
                   obrot_od=a.obrot_od, zostaw_puste_arkusze=a.zostaw_puste_arkusze,
-                  seed=a.seed, kabel=a.kabel, log=print)
+                  seed=a.seed, kabel=a.kabel, orient_podklad=not a.bez_podkladu,
+                  orient_szablon=a.szablon_orientacji, log=print)
     wynik = uruchom(opcje)
 
     print("\n" + "=" * 60)

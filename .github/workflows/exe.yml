@@ -18,8 +18,8 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Instalacja PyInstaller
-        run: python -m pip install --upgrade pip pyinstaller
+      - name: Instalacja zależności
+        run: python -m pip install --upgrade pip pyinstaller pillow
 
       - name: Test wiersza poleceń (cały łańcuch, bez internetu)
         shell: bash
@@ -28,12 +28,17 @@ jobs:
           test -s "_test/przewieszenia plan - przewieszenia.dxf"
           test -s "_test/zestawienie przewieszenia plan.xlsx"
           test -s "_test/Obliczenia - zestawienie przewieszenia plan.xlsx"
+          python generator_cli.py "szablon.dxf" -o _test_orient --tylko orientacje --bez-podkladu
+          test -s "_test_orient/rysunki stałe/zestawienie_stacji.xlsx"
 
       - name: Budowa exe
         run: >
           pyinstaller --onefile --windowed --name GeneratorNN
           --add-data "przewieszenia baza.dxf;."
           --add-data "arkusze.dxf;."
+          --add-data "szablon.dxf;."
+          --add-data "orientacja.png;."
+          --hidden-import PIL._tkinter_finder
           generator_gui.py
 
       - name: Publikacja (Releases)
@@ -45,4 +50,4 @@ jobs:
           gh release create "$TAG" dist/GeneratorNN.exe \
             --target "${{ github.sha }}" --latest \
             --title "GeneratorNN $TAG" \
-            --notes "Program GeneratorNN.exe - uruchom dwuklikiem, wskaż plik planu DXF, zaznacz co wygenerować (przewieszenia / zestawienie / obliczenia) i wybierz katalog zapisu. Gałąź: ${{ github.ref_name }}."
+            --notes "Program GeneratorNN.exe - uruchom dwuklikiem, wskaż plik planu DXF, zaznacz co wygenerować (przewieszenia / zestawienie / obliczenia / rysunki stałe) i wybierz katalog zapisu. Gałąź: ${{ github.ref_name }}."

@@ -20,7 +20,7 @@ from tkinter import filedialog, messagebox, ttk
 
 from . import pipeline
 
-TYTUL = "Generator projektów nN — przewieszenia · zestawienie · obliczenia"
+TYTUL = "Generator projektów nN — przewieszenia · zestawienie · obliczenia · rysunki stałe"
 
 OPIS_KROKOW = {
     "przewieszenia": ("Przewieszenia (rysunki zwisów)",
@@ -29,6 +29,9 @@ OPIS_KROKOW = {
                       "Zestawienie słupów nN w podziale na stacje transformatorowe — plik XLSX."),
     "obliczenia":    ("Obliczenia nośności",
                       "Obliczenia nośności słupów na podstawie zestawienia — plik XLSX."),
+    "orientacje":    ("Rysunki stałe (plany orientacyjne)",
+                      "Osobny plan orientacyjny DXF dla każdej stacji trafo + zestawienie — z szablonu "
+                      "rysunków stałych (gdy nie wskażesz innego, użyty będzie dołączony szablon)."),
 }
 
 
@@ -36,12 +39,15 @@ class Aplikacja:
     def __init__(self, root: tk.Tk):
         self.root = root
         root.title(TYTUL)
-        root.minsize(760, 620)
+        root.minsize(820, 720)
 
         self.plan = tk.StringVar()
         self.katalog = tk.StringVar()
-        self.kroki = {k: tk.BooleanVar(value=True) for k in pipeline.KROKI}
+        # orientacje domyślnie wyłączone - działają na osobnym szablonie, nie na planie tras
+        self.kroki = {k: tk.BooleanVar(value=(k != "orientacje")) for k in pipeline.KROKI}
         self.adresy_on = tk.BooleanVar(value=True)
+        self.orient_szablon = tk.StringVar()      # pusty = dołączony szablon.dxf
+        self.orient_podklad = tk.BooleanVar(value=True)
         self.pracuje = False
         self._kolejka: "queue.Queue" = queue.Queue()
         self._ostatni_wynik = None
@@ -82,9 +88,16 @@ class Aplikacja:
         ramka_opcje.columnconfigure(1, weight=1)
         ttk.Checkbutton(ramka_opcje, text="Pobieraj nazwy miejscowości i ulic z internetu (GUGiK / OpenStreetMap)",
                         variable=self.adresy_on).grid(row=0, column=0, columnspan=3, sticky="w", padx=8, pady=(8, 2))
-        ttk.Label(ramka_opcje, text="Katalog zapisu:").grid(row=1, column=0, sticky="w", padx=8, pady=8)
-        ttk.Entry(ramka_opcje, textvariable=self.katalog).grid(row=1, column=1, sticky="we", padx=4, pady=8)
-        ttk.Button(ramka_opcje, text="Zmień…", command=self._wybierz_katalog).grid(row=1, column=2, padx=8, pady=8)
+        ttk.Checkbutton(ramka_opcje, text="Rysunki stałe: pobieraj podkład mapowy (OSM/Geoportal; wymaga internetu)",
+                        variable=self.orient_podklad).grid(row=1, column=0, columnspan=3, sticky="w", padx=8, pady=2)
+        ttk.Label(ramka_opcje, text="Szablon rysunków stałych:").grid(row=2, column=0, sticky="w", padx=8, pady=4)
+        ttk.Entry(ramka_opcje, textvariable=self.orient_szablon).grid(row=2, column=1, sticky="we", padx=4, pady=4)
+        ttk.Button(ramka_opcje, text="Wybierz…", command=self._wybierz_szablon).grid(row=2, column=2, padx=8, pady=4)
+        ttk.Label(ramka_opcje, text="(puste = dołączony szablon.dxf; dotyczy tylko kroku „Rysunki stałe”)",
+                  foreground="#777").grid(row=3, column=0, columnspan=3, sticky="w", padx=8, pady=(0, 2))
+        ttk.Label(ramka_opcje, text="Katalog zapisu:").grid(row=4, column=0, sticky="w", padx=8, pady=8)
+        ttk.Entry(ramka_opcje, textvariable=self.katalog).grid(row=4, column=1, sticky="we", padx=4, pady=8)
+        ttk.Button(ramka_opcje, text="Zmień…", command=self._wybierz_katalog).grid(row=4, column=2, padx=8, pady=8)
 
         # --- 4. Akcja ---
         ramka_akcja = ttk.Frame(root)
@@ -128,6 +141,12 @@ class Aplikacja:
         if p:
             self.katalog.set(os.path.normpath(p))
 
+    def _wybierz_szablon(self):
+        p = filedialog.askopenfilename(parent=self.root, title="Szablon rysunków stałych (DXF)",
+                                       filetypes=[("Rysunek DXF", "*.dxf"), ("Wszystkie pliki", "*.*")])
+        if p:
+            self.orient_szablon.set(os.path.normpath(p))
+
     def _odswiez_katalog(self):
         if self.plan.get() and not self.katalog.get():
             self.katalog.set(os.path.dirname(os.path.abspath(self.plan.get())))
@@ -167,6 +186,8 @@ class Aplikacja:
         opcje = pipeline.Opcje(
             plan=plan, katalog=katalog, kroki=kroki,
             adresy="uug,osm" if self.adresy_on.get() else "brak",
+            orient_podklad=self.orient_podklad.get(),
+            orient_szablon=self.orient_szablon.get().strip() or None,
             log=lambda t="": self._kolejka.put(("log", t)),
         )
         threading.Thread(target=self._praca, args=(opcje,), daemon=True).start()

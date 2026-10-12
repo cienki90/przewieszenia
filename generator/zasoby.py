@@ -16,6 +16,7 @@ import sys
 # domyślne nazwy plików szablonów (DXF)
 BAZA = "przewieszenia baza.dxf"
 ARKUSZE = "arkusze.dxf"
+SZABLON_ORIENTACJI = "szablon.dxf"       # szablon rysunków stałych (orientacje arkuszy)
 
 
 def _katalogi():
@@ -54,3 +55,7 @@ def baza_dxf():
 
 def arkusze_dxf():
     return sciezka_zasobu(ARKUSZE)
+
+
+def szablon_orientacji_dxf():
+    return sciezka_zasobu(SZABLON_ORIENTACJI)

@@ -3,10 +3,16 @@ __pycache__/
 
 # katalogi i pliki wynikowe / testowe
 _test/
+_test_orient/
 _out/
+_out2/
 build/
 dist/
 *.spec
+rysunki stałe/
+_gui.png
+.cache/
+generator/.cache/
 
 # pliki tworzone przy uruchomieniu na pliku przykładowym
 przewieszenia plan wynik.dxf
