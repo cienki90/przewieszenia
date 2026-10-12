@@ -1,6 +1,8 @@
-# Generator projektów nN — przewieszenia · zestawienie · obliczenia
+# Generator projektów nN — przewieszenia · zestawienie · obliczenia · rysunki stałe · PZT
 
-Jeden program, który z **jednego pliku planu DXF** tworzy trzy opracowania projektu linii nN
+> **Wersja: mini final** — zapis działającego stanu projektu (gałąź `mini-final`).
+
+Jeden program, który z **jednego pliku planu DXF** tworzy opracowania projektu linii nN
 z projektowanym światłowodem:
 
 | Krok | Co powstaje | Plik |
