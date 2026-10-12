@@ -86,6 +86,8 @@ def zweryfikuj_stacje(lista, mapa, ostrzezenia):
         obecna = _norm_stacja(z.obwody[0][0]) if z.obwody else ""
         if len(kandydaci) == 1:
             wlasciwa = next(iter(kandydaci))
+            # zapamiętaj autorytatywną stację - ma pierwszeństwo także nad starym plikiem CSV
+            z.stacja_pewna = wlasciwa
             if obecna != wlasciwa:
                 # popraw stację we wszystkich wpisach obwodu tego przewieszenia
                 nowe = []
@@ -231,6 +233,16 @@ def main(argv=None):
             for k in POLA[3:]:
                 if k in ("miejscowosc", "ulica") or (r.get(k) or "").strip() not in ("", "?", "ST ?"):
                     auto[k] = (r.get(k) or "").strip()
+        # kontrola stacji ma pierwszeństwo także nad plikiem CSV: gdy zestawienie jednoznacznie
+        # wskazuje stację obu słupów, a w CSV jest inna (np. stary plik sprzed kontroli) - popraw
+        pewna = getattr(z, "stacja_pewna", None)
+        if pewna and _norm_stacja(auto["stacja"]) != pewna and _norm_stacja(auto["stacja2"]) != pewna:
+            if r and _norm_stacja((r.get("stacja") or "")) not in ("", pewna):
+                self_ostrz = (f"Przewieszenie {z.nr}: w pliku opisów (CSV) jest stacja "
+                              f"„{(r.get('stacja') or '').strip()}”, a wg zestawienia to „ST {pewna}” "
+                              f"- użyto stacji z zestawienia (popraw CSV, jeśli to pomyłka).")
+                P.ostrzezenia.append(self_ostrz)
+            auto["stacja"] = "ST " + pewna
         # miejscowość i ulica z internetu: gdy brak wiersza w CSV, pusta miejscowość lub --odswiez-adresy
         if G and (a.odswiez_adresy or not r or not auto["miejscowosc"]):
             adr = G.adres(z.x, z.y)

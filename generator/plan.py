@@ -52,6 +52,7 @@ class Przewieszenie:
     dlugosc: float
     obwody: list  # [(stacja, obwód)]
     odl_od_trasy: float
+    stacja_pewna: str | None = None  # stacja potwierdzona kontrolą (wg zestawienia); nadrzędna nad CSV
 
 
 def _mleader(d):
