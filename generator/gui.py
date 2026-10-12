@@ -37,6 +37,9 @@ OPIS_KROKOW = {
                       "Obliczenia nośności słupów na podstawie zestawienia — plik XLSX."),
     "orientacje":    ("Rysunki stałe (plany orientacyjne)",
                       "Osobny plan orientacyjny DXF dla każdej stacji trafo + zestawienie."),
+    "pzt":           ("Arkusze PZT (A3 1:1000)",
+                      "Dla każdej stacji trafo komplet arkuszy A3 1:1000 pokrywających trasę — na wzór "
+                      "layoutu „a” z pliku. Minimalna liczba arkuszy, zakład 50 m."),
 }
 
 DXF_TYPY = [("Rysunek DXF", "*.dxf"), ("Wszystkie pliki", "*.*")]
@@ -64,7 +67,8 @@ class Aplikacja:
 
         # zakładka "Wszystko"
         self.all_plan = tk.StringVar()
-        self.all_kroki = {k: tk.BooleanVar(value=(k != "orientacje")) for k in pipeline.KROKI}
+        # orientacje i PZT domyślnie wyłączone - wymagają osobnego szablonu/wzorca
+        self.all_kroki = {k: tk.BooleanVar(value=(k not in ("orientacje", "pzt"))) for k in pipeline.KROKI}
 
         # per-moduł: plik wejściowy
         self.we = {k: tk.StringVar() for k in pipeline.KROKI}
@@ -78,6 +82,9 @@ class Aplikacja:
         self.orient_szablon = tk.StringVar()
         self.orient_plan_slupow = tk.StringVar()           # plan ze słupami (źródło miejscowości)
         self.orient_podklad = tk.BooleanVar(value=True)
+        # opcje arkuszy PZT
+        self.pzt_wzorzec = tk.StringVar()                  # plik z layoutem-wzorcem "a" (puste = plan)
+        self.pzt_zaklad = tk.StringVar(value="50")
 
         self._przyciski = []                               # przyciski "Generuj" do blokowania
         self._buduj()
@@ -96,6 +103,7 @@ class Aplikacja:
         self._zakladka_zestawienie()
         self._zakladka_obliczenia()
         self._zakladka_orientacje()
+        self._zakladka_pzt()
 
         self._dol(root)
 
@@ -190,6 +198,24 @@ class Aplikacja:
         ttk.Checkbutton(box, text="Pobieraj podkład mapowy (OSM/Geoportal; wymaga internetu i biblioteki Pillow)",
                         variable=self.orient_podklad).pack(anchor="w", padx=8, pady=6)
         self._przycisk_generuj(f, "Utwórz rysunki stałe", lambda: self._start_modul("orientacje"))
+
+    def _zakladka_pzt(self):
+        f = ttk.Frame(self.nb)
+        self.nb.add(f, text="Arkusze PZT")
+        self._naglowek(f, "Dla każdej stacji trafo powstaje komplet arkuszy A3 1:1000 pokrywających całą trasę "
+                          "(warstwa !tele) w zakresie stacji (poligony !trafo), przy minimalnej liczbie arkuszy. "
+                          "Każdy arkusz to kopia layoutu-wzorca „a” z pliku.")
+        self._pole_pliku(f, "Plik planu DXF:", self.we["pzt"], "Wybierz plik planu DXF")
+        self._pole_pliku(f, "Plik ze wzorcem „a”:", self.pzt_wzorzec,
+                         "Wybierz plik DXF z layoutem-wzorcem „a”")
+        ttk.Label(f, text="(puste = wzorzec „a” z pliku planu powyżej)", foreground="#777").pack(anchor="w", padx=10)
+        box = ttk.LabelFrame(f, text="Opcje")
+        box.pack(fill="x", padx=10, pady=6)
+        r = ttk.Frame(box)
+        r.pack(fill="x", padx=8, pady=6)
+        ttk.Label(r, text="Zakład (wspólny odcinek sąsiednich arkuszy) [m]:").pack(side="left")
+        ttk.Entry(r, textvariable=self.pzt_zaklad, width=6).pack(side="left", padx=6)
+        self._przycisk_generuj(f, "Utwórz arkusze PZT", lambda: self._start_modul("pzt"))
 
     # ---------------------------------------------------------------- dół okna
     def _dol(self, root):
@@ -306,6 +332,8 @@ class Aplikacja:
             orient_podklad=self.orient_podklad.get(),
             orient_szablon=orient_szablon or (self.orient_szablon.get().strip() or None),
             orient_plan_slupow=(self.orient_plan_slupow.get().strip() or None),
+            pzt_wzorzec=(self.pzt_wzorzec.get().strip() or None),
+            pzt_zaklad=_float(self.pzt_zaklad.get(), 50.0),
             log=lambda t="": self._kolejka.put(("log", t)),
         )
         threading.Thread(target=self._praca, args=(opcje,), daemon=True).start()

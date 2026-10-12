@@ -9,6 +9,14 @@ z projektowanym światłowodem:
 | **Zestawienie** | zestawienie słupów nN w podziale na stacje transformatorowe | `zestawienie <plan>.xlsx` |
 | **Obliczenia** | obliczenia nośności słupów na podstawie zestawienia | `Obliczenia - zestawienie <plan>.xlsx` |
 | **Rysunki stałe** | osobny plan orientacyjny DXF dla każdej stacji trafo + zestawienie | `rysunki stałe/<nr>.dxf`, `rysunki stałe/zestawienie_stacji.xlsx` |
+| **Arkusze PZT** | komplet arkuszy A3 1:1000 dla każdej stacji (minimalna liczba, zakład 50 m) | `<plan> - PZT.dxf` |
+
+> **Arkusze PZT** (odpowiednik programu AutoLISP `PZT_ARKUSZE`, przeniesiony na Pythona bez CAD-a):
+> dla każdej stacji trafo tworzy komplet arkuszy A3 1:1000 pokrywających całą trasę (`!tele`)
+> w jej zakresie (poligony `!trafo`), przy minimalnej liczbie arkuszy i zakładzie 50 m między
+> sąsiednimi arkuszami. Każdy arkusz to kopia **layoutu-wzorca „a”** (ramka A3, tabelka, legenda,
+> rzutnia 1:1000) — z pliku planu albo ze wskazanego pliku-wzorca. Wynik to kopia planu z dopisanymi
+> layoutami; model i reszta pliku pozostają bez zmian.
 
 > **Uwaga o rysunkach stałych (orientacjach):** ten krok działa na **szablonie rysunków stałych**
 > (`szablon.dxf` – wszystkie stacje na jednym rysunku, z odnośnikami „STACJA TRAFO” i obrysami
@@ -79,9 +87,11 @@ Najważniejsze opcje wiersza poleceń:
 
 ```
 -o, --katalog         katalog zapisu wyników (domyślnie obok planu)
---tylko a,b,c         które kroki: przewieszenia,zestawienie,obliczenia,orientacje
+--tylko a,b,c         które kroki: przewieszenia,zestawienie,obliczenia,orientacje,pzt
 --szablon-orientacji  szablon DXF dla rysunków stałych (domyślnie dołączony szablon.dxf)
 --bez-podkladu        rysunki stałe bez pobierania podkładu mapowego (bez internetu/Pillow)
+--pzt-wzorzec <plik>  plik DXF z layoutem-wzorcem „a” dla arkuszy PZT (domyślnie plan wejściowy)
+--pzt-zaklad 50       arkusze PZT: wspólny odcinek trasy sąsiednich arkuszy [m]
 --adresy uug,osm      źródła nazw miejscowości/ulic (albo "brak" = bez internetu)
 --obrot-od 50         przęsła dłuższe niż 50 m rysowane pionowo
 --seed 1              powtarzalne obliczenia (kąty słupów narożnych)
@@ -161,5 +171,6 @@ generator/
   zestawienie.py        – zestawienie słupów nN z DXF (z programu "mm")
   obliczenia.py         – obliczenia nośności słupów (z programu "mm")
   orientacje.py         – rysunki stałe: plan orientacyjny per stacja + podkład mapowy (z repo Orientacje-arkusze)
+  pzt.py                – arkusze PZT A3 1:1000 per stacja (z repo ARKUSZE_PZT; rozkład jak generator_wt/arkusze.py)
   zasoby.py             – odnajdywanie plików bazy/arkuszy/szablonu (kod źródłowy lub .exe)
 ```

@@ -30,10 +30,11 @@ from dataclasses import dataclass, field
 from . import obliczenia as mod_obliczenia
 from . import orientacje as mod_orientacje
 from . import przewieszenia as mod_przewieszenia
+from . import pzt as mod_pzt
 from . import zestawienie as mod_zestawienie
 
 # nazwy kroków (kolejność ma znaczenie)
-KROKI = ("przewieszenia", "zestawienie", "obliczenia", "orientacje")
+KROKI = ("przewieszenia", "zestawienie", "obliczenia", "orientacje", "pzt")
 
 
 # ---------------------------------------------------------------------------
@@ -54,6 +55,9 @@ class Opcje:
     orient_podklad: bool = True                  # pobierać podkład mapowy (wymaga internetu + Pillow)
     orient_szablon: str | None = None            # szablon rysunków stałych (gdy inny niż plan; None = dołączony)
     orient_plan_slupow: str | None = None        # plan ze słupami - źródło miejscowości (wiązanie po nr stacji)
+    # arkusze PZT
+    pzt_wzorzec: str | None = None               # plik z layoutem-wzorcem "a" (None = plan wejściowy)
+    pzt_zaklad: float = 50.0                     # wspólny odcinek trasy sąsiednich arkuszy [m]
     log: object = print                          # funkcja logowania (podmieniana w GUI)
 
 
@@ -95,6 +99,7 @@ def domyslne_wyjscia(plan: str, katalog: str | None = None) -> dict:
         "zestawienie": os.path.join(kat, f"zestawienie {baza}.xlsx"),
         "obliczenia": os.path.join(kat, f"Obliczenia - zestawienie {baza}.xlsx"),
         "orientacje": os.path.join(kat, "rysunki stałe"),   # podfolder z planami stacji + zestawieniem
+        "pzt": os.path.join(kat, f"{baza} - PZT.dxf"),       # kopia planu z arkuszami PZT
     }
 
 
@@ -153,6 +158,8 @@ def uruchom(opcje: Opcje) -> Wynik:
                     # miejscowości ustal ze słupów planu i powiąż z szablonem po NUMERZE stacji
                     plan_slupow = plan
                 r = _krok_orientacje(szablon, wyj["orientacje"], opcje, plan_slupow)
+            elif krok == "pzt":
+                r = _krok_pzt(plan, wyj["pzt"], opcje)
             else:
                 continue
         except Exception as ex:  # noqa: BLE001 - raport trafia do użytkownika
@@ -239,6 +246,21 @@ def _krok_orientacje(szablon: str, wyjscie_dir: str, opcje: Opcje, plan_slupow=N
                                            "(czy rysunek zawiera opisy STACJA TRAFO i obrysy !trafo?).")
 
 
+def _krok_pzt(dxf: str, wyjscie: str, opcje: Opcje) -> WynikKroku:
+    """Arkusze PZT: dla każdej stacji trafo komplet arkuszy A3 1:1000 pokrywających trasę.
+
+    Wzorzec layoutu „a” jest w pliku wejściowym albo w osobnym pliku (opcje.pzt_wzorzec)."""
+    def uruchom():
+        return mod_pzt.przetworz(dxf, wyjscie, wzorzec=opcje.pzt_wzorzec,
+                                 zaklad=opcje.pzt_zaklad, log=print)
+    (wynik, raport) = _przechwyc(uruchom)
+    plik = wynik[0] if isinstance(wynik, tuple) else wyjscie
+    ok = os.path.exists(plik)
+    return WynikKroku("pzt", ok=ok, wyjscie=plik if ok else None, raport=raport,
+                      blad=None if ok else "Nie udało się utworzyć arkuszy PZT "
+                                           "(czy w pliku są warstwy !tele, !trafo i layout-wzorzec „a”?).")
+
+
 # ---------------------------------------------------------------------------
 def main(argv=None):
     for strumien in (sys.stdout, sys.stderr):  # polskie znaki w konsoli Windows
@@ -271,6 +293,10 @@ def main(argv=None):
     ap.add_argument("--plan-slupow", default=None,
                     help="plan DXF ze słupami - źródło miejscowości dla rysunków stałych "
                          "(wiązanie z szablonem po numerze stacji trafo; domyślnie plan wejściowy)")
+    ap.add_argument("--pzt-wzorzec", default=None,
+                    help="plik DXF z layoutem-wzorcem „a” dla arkuszy PZT (domyślnie plan wejściowy)")
+    ap.add_argument("--pzt-zaklad", type=float, default=50.0,
+                    help="arkusze PZT: wspólny odcinek trasy sąsiednich arkuszy [m] (domyślnie 50)")
     a = ap.parse_args(argv)
 
     wybrane = tuple(k.strip().lower() for k in a.tylko.split(",") if k.strip())
@@ -281,7 +307,8 @@ def main(argv=None):
     opcje = Opcje(plan=a.plan, katalog=a.katalog, kroki=wybrane, adresy=a.adresy,
                   obrot_od=a.obrot_od, zostaw_puste_arkusze=a.zostaw_puste_arkusze,
                   seed=a.seed, kabel=a.kabel, orient_podklad=not a.bez_podkladu,
-                  orient_szablon=a.szablon_orientacji, orient_plan_slupow=a.plan_slupow, log=print)
+                  orient_szablon=a.szablon_orientacji, orient_plan_slupow=a.plan_slupow,
+                  pzt_wzorzec=a.pzt_wzorzec, pzt_zaklad=a.pzt_zaklad, log=print)
     wynik = uruchom(opcje)
 
     print("\n" + "=" * 60)
