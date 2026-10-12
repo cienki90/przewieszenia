@@ -46,6 +46,12 @@ except ImportError:  # uruchomienie bezpośrednie: python generator/przewieszeni
 POLA = ["nr", "x", "y", "slup_l", "typ_l", "slup_p", "typ_p", "rozpietosc",
         "stacja", "obwod", "stacja2", "obwod2", "miejscowosc", "ulica"]
 
+# Pola odczytywane WYŁĄCZNIE z rysunku - CSV ich nie nadpisuje (poprawka rysunku zawsze
+# ma pierwszeństwo). To dane geometryczne/techniczne: numery i typy słupów oraz rozpiętość.
+POLA_Z_RYSUNKU = ("slup_l", "typ_l", "slup_p", "typ_p", "rozpietosc")
+# Pola, które użytkownik może ręcznie poprawić w CSV (opisowe + ewentualna korekta stacji/obwodu).
+POLA_Z_CSV = ("stacja", "obwod", "stacja2", "obwod2", "miejscowosc", "ulica")
+
 
 def _norm_stacja(st):
     """'ST 05-0507' / '05-0507' -> '05-0507' (do porównań)."""
@@ -229,8 +235,9 @@ def main(argv=None):
                     obwod2=z.obwody[1][1] if len(z.obwody) > 1 else "",
                     miejscowosc="", ulica="")
         r = opisy.get((round(z.x, 2), round(z.y, 2)))
-        if r:  # wartości z CSV mają pierwszeństwo (puste pole = wartość automatyczna, poza opisami)
-            for k in POLA[3:]:
+        if r:  # z CSV bierzemy TYLKO pola opisowe/ręczne; dane z rysunku (słupy, typy, rozpiętość)
+               # są zawsze odczytywane na nowo, żeby poprawka rysunku nie była ignorowana
+            for k in POLA_Z_CSV:
                 if k in ("miejscowosc", "ulica") or (r.get(k) or "").strip() not in ("", "?", "ST ?"):
                     auto[k] = (r.get(k) or "").strip()
         # kontrola stacji ma pierwszeństwo także nad plikiem CSV: gdy zestawienie jednoznacznie

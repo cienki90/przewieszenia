@@ -43,6 +43,12 @@ Dodatkowo krok **Przewieszenia** tworzy plik **kontrolny** `<plan> - kontrola.dx
 na drukowalnej warstwie `_PRZEWIESZENIA_KONTROLA`. Ten sam numer pojawia się na odpowiadającym
 rysunku zwisu, dzięki czemu łatwo sprawdzić, który rysunek dotyczy którego przęsła na planie.
 
+> **Plik opisów `<plan>_opisy.csv`.** Dane geometryczne/techniczne (numery i typy słupów,
+> rozpiętość przęsła) są **zawsze odczytywane z rysunku** — po poprawieniu rysunku i ponownym
+> uruchomieniu program bierze nowe wartości, nie stare z CSV. Z pliku CSV pobierane są tylko pola
+> opisowe/ręczne: miejscowość, ulica oraz ewentualna korekta stacji/obwodu. Dzięki temu CSV nie
+> „zamraża” danych z rysunku.
+
 Program łączy wcześniejsze narzędzia (generator przewieszeń, programy „zestawienie” i „obliczenia”
 z repozytorium `mm` oraz „rysunki stałe” z repo `Orientacje-arkusze`) w jedną aplikację z oknem.
 Wymaga **Pythona 3.9+** ze standardowym `tkinter`; biblioteka Pillow jest potrzebna tylko do
