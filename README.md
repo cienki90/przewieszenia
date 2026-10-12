@@ -43,6 +43,11 @@ z projektowanym światłowodem:
 > (`03-0541` = `0541` = `541`). Gdy nie ma ani planu ze słupami, ani słupów w szablonie,
 > program wraca do położenia odnośnika stacji.
 
+Arkusze przewieszeń są **segregowane po stacjach trafo** (w kolejności numeru stacji):
+na jednym arkuszu nie ma rysunków z dwóch różnych stacji — zmiana stacji zaczyna nowy arkusz
+(ostatni arkusz stacji może mieć jeden rysunek, jeśli liczba jest nieparzysta). Przęsło łączące
+dwie stacje jest **powtórzone na arkuszach obu stacji**.
+
 Dodatkowo krok **Przewieszenia** tworzy plik **kontrolny** `<plan> - kontrola.dxf` — kopię planu
 (oryginał pozostaje nietknięty) z **numerem przewieszenia wpisanym w miejscu każdego zaznaczenia**,
 na drukowalnej warstwie `_PRZEWIESZENIA_KONTROLA`. Ten sam numer pojawia się na odpowiadającym

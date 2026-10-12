@@ -61,6 +61,18 @@ def _norm_stacja(st):
     return s
 
 
+def _klucz_stacji(st):
+    """Klucz sortowania stacji po numerze (numerycznie). Stacje bez numeru / „ST ?” na końcu.
+
+    '05-0497' -> (0, 5, 497), '05-0498' -> (0, 5, 498); nierozpoznane -> (1, ...) na końcu."""
+    import re as _re
+    n = _norm_stacja(st)
+    if not n or "?" in n:
+        return (2, n or "")
+    liczby = tuple(int(x) for x in _re.findall(r"\d+", n))
+    return (0, liczby) if liczby else (1, n.lower())
+
+
 def _stacja_slupa(mapa, x, y, tol=2.0):
     """Numer stacji dla słupa o współrzędnych (x, y) wg mapy z zestawienia (najbliższy)."""
     import math
@@ -216,7 +228,6 @@ def main(argv=None):
         SZER, WYS = 29.1, 43.95
     DY_GORA, DY_DOL = 8.37, -9.51   # położenie rysunków względem środka widoku arkusza
     wiersze = []
-    ark, slot = 0, 0                # bieżący arkusz i miejsce (0 = górne, 1 = dolne)
     rozmieszczenie = []             # (nr przewieszenia, nazwa arkusza)
 
     def srodek(i):
@@ -225,6 +236,8 @@ def main(argv=None):
             return cx, cy, W.arkusze[i]["nazwa"]
         return i * 100.0, 8.9, str(i + 1)
 
+    # --- Faza 1: ustal dane każdego przewieszenia (stacja, słupy, miejscowość, rysunek) ---
+    pozycje = []        # [(nr_porz_stacji, z, R, pionowo, w, nazwa_stacji)]
     for z in lista:
         auto = dict(nr=z.nr, x=f"{z.x:.2f}", y=f"{z.y:.2f}",
                     slup_l=z.slup_l.numer or "?", typ_l=z.slup_l.typ or "",
@@ -275,16 +288,31 @@ def main(argv=None):
         pionowo = (a.obrot_od > 0 and L > a.obrot_od) or w + 2.6 > SZER
         d.szer_okna = WYS if pionowo else SZER
         R = zbuduj(d)
+        # stacje tego przewieszenia (przęsło międzystacyjne -> rysunek trafia do OBU stacji)
+        stacje_z = [s for s, _ob in obw if s]
+        if not stacje_z:
+            stacje_z = [""]            # bez rozpoznanej stacji - jedna "pusta" grupa
+        for st in dict.fromkeys(stacje_z):   # bez duplikatów, z zachowaniem kolejności
+            pozycje.append((_klucz_stacji(st), z, R, pionowo, w, st))
+
+    # --- Faza 2: segreguj po stacji (po numerze) i układaj - na arkuszu tylko jedna stacja ---
+    pozycje.sort(key=lambda p: p[0])
+    ark, slot, biez_stacja = -1, 0, None
+    for _klucz, z, R, pionowo, w, st in pozycje:
+        if st != biez_stacja:          # nowa stacja -> zacznij nowy arkusz
+            ark += 1
+            slot = 0
+            biez_stacja = st
         if pionowo:
             if slot == 1:
                 ark, slot = ark + 1, 0
             cx, cy, nazwa = srodek(ark)
             u0, v0, u1, v1 = obwiednia(R)
             if u1 - u0 > WYS:
-                P.ostrzezenia.append(f"Przewieszenie {z.nr} ({L} m) nie mieści się w całości w arkuszu {nazwa}")
+                P.ostrzezenia.append(f"Przewieszenie {z.nr} nie mieści się w całości w arkuszu {nazwa}")
             W.dodaj(R, cx + (v0 + v1) / 2, cy - (u0 + u1) / 2, rot=90)
             rozmieszczenie.append((z.nr, nazwa))
-            ark += 1
+            ark, slot = ark + 1, 0
         else:
             cx, cy, nazwa = srodek(ark)
             W.dodaj(R, cx - w / 2, cy + (DY_GORA if slot == 0 else DY_DOL), rot=0)
@@ -313,12 +341,16 @@ def main(argv=None):
             print(f"Uwaga: nie udało się utworzyć pliku kontrolnego: {ex}", file=sys.stderr)
 
     n_ark = len({n for _, n in rozmieszczenie})
-    print(f"Utworzono {len(lista)} rysunków przewieszeń na {n_ark} arkuszach -> {wynik}")
+    print(f"Utworzono {len(rozmieszczenie)} rysunków przewieszeń na {n_ark} arkuszach "
+          f"(z {len(lista)} przewieszeń) -> {wynik}")
     print(f"Opisy (do edycji): {opisy_path}")
-    ark_nr = dict(rozmieszczenie)
+    ark_nr = {}          # nr przewieszenia -> lista arkuszy (przęsło międzystacyjne jest na kilku)
+    for nr, nazwa in rozmieszczenie:
+        ark_nr.setdefault(nr, []).append(nazwa)
     for w in wiersze:
         obw = f"{w['stacja']} {w['obwod']}" + (f" + {w['stacja2']} {w['obwod2']}" if w["stacja2"] else "")
-        print(f"  {w['nr']:>3}. [arkusz {ark_nr.get(w['nr'], '?')}] Słup {w['slup_l']} ({w['typ_l']}) - Słup {w['slup_p']} ({w['typ_p']}), "
+        ark_opis = ", ".join(ark_nr.get(w["nr"], ["?"]))
+        print(f"  {w['nr']:>3}. [arkusz {ark_opis}] Słup {w['slup_l']} ({w['typ_l']}) - Słup {w['slup_p']} ({w['typ_p']}), "
               f"{w['rozpietosc']} m, {obw}  {w['miejscowosc']} {w['ulica']}".rstrip())
     for o in P.ostrzezenia:
         print("Uwaga:", o, file=sys.stderr)
