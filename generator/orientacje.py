@@ -1331,6 +1331,7 @@ class Station:
     place_source: str = ""
     place_check: str = ""
     place_others: str = ""
+    place_covered: list = field(default_factory=list)   # [(miejscowość, liczba słupów)] - zasięg stacji
     scale: int = 0
     dxf_name: str = ""
     basemap_name: str = ""
@@ -1561,9 +1562,14 @@ class Generator:
             raise ValueError("Nie znaleziono w szablonie odnośników 'STACJA TRAFO ...'")
         x0 = self.stations[0].x
         self.zone = pl2000_zone_from_easting(x0)
-        # nazwę miejscowości ustalamy na podstawie położenia SŁUPÓW danej stacji
-        # (nie z grotu odnośnika) - do przypisania słup->stacja korzystamy z zestawienia
-        self.punkt_slupow = self._punkty_slupow_stacji(opt.template)
+        # słupy należące do każdej stacji (wg zestawienia) - podstawa do ustalenia miejscowości
+        self.slupy_stacji = self._slupy_stacji(opt.template)       # {nr stacji: [(x, y), ...]}
+        self.punkt_slupow = {}                                     # {nr stacji: (x, y)} - medoid (podkład/fallback)
+        for st, pts in self.slupy_stacji.items():
+            cx = sum(p[0] for p in pts) / len(pts)
+            cy = sum(p[1] for p in pts) / len(pts)
+            self.punkt_slupow[st] = min(pts, key=lambda p: (p[0] - cx) ** 2 + (p[1] - cy) ** 2)
+        self.miejscowosci_stacji = {}       # {nr stacji: [(miejscowość, liczba słupów), ...]}
         self._detect_table_texts()
         self.names = load_names_csv(opt.names_csv) if opt.names_csv else {}
         self.geocoder = self.basemap = None
@@ -1583,14 +1589,13 @@ class Generator:
             self.basemap.error_log = opt.out_dir / "bledy_podkladu.log"
             self.basemap.refresh = opt.refresh_basemap
 
-    def _punkty_slupow_stacji(self, dxf_path):
-        """Zwraca {numer_stacji: (x, y)} - reprezentatywny punkt SŁUPÓW danej stacji.
+    def _slupy_stacji(self, dxf_path):
+        """Zwraca {numer_stacji: [(x, y), ...]} - WSZYSTKIE słupy danej stacji.
 
         Przypisanie słup->stacja bierzemy z zestawienia (ta sama logika: obszary
-        !trafo_<nr> + drzewo sieci). Punkt = słup najbliższy średniej (medoid), żeby
-        nazwa miejscowości wychodziła z realnej lokalizacji słupów, a nie z grotu
-        odnośnika stacji."""
-        punkty = {}
+        !trafo_<nr> + drzewo sieci). Dzięki temu wiadomo, jakie miejscowości obejmuje
+        stacja (po geokodowaniu każdego słupa)."""
+        wg_stacji = {}
         try:
             try:
                 from . import zestawienie as _zest
@@ -1600,17 +1605,35 @@ class Generator:
         except Exception as ex:  # noqa: BLE001 - gdy zestawienie nie zadziała, zostaje grot odnośnika
             self.log(f"Uwaga: nie udało się ustalić słupów stacji z zestawienia ({ex}); "
                      "nazwy miejscowości wg położenia odnośnika stacji.")
-            return punkty
-        wg_stacji = {}
+            return wg_stacji
         for x, y, _nr, st in mapa:
             wg_stacji.setdefault(_norm_name_station(st), []).append((x, y))
-        for st, pts in wg_stacji.items():
-            cx = sum(p[0] for p in pts) / len(pts)
-            cy = sum(p[1] for p in pts) / len(pts)
-            # medoid: słup najbliższy środkowi (odporny na pojedyncze odstające słupy)
-            mx, my = min(pts, key=lambda p: (p[0] - cx) ** 2 + (p[1] - cy) ** 2)
-            punkty[st] = (mx, my)
-        return punkty
+        return wg_stacji
+
+    def _miejscowosci_stacji(self, st: "Station"):
+        """Lista (miejscowość, liczba słupów) dla stacji - z geokodowania KAŻDEGO słupa.
+
+        Wynik posortowany malejąco wg liczby słupów. Puste, gdy brak słupów albo
+        geokodowania. Wyniki geokodowania są w pamięci podręcznej, więc powtórne
+        uruchomienia są szybkie."""
+        klucz = _norm_name_station(st.number)
+        if klucz in self.miejscowosci_stacji:
+            return self.miejscowosci_stacji[klucz]
+        pts = self.slupy_stacji.get(klucz, [])
+        liczby = {}
+        if pts and self.geocoder:
+            for (x, y) in pts:
+                lat, lon = pl2000_to_wgs84(x, y, self.zone)
+                try:
+                    r = self.geocoder.resolve(lat, lon, x, y, self.zone)
+                except Exception:  # noqa: BLE001 - pojedynczy słup nie wywraca całości
+                    continue
+                nazwa = (r.get("miejscowosc") or "").strip()
+                if nazwa:
+                    liczby[nazwa] = liczby.get(nazwa, 0) + 1
+        wynik = sorted(liczby.items(), key=lambda kv: (-kv[1], kv[0]))
+        self.miejscowosci_stacji[klucz] = wynik
+        return wynik
 
     # --- analiza szablonu ----------------------------------------------------
     def _table_entities(self, doc):
@@ -1646,15 +1669,35 @@ class Generator:
 
     # --- nazwy miejscowości ------------------------------------------------------
     def resolve_place(self, st: Station):
-        # punkt do geokodowania: położenie SŁUPÓW stacji (wg zestawienia), a gdy brak -
-        # grot odnośnika stacji
+        # punkt do geokodowania (podkład / dane adm.): położenie SŁUPÓW stacji (medoid),
+        # a gdy brak - grot odnośnika stacji
         gx, gy = self.punkt_slupow.get(_norm_name_station(st.number), (st.x, st.y))
-        if (gx, gy) != (st.x, st.y):
-            st.notes.append(f"miejscowość wg położenia słupów stacji ({gx:.0f}, {gy:.0f})")
         lat, lon = pl2000_to_wgs84(gx, gy, self.zone)
         st.place = {"lat": lat, "lon": lon, "miejscowosc": "", "gmina": "", "powiat": "",
                     "wojewodztwo": ""}
-        if self.geocoder:
+        # 1) miejscowość z geokodowania KAŻDEGO słupa stacji - wiemy, jakie miejscowości
+        #    obejmuje stacja; nazwą w tabelce jest ta z największą liczbą słupów
+        pokryte = self._miejscowosci_stacji(st)
+        st.place_covered = pokryte
+        if pokryte:
+            st.place["miejscowosc"] = pokryte[0][0]
+            st.place_source = "słupy stacji (zestawienie + geokodowanie)"
+            opis = ", ".join(f"{n} ({c} sł.)" for n, c in pokryte)
+            st.place_others = opis
+            if len(pokryte) > 1:
+                st.notes.append(f"stacja obejmuje miejscowości: {opis} - w tabelce wpisano „{pokryte[0][0]}”")
+            # dane administracyjne (gmina/powiat/woj.) z punktu reprezentatywnego
+            if self.geocoder:
+                try:
+                    r = self.geocoder.resolve(lat, lon, gx, gy, self.zone)
+                    for k in ("gmina", "powiat", "wojewodztwo"):
+                        st.place[k] = r.get(k, "")
+                except Exception:  # noqa: BLE001
+                    pass
+        elif self.geocoder:
+            # 2) brak słupów (np. sam szablon) - jak dawniej: geokoduj punkt reprezentatywny
+            if (gx, gy) != (st.x, st.y):
+                st.notes.append(f"miejscowość wg położenia słupów stacji ({gx:.0f}, {gy:.0f})")
             r = self.geocoder.resolve(lat, lon, gx, gy, self.zone)
             for k in ("miejscowosc", "gmina", "powiat", "wojewodztwo"):
                 st.place[k] = r[k]

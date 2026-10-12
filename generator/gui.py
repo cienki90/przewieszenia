@@ -1,11 +1,17 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Okienkowy interfejs zunifikowanego generatora (przewieszenia + zestawienie + obliczenia).
+"""Okienkowy interfejs zunifikowanego generatora - z osobnymi zakładkami dla każdego modułu.
 
-Jedno okno: użytkownik wskazuje plik planu DXF, zaznacza, co ma powstać,
-wybiera katalog zapisu i klika „Generuj". Praca odbywa się w osobnym wątku,
-a postęp i raport są wyświetlane na bieżąco. Program nie wymaga instalowania
-żadnych bibliotek (sam Python ze standardowym tkinter).
+Zakładki:
+  * Wszystko (łańcuch) - zaznaczasz, co ma powstać z jednego planu DXF,
+  * Przewieszenia      - rysunki zwisów + kontrola (kopia planu z numerami, kontrola stacji),
+  * Zestawienie        - zestawienie słupów nN w podziale na stacje (XLSX),
+  * Obliczenia         - obliczenia nośności słupów (XLSX, z zestawienia),
+  * Rysunki stałe      - plan orientacyjny DXF dla każdej stacji trafo + zestawienie.
+
+Wspólny dół okna: katalog zapisu, pasek postępu, dziennik przebiegu, pasek stanu.
+Praca odbywa się w osobnym wątku. Program wymaga tylko Pythona z tkinter
+(Pillow - opcjonalnie, tylko do podkładu mapowego w rysunkach stałych).
 """
 from __future__ import annotations
 
@@ -30,130 +36,200 @@ OPIS_KROKOW = {
     "obliczenia":    ("Obliczenia nośności",
                       "Obliczenia nośności słupów na podstawie zestawienia — plik XLSX."),
     "orientacje":    ("Rysunki stałe (plany orientacyjne)",
-                      "Osobny plan orientacyjny DXF dla każdej stacji trafo + zestawienie — z szablonu "
-                      "rysunków stałych (gdy nie wskażesz innego, użyty będzie dołączony szablon)."),
+                      "Osobny plan orientacyjny DXF dla każdej stacji trafo + zestawienie."),
 }
+
+DXF_TYPY = [("Rysunek DXF", "*.dxf"), ("Wszystkie pliki", "*.*")]
+
+
+def _wybierz_plik(parent, var, tytul):
+    p = filedialog.askopenfilename(parent=parent, title=tytul, filetypes=DXF_TYPY)
+    if p:
+        var.set(os.path.normpath(p))
 
 
 class Aplikacja:
     def __init__(self, root: tk.Tk):
         self.root = root
         root.title(TYTUL)
-        root.minsize(820, 720)
+        root.minsize(840, 760)
 
-        self.plan = tk.StringVar()
+        # wspólne
         self.katalog = tk.StringVar()
-        # orientacje domyślnie wyłączone - działają na osobnym szablonie, nie na planie tras
-        self.kroki = {k: tk.BooleanVar(value=(k != "orientacje")) for k in pipeline.KROKI}
-        self.adresy_on = tk.BooleanVar(value=True)
-        self.orient_szablon = tk.StringVar()      # pusty = dołączony szablon.dxf
-        self.orient_podklad = tk.BooleanVar(value=True)
+        self.adresy_on = tk.BooleanVar(value=True)         # nazwy ulic/miejscowości z internetu
         self.pracuje = False
         self._kolejka: "queue.Queue" = queue.Queue()
         self._ostatni_wynik = None
+        self._ostatni_katalog = ""
 
+        # zakładka "Wszystko"
+        self.all_plan = tk.StringVar()
+        self.all_kroki = {k: tk.BooleanVar(value=(k != "orientacje")) for k in pipeline.KROKI}
+
+        # per-moduł: plik wejściowy
+        self.we = {k: tk.StringVar() for k in pipeline.KROKI}
+
+        # opcje przewieszeń
+        self.pw_obrot = tk.StringVar(value="50")
+        # opcje obliczeń
+        self.obl_seed = tk.StringVar()
+        self.obl_kabel = tk.StringVar(value=str(pipeline.mod_obliczenia.DOMYSLNY_KABEL))
+        # opcje rysunków stałych
+        self.orient_szablon = tk.StringVar()
+        self.orient_podklad = tk.BooleanVar(value=True)
+
+        self._przyciski = []                               # przyciski "Generuj" do blokowania
         self._buduj()
-        self.plan.trace_add("write", lambda *_: self._odswiez_katalog())
 
-    # ------------------------------------------------------------------ UI
+    # ================================================================= budowa UI
     def _buduj(self):
-        pad = dict(padx=10, pady=6)
         root = self.root
         root.columnconfigure(0, weight=1)
+        root.rowconfigure(1, weight=1)
 
-        # --- 1. Plik planu DXF ---
-        ramka_plik = ttk.LabelFrame(root, text="1. Plik planu DXF (dane wejściowe)")
-        ramka_plik.grid(row=0, column=0, sticky="we", **pad)
-        ramka_plik.columnconfigure(0, weight=1)
-        ttk.Entry(ramka_plik, textvariable=self.plan).grid(row=0, column=0, sticky="we", padx=8, pady=8)
-        ttk.Button(ramka_plik, text="Wybierz…", command=self._wybierz_plan).grid(row=0, column=1, padx=8, pady=8)
+        self.nb = ttk.Notebook(root)
+        self.nb.grid(row=0, column=0, sticky="nwe", padx=8, pady=(8, 4))
 
-        # --- 2. Co wygenerować ---
-        ramka_kroki = ttk.LabelFrame(root, text="2. Co wygenerować")
-        ramka_kroki.grid(row=1, column=0, sticky="we", **pad)
-        ramka_kroki.columnconfigure(0, weight=1)
-        for i, k in enumerate(pipeline.KROKI):
+        self._zakladka_wszystko()
+        self._zakladka_przewieszenia()
+        self._zakladka_zestawienie()
+        self._zakladka_obliczenia()
+        self._zakladka_orientacje()
+
+        self._dol(root)
+
+    def _naglowek(self, ramka, tekst):
+        ttk.Label(ramka, text=tekst, foreground="#555", wraplength=760,
+                  justify="left").pack(anchor="w", padx=10, pady=(8, 6))
+
+    def _pole_pliku(self, ramka, etykieta, var, tytul):
+        f = ttk.Frame(ramka)
+        f.pack(fill="x", padx=10, pady=4)
+        ttk.Label(f, text=etykieta, width=22).pack(side="left")
+        ttk.Entry(f, textvariable=var).pack(side="left", fill="x", expand=True, padx=4)
+        ttk.Button(f, text="Wybierz…", command=lambda: _wybierz_plik(self.root, var, tytul)).pack(side="left")
+
+    def _przycisk_generuj(self, ramka, tekst, komenda):
+        b = ttk.Button(ramka, text="▶  " + tekst, command=komenda)
+        b.pack(anchor="w", padx=10, pady=10)
+        self._przyciski.append(b)
+        return b
+
+    # ---------------------------------------------------------------- zakładki
+    def _zakladka_wszystko(self):
+        f = ttk.Frame(self.nb)
+        self.nb.add(f, text="Wszystko (łańcuch)")
+        self._naglowek(f, "Z jednego planu DXF utwórz od razu kilka opracowań. Zaznacz, co ma powstać.")
+        self._pole_pliku(f, "Plik planu DXF:", self.all_plan, "Wybierz plik planu DXF")
+        box = ttk.LabelFrame(f, text="Co wygenerować")
+        box.pack(fill="x", padx=10, pady=6)
+        for k in pipeline.KROKI:
             tytul, opis = OPIS_KROKOW[k]
-            cb = ttk.Checkbutton(ramka_kroki, text=tytul, variable=self.kroki[k], command=self._odswiez_przyciski)
-            cb.grid(row=i * 2, column=0, sticky="w", padx=8, pady=(8 if i == 0 else 2, 0))
-            ttk.Label(ramka_kroki, text=opis, foreground="#555").grid(row=i * 2 + 1, column=0, sticky="w",
-                                                                      padx=30, pady=(0, 4))
-        ttk.Label(ramka_kroki, text="Wskazówka: „Obliczenia” potrzebują zestawienia — zostanie ono "
-                                    "utworzone automatycznie, jeśli nie zaznaczysz go osobno.",
-                  foreground="#777", wraplength=680).grid(row=99, column=0, sticky="w", padx=8, pady=(2, 8))
+            ttk.Checkbutton(box, text=tytul, variable=self.all_kroki[k]).pack(anchor="w", padx=8, pady=(6, 0))
+            ttk.Label(box, text=opis, foreground="#777").pack(anchor="w", padx=30, pady=(0, 2))
+        ttk.Label(f, text="„Obliczenia” potrzebują zestawienia — powstanie automatycznie, jeśli nie zaznaczysz "
+                          "go osobno. „Rysunki stałe” używają szablonu z zakładki obok (lub dołączonego).",
+                  foreground="#777", wraplength=760, justify="left").pack(anchor="w", padx=10, pady=4)
+        self._przycisk_generuj(f, "Generuj zaznaczone", self._start_wszystko)
 
-        # --- 3. Opcje i katalog ---
-        ramka_opcje = ttk.LabelFrame(root, text="3. Opcje i miejsce zapisu")
-        ramka_opcje.grid(row=2, column=0, sticky="we", **pad)
-        ramka_opcje.columnconfigure(1, weight=1)
-        ttk.Checkbutton(ramka_opcje, text="Pobieraj nazwy miejscowości i ulic z internetu (GUGiK / OpenStreetMap)",
-                        variable=self.adresy_on).grid(row=0, column=0, columnspan=3, sticky="w", padx=8, pady=(8, 2))
-        ttk.Checkbutton(ramka_opcje, text="Rysunki stałe: pobieraj podkład mapowy (OSM/Geoportal; wymaga internetu)",
-                        variable=self.orient_podklad).grid(row=1, column=0, columnspan=3, sticky="w", padx=8, pady=2)
-        ttk.Label(ramka_opcje, text="Szablon rysunków stałych:").grid(row=2, column=0, sticky="w", padx=8, pady=4)
-        ttk.Entry(ramka_opcje, textvariable=self.orient_szablon).grid(row=2, column=1, sticky="we", padx=4, pady=4)
-        ttk.Button(ramka_opcje, text="Wybierz…", command=self._wybierz_szablon).grid(row=2, column=2, padx=8, pady=4)
-        ttk.Label(ramka_opcje, text="(puste = dołączony szablon.dxf; dotyczy tylko kroku „Rysunki stałe”)",
-                  foreground="#777").grid(row=3, column=0, columnspan=3, sticky="w", padx=8, pady=(0, 2))
-        ttk.Label(ramka_opcje, text="Katalog zapisu:").grid(row=4, column=0, sticky="w", padx=8, pady=8)
-        ttk.Entry(ramka_opcje, textvariable=self.katalog).grid(row=4, column=1, sticky="we", padx=4, pady=8)
-        ttk.Button(ramka_opcje, text="Zmień…", command=self._wybierz_katalog).grid(row=4, column=2, padx=8, pady=8)
+    def _zakladka_przewieszenia(self):
+        f = ttk.Frame(self.nb)
+        self.nb.add(f, text="Przewieszenia")
+        self._naglowek(f, "Rysunki zwisów przęseł linii nN ze światłowodem. Dodatkowo powstaje kopia planu "
+                          "z numerami przewieszeń (kontrola) i sprawdzane jest przypisanie stacji trafo.")
+        self._pole_pliku(f, "Plik planu DXF:", self.we["przewieszenia"], "Wybierz plik planu DXF")
+        box = ttk.LabelFrame(f, text="Opcje")
+        box.pack(fill="x", padx=10, pady=6)
+        r = ttk.Frame(box)
+        r.pack(fill="x", padx=8, pady=6)
+        ttk.Label(r, text="Przęsła dłuższe niż [m] rysuj pionowo:").pack(side="left")
+        ttk.Entry(r, textvariable=self.pw_obrot, width=6).pack(side="left", padx=6)
+        ttk.Label(box, text="(0 = tylko gdy rysunek nie mieści się poziomo w arkuszu)",
+                  foreground="#777").pack(anchor="w", padx=8, pady=(0, 6))
+        self._przycisk_generuj(f, "Utwórz przewieszenia", lambda: self._start_modul("przewieszenia"))
 
-        # --- 4. Akcja ---
-        ramka_akcja = ttk.Frame(root)
-        ramka_akcja.grid(row=3, column=0, sticky="we", **pad)
-        ramka_akcja.columnconfigure(1, weight=1)
-        self.btn = ttk.Button(ramka_akcja, text="▶  Generuj", command=self._start)
-        self.btn.grid(row=0, column=0, sticky="w")
-        self.pasek = ttk.Progressbar(ramka_akcja, mode="indeterminate")
-        self.pasek.grid(row=0, column=1, sticky="we", padx=10)
-        self.btn_otworz = ttk.Button(ramka_akcja, text="Otwórz folder wyniku",
+    def _zakladka_zestawienie(self):
+        f = ttk.Frame(self.nb)
+        self.nb.add(f, text="Zestawienie")
+        self._naglowek(f, "Zestawienie słupów nN w podziale na stacje transformatorowe (osobny arkusz na stację, "
+                          "arkusz „kontrola” ze sprawdzeniem). Plik XLSX.")
+        self._pole_pliku(f, "Plik DXF:", self.we["zestawienie"], "Wybierz plik DXF")
+        self._przycisk_generuj(f, "Utwórz zestawienie", lambda: self._start_modul("zestawienie"))
+
+    def _zakladka_obliczenia(self):
+        f = ttk.Frame(self.nb)
+        self.nb.add(f, text="Obliczenia")
+        self._naglowek(f, "Obliczenia nośności słupów. Jako wejście podaj plik DXF — zestawienie potrzebne do "
+                          "obliczeń powstanie automatycznie (w pliku tymczasowym).")
+        self._pole_pliku(f, "Plik DXF:", self.we["obliczenia"], "Wybierz plik DXF")
+        box = ttk.LabelFrame(f, text="Opcje")
+        box.pack(fill="x", padx=10, pady=6)
+        r = ttk.Frame(box)
+        r.pack(fill="x", padx=8, pady=6)
+        ttk.Label(r, text="Domyślny rodzaj kabla (1-11):").pack(side="left")
+        ttk.Entry(r, textvariable=self.obl_kabel, width=5).pack(side="left", padx=6)
+        ttk.Label(r, text="Ziarno losowania (powtarzalne kąty):").pack(side="left", padx=(16, 0))
+        ttk.Entry(r, textvariable=self.obl_seed, width=8).pack(side="left", padx=6)
+        self._przycisk_generuj(f, "Wykonaj obliczenia", lambda: self._start_modul("obliczenia"))
+
+    def _zakladka_orientacje(self):
+        f = ttk.Frame(self.nb)
+        self.nb.add(f, text="Rysunki stałe")
+        self._naglowek(f, "Dla każdej stacji trafo z szablonu DXF powstaje osobny plan orientacyjny + zestawienie. "
+                          "Nazwa miejscowości w tabelce jest ustalana z położenia słupów stacji (wg zestawienia).")
+        self._pole_pliku(f, "Szablon rysunków stałych:", self.we["orientacje"], "Wybierz szablon DXF")
+        ttk.Label(f, text="(puste = dołączony szablon.dxf)", foreground="#777").pack(anchor="w", padx=10)
+        box = ttk.LabelFrame(f, text="Opcje")
+        box.pack(fill="x", padx=10, pady=6)
+        ttk.Checkbutton(box, text="Pobieraj podkład mapowy (OSM/Geoportal; wymaga internetu i biblioteki Pillow)",
+                        variable=self.orient_podklad).pack(anchor="w", padx=8, pady=6)
+        self._przycisk_generuj(f, "Utwórz rysunki stałe", lambda: self._start_modul("orientacje"))
+
+    # ---------------------------------------------------------------- dół okna
+    def _dol(self, root):
+        dol = ttk.Frame(root)
+        dol.grid(row=1, column=0, sticky="nsew", padx=8, pady=4)
+        dol.columnconfigure(0, weight=1)
+        dol.rowconfigure(2, weight=1)
+
+        kat = ttk.Frame(dol)
+        kat.grid(row=0, column=0, sticky="we", pady=2)
+        kat.columnconfigure(1, weight=1)
+        ttk.Label(kat, text="Katalog zapisu:").grid(row=0, column=0, sticky="w")
+        ttk.Entry(kat, textvariable=self.katalog).grid(row=0, column=1, sticky="we", padx=6)
+        ttk.Button(kat, text="Zmień…", command=self._wybierz_katalog).grid(row=0, column=2)
+        ttk.Checkbutton(kat, text="Nazwy miejscowości i ulic z internetu (GUGiK / OpenStreetMap)",
+                        variable=self.adresy_on).grid(row=1, column=0, columnspan=3, sticky="w", pady=(4, 0))
+
+        akcja = ttk.Frame(dol)
+        akcja.grid(row=1, column=0, sticky="we", pady=4)
+        akcja.columnconfigure(0, weight=1)
+        self.pasek = ttk.Progressbar(akcja, mode="indeterminate")
+        self.pasek.grid(row=0, column=0, sticky="we")
+        self.btn_otworz = ttk.Button(akcja, text="Otwórz folder wyniku",
                                      command=self._otworz_folder, state="disabled")
-        self.btn_otworz.grid(row=0, column=2, sticky="e")
+        self.btn_otworz.grid(row=0, column=1, padx=(10, 0))
 
-        # --- 5. Log ---
-        ramka_log = ttk.LabelFrame(root, text="Przebieg")
-        ramka_log.grid(row=4, column=0, sticky="nsew", **pad)
-        root.rowconfigure(4, weight=1)
-        ramka_log.rowconfigure(0, weight=1)
-        ramka_log.columnconfigure(0, weight=1)
-        self.log = tk.Text(ramka_log, height=12, wrap="word", font=("Consolas", 9), state="disabled")
+        box = ttk.LabelFrame(dol, text="Przebieg")
+        box.grid(row=2, column=0, sticky="nsew", pady=2)
+        box.rowconfigure(0, weight=1)
+        box.columnconfigure(0, weight=1)
+        self.log = tk.Text(box, height=12, wrap="word", font=("Consolas", 9), state="disabled")
         self.log.grid(row=0, column=0, sticky="nsew")
-        sb = ttk.Scrollbar(ramka_log, orient="vertical", command=self.log.yview)
+        sb = ttk.Scrollbar(box, orient="vertical", command=self.log.yview)
         sb.grid(row=0, column=1, sticky="ns")
         self.log.configure(yscrollcommand=sb.set)
 
-        self.status = ttk.Label(root, text="Gotowe. Wskaż plik planu DXF i kliknij „Generuj”.",
+        self.status = ttk.Label(root, text="Gotowe. Wybierz zakładkę, wskaż plik i kliknij „Generuj”.",
                                 relief="sunken", anchor="w")
-        self.status.grid(row=5, column=0, sticky="we")
+        self.status.grid(row=2, column=0, sticky="we")
 
-    # ------------------------------------------------------------- zdarzenia
-    def _wybierz_plan(self):
-        p = filedialog.askopenfilename(parent=self.root, title="Wybierz plik planu DXF",
-                                       filetypes=[("Rysunek DXF", "*.dxf"), ("Wszystkie pliki", "*.*")])
-        if p:
-            self.plan.set(os.path.normpath(p))
-
+    # ================================================================= logika
     def _wybierz_katalog(self):
-        start = self.katalog.get() or (os.path.dirname(self.plan.get()) if self.plan.get() else "")
         p = filedialog.askdirectory(parent=self.root, title="Katalog zapisu wyników",
-                                     initialdir=start or None)
+                                     initialdir=self.katalog.get() or None)
         if p:
             self.katalog.set(os.path.normpath(p))
-
-    def _wybierz_szablon(self):
-        p = filedialog.askopenfilename(parent=self.root, title="Szablon rysunków stałych (DXF)",
-                                       filetypes=[("Rysunek DXF", "*.dxf"), ("Wszystkie pliki", "*.*")])
-        if p:
-            self.orient_szablon.set(os.path.normpath(p))
-
-    def _odswiez_katalog(self):
-        if self.plan.get() and not self.katalog.get():
-            self.katalog.set(os.path.dirname(os.path.abspath(self.plan.get())))
-
-    def _odswiez_przyciski(self):
-        wybrane = any(v.get() for v in self.kroki.values())
-        self.btn.configure(state="normal" if (wybrane and not self.pracuje) else "disabled")
 
     def _pisz(self, tekst: str):
         self.log.configure(state="normal")
@@ -161,33 +237,68 @@ class Aplikacja:
         self.log.see("end")
         self.log.configure(state="disabled")
 
-    # ------------------------------------------------------------- uruchomienie
-    def _start(self):
-        plan = self.plan.get().strip()
+    def _domyslny_katalog(self, plik):
+        return self.katalog.get().strip() or (os.path.dirname(os.path.abspath(plik)) if plik else "")
+
+    # ---- uruchomienie: zakładka "Wszystko" ----
+    def _start_wszystko(self):
+        plan = self.all_plan.get().strip()
         if not plan or not os.path.isfile(plan):
             messagebox.showwarning(TYTUL, "Wskaż istniejący plik planu DXF.", parent=self.root)
             return
-        kroki = tuple(k for k in pipeline.KROKI if self.kroki[k].get())
+        kroki = tuple(k for k in pipeline.KROKI if self.all_kroki[k].get())
         if not kroki:
             messagebox.showwarning(TYTUL, "Zaznacz przynajmniej jedną rzecz do wygenerowania.", parent=self.root)
             return
-        katalog = self.katalog.get().strip() or os.path.dirname(os.path.abspath(plan))
+        self._uruchom(plan, kroki)
 
+    # ---- uruchomienie: pojedynczy moduł z jego zakładki ----
+    def _start_modul(self, krok):
+        plik = self.we[krok].get().strip()
+        if krok == "orientacje" and not plik:
+            plik = self.we[krok].get().strip()      # pusty = dołączony szablon (obsłuży pipeline)
+        if krok != "orientacje" and (not plik or not os.path.isfile(plik)):
+            messagebox.showwarning(TYTUL, "Wskaż istniejący plik DXF.", parent=self.root)
+            return
+        if krok == "orientacje" and plik and not os.path.isfile(plik):
+            messagebox.showwarning(TYTUL, "Wskazany szablon nie istnieje.", parent=self.root)
+            return
+        # dla orientacji bez pliku: użyj dołączonego szablonu jako wejścia łańcucha
+        wejscie = plik
+        orient_szablon = None
+        if krok == "orientacje":
+            from . import zasoby
+            orient_szablon = plik or None
+            wejscie = plik or zasoby.szablon_orientacji_dxf()
+            if not wejscie:
+                messagebox.showwarning(TYTUL, "Brak dołączonego szablonu — wskaż plik szablonu DXF.",
+                                       parent=self.root)
+                return
+        self._uruchom(wejscie, (krok,), orient_szablon=orient_szablon)
+
+    def _uruchom(self, plik, kroki, orient_szablon=None):
+        if self.pracuje:
+            return
+        katalog = self._domyslny_katalog(plik)
         self.pracuje = True
-        self.btn.configure(state="disabled")
+        for b in self._przyciski:
+            b.configure(state="disabled")
         self.btn_otworz.configure(state="disabled")
         self.pasek.start(12)
         self.log.configure(state="normal")
         self.log.delete("1.0", "end")
         self.log.configure(state="disabled")
-        self.status.configure(text="Trwa generowanie… (pobieranie nazw ulic z internetu może potrwać do minuty)")
+        self.status.configure(text="Trwa generowanie… (pobieranie danych z internetu może chwilę potrwać)")
         self._ostatni_katalog = katalog
 
         opcje = pipeline.Opcje(
-            plan=plan, katalog=katalog, kroki=kroki,
+            plan=plik, katalog=katalog, kroki=kroki,
             adresy="uug,osm" if self.adresy_on.get() else "brak",
+            obrot_od=_float(self.pw_obrot.get(), 50.0),
+            seed=_int_or_none(self.obl_seed.get()),
+            kabel=_int(self.obl_kabel.get(), pipeline.mod_obliczenia.DOMYSLNY_KABEL),
             orient_podklad=self.orient_podklad.get(),
-            orient_szablon=self.orient_szablon.get().strip() or None,
+            orient_szablon=orient_szablon or (self.orient_szablon.get().strip() or None),
             log=lambda t="": self._kolejka.put(("log", t)),
         )
         threading.Thread(target=self._praca, args=(opcje,), daemon=True).start()
@@ -218,10 +329,11 @@ class Aplikacja:
     def _zakoncz(self, wynik):
         self.pracuje = False
         self.pasek.stop()
-        self._odswiez_przyciski()
+        for b in self._przyciski:
+            b.configure(state="normal")
         self._ostatni_wynik = wynik
         if wynik is None:
-            self.status.configure(text="Wystąpił błąd — szczegóły w oknie poniżej.")
+            self.status.configure(text="Wystąpił błąd — szczegóły w oknie „Przebieg”.")
             messagebox.showerror(TYTUL, "Nie udało się ukończyć pracy. Szczegóły w oknie „Przebieg”.",
                                  parent=self.root)
             return
@@ -233,8 +345,8 @@ class Aplikacja:
             self._pisz(f"  [{'OK' if k.ok else 'BŁĄD'}] {k.nazwa} — {k.wyjscie or k.blad or ''}")
         self.btn_otworz.configure(state="normal" if udane else "disabled")
         if not nieudane:
-            self.status.configure(text=f"Gotowe — utworzono {len(udane)} plik(ów).")
-            if messagebox.askyesno(TYTUL, f"Gotowe! Utworzono {len(udane)} plik(ów) w:\n{self._ostatni_katalog}"
+            self.status.configure(text=f"Gotowe — utworzono {len(udane)} wynik(ów).")
+            if messagebox.askyesno(TYTUL, f"Gotowe! Utworzono {len(udane)} wynik(ów) w:\n{self._ostatni_katalog}"
                                           "\n\nOtworzyć folder z wynikami?", parent=self.root):
                 self._otworz_folder()
         else:
@@ -243,7 +355,7 @@ class Aplikacja:
                                           "Szczegóły w oknie „Przebieg”.", parent=self.root)
 
     def _otworz_folder(self):
-        folder = getattr(self, "_ostatni_katalog", "") or self.katalog.get()
+        folder = self._ostatni_katalog or self.katalog.get()
         if not folder or not os.path.isdir(folder):
             return
         try:
@@ -257,6 +369,27 @@ class Aplikacja:
                 subprocess.Popen(["xdg-open", folder])
         except Exception:  # noqa: BLE001
             messagebox.showinfo(TYTUL, f"Wyniki zapisano w:\n{folder}", parent=self.root)
+
+
+def _float(s, dom):
+    try:
+        return float(str(s).replace(",", "."))
+    except (TypeError, ValueError):
+        return dom
+
+
+def _int(s, dom):
+    try:
+        return int(str(s).strip())
+    except (TypeError, ValueError):
+        return dom
+
+
+def _int_or_none(s):
+    try:
+        return int(str(s).strip())
+    except (TypeError, ValueError):
+        return None
 
 
 def main():

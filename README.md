@@ -28,9 +28,14 @@ Dodatkowo krok **Przewieszenia** tworzy plik **kontrolny** `<plan> - kontrola.dx
 na drukowalnej warstwie `_PRZEWIESZENIA_KONTROLA`. Ten sam numer pojawia się na odpowiadającym
 rysunku zwisu, dzięki czemu łatwo sprawdzić, który rysunek dotyczy którego przęsła na planie.
 
-Program łączy trzy wcześniejsze narzędzia (generator przewieszeń oraz programy „zestawienie”
-i „obliczenia” z repozytorium `mm`) w jedną aplikację z prostym oknem. Wymaga tylko
-**Pythona 3.9+** ze standardowym modułem `tkinter` — bez żadnych dodatkowych bibliotek.
+Program łączy wcześniejsze narzędzia (generator przewieszeń, programy „zestawienie” i „obliczenia”
+z repozytorium `mm` oraz „rysunki stałe” z repo `Orientacje-arkusze`) w jedną aplikację z oknem.
+Wymaga **Pythona 3.9+** ze standardowym `tkinter`; biblioteka Pillow jest potrzebna tylko do
+podkładu mapowego w rysunkach stałych.
+
+**Okno ma osobną zakładkę dla każdego modułu** — „Wszystko (łańcuch)”, „Przewieszenia”,
+„Zestawienie”, „Obliczenia”, „Rysunki stałe” — każda z własnym wyborem pliku i opcjami.
+Na dole okna wspólny katalog zapisu, pasek postępu i dziennik przebiegu.
 
 ## Program dla Windows (.exe)
 
@@ -142,7 +147,7 @@ generator_gui.py        – start okna (używany też przy budowie .exe)
 generator_cli.py        – start wiersza poleceń
 generator/
   pipeline.py           – łańcuch: DXF -> przewieszenia + zestawienie + obliczenia
-  gui.py                – interfejs okienkowy (jedno okno, pasek postępu, log)
+  gui.py                – interfejs okienkowy z zakładkami (osobna zakładka na moduł + „Wszystko”)
   przewieszenia.py      – generator rysunków przewieszeń
   kontrola.py           – kopia planu z numerami przewieszeń (kontrola powiązania)
   plan.py, baza.py, rysunek.py, zapis.py, dxfio.py, geokod.py – obsługa przewieszeń
