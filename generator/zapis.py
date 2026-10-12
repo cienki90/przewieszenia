@@ -53,8 +53,14 @@ class Wyjscie:
         self._przygotuj()
         self.encje: list = []       # tagi encji modelu
         self.bloki: list = []       # (nazwa, handle_rekordu, tagi encji bloku)
+        self.warstwy: dict = {}      # nazwa -> kolor (warstwy do dopisania do tabeli LAYER)
         self.ext = [math.inf, math.inf, -math.inf, -math.inf]
         self._nr_wym = 0
+
+    def warstwa(self, nazwa: str, kolor: int = 7):
+        """Rejestruje warstwę do dopisania do tabeli LAYER (gdy nie ma jej w szablonie)."""
+        if nazwa not in self.warstwy_szablonu:
+            self.warstwy.setdefault(nazwa, kolor)
 
     # ------------------------------------------------------------------
     def _h(self) -> str:
@@ -83,10 +89,16 @@ class Wyjscie:
         T = split_entities(S["TABLES"])
         nowe = []
         self.br_table = None
+        self.layer_table = None     # uchwyt tabeli LAYER (owner nowych warstw)
+        self.warstwy_szablonu = set()
         self.model_h = None
         for t, d in T:
             if t == "TABLE" and get(d, 2) == "BLOCK_RECORD":
                 self.br_table = get(d, 5)
+            if t == "TABLE" and get(d, 2) == "LAYER":
+                self.layer_table = get(d, 5)
+            if t == "LAYER":
+                self.warstwy_szablonu.add(get(d, 2))
             if t == "BLOCK_RECORD":
                 nm = get(d, 2)
                 if not (nm.upper().startswith("*MODEL_SPACE") or nm.upper().startswith("*PAPER_SPACE")):
@@ -401,6 +413,9 @@ class Wyjscie:
                 if cur_table == "BLOCK_RECORD":
                     n = sum(1 for tt, _ in tab if tt == "BLOCK_RECORD") + len(self.bloki) + len(klony)
                     d = [(c, (f"{n:>6}" if c == 70 else v)) for c, v in d]
+                elif cur_table == "LAYER" and self.warstwy:
+                    n = sum(1 for tt, _ in tab if tt == "LAYER") + len(self.warstwy)
+                    d = [(c, (f"{n:>6}" if c == 70 else v)) for c, v in d]
             if t == "ENDTAB" and cur_table == "BLOCK_RECORD":
                 for k in klony:
                     out_tab.append(("BLOCK_RECORD", [(5, k["br"]), (330, self.br_table), (100, "AcDbSymbolTableRecord"),
@@ -410,6 +425,12 @@ class Wyjscie:
                     out_tab.append(("BLOCK_RECORD", [(5, br), (330, self.br_table), (100, "AcDbSymbolTableRecord"),
                                                      (100, "AcDbBlockTableRecord"), (2, nazwa), (340, "0"),
                                                      (70, "     0"), (280, "     1"), (281, "     0")]))
+            if t == "ENDTAB" and cur_table == "LAYER":
+                for nazwa, kolor in self.warstwy.items():
+                    out_tab.append(("LAYER", [(5, self._h()), (330, self.layer_table or "2"),
+                                              (100, "AcDbSymbolTableRecord"), (100, "AcDbLayerTableRecord"),
+                                              (2, nazwa), (70, "     0"), (62, f"{kolor:>6}"),
+                                              (6, "Continuous"), (370, "    25"), (390, "F")]))
             out_tab.append((t, d))
         # BLOCKS
         blk = [(t, d) for t, d in self.bloki_szablonu if _owner(d) not in self.usuniete]

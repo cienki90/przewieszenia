@@ -12,6 +12,10 @@ SKALA_X = 0.5      # jednostek rysunku na 1 m (poziomo)
 WYS_SIATKI = 8.5   # wysokość siatki/linijek [m]
 KOLOR_SWIATLOWODU = 3
 
+# numer przewieszenia (kontrola powiązania rysunku z zaznaczeniem na planie)
+WARSTWA_KONTROLI = "_PRZEWIESZENIA_KONTROLA"   # warstwa drukowalna, łatwa do wyłączenia
+KOLOR_KONTROLI = 1                             # czerwony - dobrze widoczny
+
 KROPKOWA = dict(lt="ACAD_ISO07W100", lts=0.1, lw=15)
 
 
@@ -32,6 +36,7 @@ class Dane:
     zwis_nn: float = 0.0
     h_slup: tuple = (8.0, 8.0)        # wysokość słupa na rysunku (L, P)
     szer_okna: float | None = None    # szerokość widoku arkusza wzdłuż przęsła (rysunek wyśrodkowany)
+    nr: int | None = None             # numer przewieszenia (kontrola powiązania z planem)
 
 
 @dataclass
@@ -154,6 +159,12 @@ def zbuduj(d: Dane) -> Rysunek:
         yt += 0.87
     if d.miejscowosc:
         R.tekst(w / 2, yt, 0.6, d.miejscowosc, align=1)
+
+    # --- numer przewieszenia (kontrola powiązania z planem) ---
+    # ten sam numer jest wpisywany w miejscu zaznaczenia na kopii planu
+    if d.nr is not None:
+        R.tekst(0.0, y + 0.1, 0.6, f"nr {d.nr}", align=0,
+                layer=WARSTWA_KONTROLI, color=KOLOR_KONTROLI)
 
     # --- krzywe zwisu ---
     c, r, a1, a2, _ = luk_przez(d.h_nn[0], d.h_nn[1], w, d.zwis_nn)

@@ -9,6 +9,11 @@ z projektowanym światłowodem:
 | **Zestawienie** | zestawienie słupów nN w podziale na stacje transformatorowe | `zestawienie <plan>.xlsx` |
 | **Obliczenia** | obliczenia nośności słupów na podstawie zestawienia | `Obliczenia - zestawienie <plan>.xlsx` |
 
+Dodatkowo krok **Przewieszenia** tworzy plik **kontrolny** `<plan> - kontrola.dxf` — kopię planu
+(oryginał pozostaje nietknięty) z **numerem przewieszenia wpisanym w miejscu każdego zaznaczenia**,
+na drukowalnej warstwie `_PRZEWIESZENIA_KONTROLA`. Ten sam numer pojawia się na odpowiadającym
+rysunku zwisu, dzięki czemu łatwo sprawdzić, który rysunek dotyczy którego przęsła na planie.
+
 Program łączy trzy wcześniejsze narzędzia (generator przewieszeń oraz programy „zestawienie”
 i „obliczenia” z repozytorium `mm`) w jedną aplikację z prostym oknem. Wymaga tylko
 **Pythona 3.9+** ze standardowym modułem `tkinter` — bez żadnych dodatkowych bibliotek.
@@ -50,6 +55,13 @@ Najważniejsze opcje wiersza poleceń:
 --obrot-od 50         przęsła dłuższe niż 50 m rysowane pionowo
 --seed 1              powtarzalne obliczenia (kąty słupów narożnych)
 --kabel 3             domyślny rodzaj kabla w obliczeniach (1-11)
+```
+
+Sam generator przewieszeń (`python -m generator.przewieszenia`) ma dodatkowo opcje kontroli:
+
+```
+--kontrola <plik>     plik kontrolny: kopia planu z numerami (domyślnie "<plan> - kontrola.dxf")
+--bez-kontroli        nie twórz kopii planu z numerami przewieszeń
 ```
 
 > **Obliczenia** potrzebują zestawienia. Jeśli włączysz je bez kroku „zestawienie”, program
@@ -102,6 +114,7 @@ generator/
   pipeline.py           – łańcuch: DXF -> przewieszenia + zestawienie + obliczenia
   gui.py                – interfejs okienkowy (jedno okno, pasek postępu, log)
   przewieszenia.py      – generator rysunków przewieszeń
+  kontrola.py           – kopia planu z numerami przewieszeń (kontrola powiązania)
   plan.py, baza.py, rysunek.py, zapis.py, dxfio.py, geokod.py – obsługa przewieszeń
   zestawienie.py        – zestawienie słupów nN z DXF (z programu "mm")
   obliczenia.py         – obliczenia nośności słupów (z programu "mm")

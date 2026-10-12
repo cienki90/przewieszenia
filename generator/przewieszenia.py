@@ -21,9 +21,11 @@ import sys
 
 try:  # uruchomienie jako część pakietu: python -m generator.pipeline / okno
     from . import plan as plan_mod
+    from . import kontrola as kontrola_mod
     from .baza import Baza
     from .geokod import Geokoder
     from .plan import Plan
+    from . import rysunek as rysunek_mod
     from .rysunek import Dane, SKALA_X, obwiednia, zbuduj
     from .zapis import Wyjscie
 except ImportError:  # uruchomienie bezpośrednie: python generator/przewieszenia.py
@@ -31,9 +33,11 @@ except ImportError:  # uruchomienie bezpośrednie: python generator/przewieszeni
     import sys as _sys
     _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
     import plan as plan_mod
+    import kontrola as kontrola_mod
     from baza import Baza
     from geokod import Geokoder
     from plan import Plan
+    import rysunek as rysunek_mod
     from rysunek import Dane, SKALA_X, obwiednia, zbuduj
     from zapis import Wyjscie
 
@@ -88,10 +92,16 @@ def main(argv=None):
                          "'brak' = bez internetu (domyślnie uug,osm)")
     ap.add_argument("--odswiez-adresy", action="store_true",
                     help="pobierz miejscowości i ulice ponownie dla wszystkich przewieszeń (nadpisuje CSV)")
+    ap.add_argument("--kontrola", default=None,
+                    help="plik kontrolny: kopia planu z numerami przewieszeń w miejscach zaznaczeń "
+                         "(domyślnie <plan> - kontrola.dxf)")
+    ap.add_argument("--bez-kontroli", action="store_true",
+                    help="nie twórz kopii planu z numerami przewieszeń")
     a = ap.parse_args(argv)
 
     wynik = a.wynik or os.path.splitext(a.plan)[0] + " wynik.dxf"
     opisy_path = a.opisy or os.path.splitext(a.plan)[0] + "_opisy.csv"
+    kontrola_path = a.kontrola or os.path.splitext(a.plan)[0] + " - kontrola.dxf"
     plan_mod.WARSTWA_PRZEWIESZEN = a.warstwa
     plan_mod.WARSTWA_TRASY = a.warstwa_trasy
 
@@ -114,6 +124,7 @@ def main(argv=None):
 
     szablon = a.arkusze if os.path.exists(a.arkusze) else a.baza
     W = Wyjscie(szablon)
+    W.warstwa(rysunek_mod.WARSTWA_KONTROLI, rysunek_mod.KOLOR_KONTROLI)  # warstwa numerów kontroli
     if W.arkusze:
         a0 = W.arkusze[0]
         SZER, WYS = a0["W"], a0["H"]
@@ -165,7 +176,7 @@ def main(argv=None):
         d = Dane(auto["slup_l"], auto["typ_l"], auto["slup_p"], auto["typ_p"], L, obw,
                  auto["miejscowosc"], auto["ulica"],
                  h_swiatl=(hs, hs), zwis_swiatl=zs, h_nn=(drut_l, drut_p), zwis_nn=B.zwis_nn(L, drut_l, drut_p),
-                 h_slup=(slup_l, slup_p))
+                 h_slup=(slup_l, slup_p), nr=z.nr)
         w = L * SKALA_X
         pionowo = (a.obrot_od > 0 and L > a.obrot_od) or w + 2.6 > SZER
         d.szer_okna = WYS if pionowo else SZER
@@ -196,6 +207,16 @@ def main(argv=None):
         if G.bledy:
             print(f"Uwaga: nie udało się pobrać części adresów ({len(G.bledy)} błędów), np.: {G.bledy[0]}",
                   file=sys.stderr)
+
+    # kopia planu z numerami przewieszeń w miejscach zaznaczeń (kontrola powiązania)
+    if not a.bez_kontroli:
+        try:
+            if os.path.abspath(kontrola_path) == os.path.abspath(a.plan):
+                raise ValueError("plik kontrolny nie może być tym samym plikiem co plan")
+            n_num = kontrola_mod.dodaj_numery(a.plan, kontrola_path, [(z.nr, z.x, z.y) for z in lista])
+            print(f"Kontrola (kopia planu z numerami): {kontrola_path}  ({n_num} numerów)")
+        except Exception as ex:  # noqa: BLE001 - kontrola jest dodatkiem, nie przerywaj
+            print(f"Uwaga: nie udało się utworzyć pliku kontrolnego: {ex}", file=sys.stderr)
 
     n_ark = len({n for _, n in rozmieszczenie})
     print(f"Utworzono {len(lista)} rysunków przewieszeń na {n_ark} arkuszach -> {wynik}")

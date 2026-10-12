@@ -160,13 +160,20 @@ def uruchom(opcje: Opcje) -> Wynik:
 
 # ---------------------------------------------------------------------------
 def _krok_przewieszenia(plan: str, wyjscie: str, opcje: Opcje) -> WynikKroku:
-    argv = [plan, "-o", wyjscie, "--adresy", opcje.adresy, "--obrot-od", str(opcje.obrot_od)]
+    # kopia planu z numerami przewieszeń trafia do katalogu wyników (obok rysunków)
+    kontrola = os.path.join(os.path.dirname(wyjscie),
+                            _bazowa_nazwa(plan) + " - kontrola.dxf")
+    argv = [plan, "-o", wyjscie, "--adresy", opcje.adresy, "--obrot-od", str(opcje.obrot_od),
+            "--kontrola", kontrola]
     if opcje.zostaw_puste_arkusze:
         argv.append("--zostaw-puste-arkusze")
     kod, raport = _przechwyc(mod_przewieszenia.main, argv)
     ok = (kod == 0) and os.path.exists(wyjscie)
-    return WynikKroku("przewieszenia", ok=ok, wyjscie=wyjscie if ok else None, raport=raport,
-                      blad=None if ok else "Nie udało się utworzyć rysunków przewieszeń.")
+    r = WynikKroku("przewieszenia", ok=ok, wyjscie=wyjscie if ok else None, raport=raport,
+                   blad=None if ok else "Nie udało się utworzyć rysunków przewieszeń.")
+    if ok and os.path.exists(kontrola):
+        r.raport = (r.raport + f"\n-> kopia planu z numerami (kontrola): {kontrola}").strip()
+    return r
 
 
 def _krok_zestawienie(plan: str, wyjscie: str, tymczasowy: bool, katalog: str) -> WynikKroku:
