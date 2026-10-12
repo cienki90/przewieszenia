@@ -19,12 +19,23 @@ import csv
 import os
 import sys
 
-import plan as plan_mod
-from baza import Baza
-from geokod import Geokoder
-from plan import Plan
-from rysunek import Dane, SKALA_X, obwiednia, zbuduj
-from zapis import Wyjscie
+try:  # uruchomienie jako część pakietu: python -m generator.pipeline / okno
+    from . import plan as plan_mod
+    from .baza import Baza
+    from .geokod import Geokoder
+    from .plan import Plan
+    from .rysunek import Dane, SKALA_X, obwiednia, zbuduj
+    from .zapis import Wyjscie
+except ImportError:  # uruchomienie bezpośrednie: python generator/przewieszenia.py
+    import os as _os
+    import sys as _sys
+    _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+    import plan as plan_mod
+    from baza import Baza
+    from geokod import Geokoder
+    from plan import Plan
+    from rysunek import Dane, SKALA_X, obwiednia, zbuduj
+    from zapis import Wyjscie
 
 POLA = ["nr", "x", "y", "slup_l", "typ_l", "slup_p", "typ_p", "rozpietosc",
         "stacja", "obwod", "stacja2", "obwod2", "miejscowosc", "ulica"]
@@ -52,13 +63,16 @@ def main(argv=None):
             strumien.reconfigure(encoding="utf-8", errors="replace")
         except Exception:
             pass
-    tu = os.path.dirname(os.path.abspath(__file__))
+    try:
+        from . import zasoby
+    except ImportError:
+        import zasoby
     ap = argparse.ArgumentParser(description="Generator rysunków przewieszeń (zwisów) z pliku planu DXF.")
     ap.add_argument("plan", help="plik DXF planu z okręgami na warstwie _PRZEWIESZENIA")
     ap.add_argument("-o", "--wynik", default=None, help="plik wynikowy DXF")
-    ap.add_argument("--baza", default=os.path.join(tu, "przewieszenia baza.dxf"),
+    ap.add_argument("--baza", default=zasoby.baza_dxf() or zasoby.BAZA,
                     help="plik DXF bazy (gotowe rysunki) - parametry zwisów oraz szablon DXF")
-    ap.add_argument("--arkusze", default=os.path.join(tu, "arkusze.dxf"),
+    ap.add_argument("--arkusze", default=zasoby.arkusze_dxf() or zasoby.ARKUSZE,
                     help="plik DXF z przygotowanymi arkuszami (układ, drukarka) - szablon wyniku")
     ap.add_argument("--zostaw-puste-arkusze", action="store_true",
                     help="nie usuwaj arkuszy, na których nie ma przewieszeń")

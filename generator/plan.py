@@ -5,7 +5,10 @@ import math
 import re
 from dataclasses import dataclass, field
 
-from dxfio import get, getf, mtext_plain, read_tags, seg_dist, split_entities, split_sections
+try:
+    from .dxfio import get, getf, mtext_plain, read_tags, seg_dist, split_entities, split_sections
+except ImportError:
+    from dxfio import get, getf, mtext_plain, read_tags, seg_dist, split_entities, split_sections
 
 # --- domyślne nazwy warstw / bloków (można zmienić parametrami programu) ---
 WARSTWA_PRZEWIESZEN = "_PRZEWIESZENIA"

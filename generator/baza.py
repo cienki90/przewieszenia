@@ -14,7 +14,10 @@ import re
 import statistics
 from collections import Counter, defaultdict
 
-from dxfio import get, getf, read_tags, split_entities, split_sections
+try:
+    from .dxfio import get, getf, read_tags, split_entities, split_sections
+except ImportError:
+    from dxfio import get, getf, read_tags, split_entities, split_sections
 
 SKALA_X = 0.5  # jednostek rysunku na 1 m (poziomo)
 

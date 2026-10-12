@@ -8,8 +8,12 @@ from __future__ import annotations
 import math
 from decimal import ROUND_HALF_UP, Decimal
 
-from dxfio import fmt, get, getf, join_entities, read_tags, split_entities, split_sections, write_tags
-from rysunek import Rysunek
+try:
+    from .dxfio import fmt, get, getf, join_entities, read_tags, split_entities, split_sections, write_tags
+    from .rysunek import Rysunek
+except ImportError:
+    from dxfio import fmt, get, getf, join_entities, read_tags, split_entities, split_sections, write_tags
+    from rysunek import Rysunek
 
 MODEL = "*Model_Space"
 
