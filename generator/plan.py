@@ -17,6 +17,14 @@ WARSTWA_NUMEROW = "_numery"       # teksty z numerami słupów
 BLOKI_SLUPOW = ("ZN", "E", "R")   # bloki symboli słupów nN
 
 
+def _warstwa_trasy(nazwa: str) -> bool:
+    """Czy warstwa to trasa - dopasowanie bez względu na wielkość liter i drobne warianty
+    (np. '!TELE', '!tele', '!tele1'). WARSTWA_TRASY można nadpisać z wiersza poleceń."""
+    n = (nazwa or "").strip().lower()
+    w = WARSTWA_TRASY.strip().lower()
+    return n == w or n.startswith(w)
+
+
 @dataclass
 class Slup:
     idx: int
@@ -145,14 +153,20 @@ class Plan:
                 if len(pts) >= 3:
                     self.obszary.append(("ST " + L[7:].strip(), pts))
         self.trasy = []
+        self._warstwy_kandydaci_trasy = set()      # warstwy polilinii wyglądające na trasę (do diagnostyki)
         for t, d in E:
-            if t == "LWPOLYLINE" and get(d, 8) == WARSTWA_TRASY:
+            if t != "LWPOLYLINE":
+                continue
+            w = get(d, 8, "")
+            if _warstwa_trasy(w):
                 xs = [float(v) for k, v in d if k == 10]
                 ys = [float(v) for k, v in d if k == 20]
                 pts = list(zip(xs, ys))
                 if int(get(d, 70, "0")) & 1 and pts:
                     pts.append(pts[0])
                 self.trasy.append(pts)
+            elif any(k in w.lower() for k in ("tele", "sw", "światł", "swiatl", "trasa", "kabel", "linia")):
+                self._warstwy_kandydaci_trasy.add(w)
 
         # wymiary przęseł (np. warstwa !wymiary): punkty definicyjne 13/14 przy słupach, wartość 42 lub tekst
         self.wymiary = []
@@ -305,12 +319,30 @@ class Plan:
                 self.sasiedzi.setdefault(b, set()).add(a)
 
     def _przeslo_przy(self, pt):
+        if not self.przesla:
+            return None
         return min(self.przesla, key=lambda p: p.odleglosc(pt))
 
     def _obwody(self, mls, max_odl):
         stacje = [(t.split("\n")[-1].strip(), tips[0]) for t, tips, _ in mls
                   if "STACJA" in t.upper() and tips]
         S = self.slupy
+        if not self.przesla:
+            # brak przęseł (np. słupy nie leżą na trasie albo inna nazwa warstwy trasy) -
+            # nie da się przypisać obwodów; sygnalizujemy przyczynę i kończymy łagodnie
+            powod = (f"na trasie „{WARSTWA_TRASY}” nie leżą słupy (bloki {', '.join(BLOKI_SLUPOW)})"
+                     if self.trasy and S else
+                     f"brak polilinii trasy na warstwie „{WARSTWA_TRASY}”" if not self.trasy else
+                     "nie wykryto słupów")
+            podp = ""
+            if not self.trasy and self._warstwy_kandydaci_trasy:
+                podp = (" Warstwy wyglądające na trasę w tym pliku: "
+                        + ", ".join(sorted(self._warstwy_kandydaci_trasy)[:8])
+                        + " - wskaż właściwą opcją --warstwa-trasy.")
+            self.ostrzezenia.append(
+                f"Nie zbudowano żadnego przęsła: {powod}. Słupów w pliku: {len(S)}, "
+                f"polilinii trasy: {len(self.trasy)}.{podp}")
+            return
         for txt, tips, _ in mls:
             if not txt.lower().startswith("obw") or not tips:
                 continue
@@ -409,9 +441,11 @@ class Plan:
     def _trafienia(self, zn):
         """Lista (przęsło, punkt, odległość) wskazanych znacznikiem."""
         typ, geo, r = zn
+        if not self.przesla:
+            return []
         if typ == "O":
             prz = self._przeslo_przy(geo)
-            return [(prz, geo, prz.odleglosc(geo))]
+            return [(prz, geo, prz.odleglosc(geo))] if prz else []
         out = []
         for prz in self.przesla:
             for c, d in zip(geo, geo[1:]):
@@ -423,7 +457,8 @@ class Plan:
             m = geo[len(geo) // 2 - 1]
             m = ((m[0] + geo[len(geo) // 2][0]) / 2, (m[1] + geo[len(geo) // 2][1]) / 2)
             prz = self._przeslo_przy(m)
-            out.append((prz, m, prz.odleglosc(m)))
+            if prz:
+                out.append((prz, m, prz.odleglosc(m)))
         return out
 
     def przewieszenia(self) -> list[Przewieszenie]:
