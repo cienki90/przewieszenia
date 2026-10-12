@@ -25,6 +25,11 @@ z projektowanym światłowodem:
 > (OSM / Geoportal) wymaga internetu i biblioteki **Pillow** — bez nich krok działa z opcją
 > „bez podkładu”. W pliku .exe Pillow i szablon są już wbudowane.
 >
+> **Szybkość:** nazwa miejscowości jest ustalana z pierwszego źródła, które odpowie (bez
+> odpytywania wszystkich serwisów), a słupy stacji są grupowane przestrzennie — geokodujemy
+> jeden punkt na grupę, nie każdy słup. Dzięki temu generowanie jest szybkie nawet przy wielu
+> słupach. Pełną weryfikację nazw między źródłami włącza opcja `--weryfikuj-nazwy` (wolniej).
+>
 > **Nazwa miejscowości w tabelce** jest ustalana z **geokodowania słupów danej stacji trafo**:
 > dla każdego słupa odczytujemy miejscowość, więc wiadomo, jakie miejscowości obejmuje stacja;
 > w tabelce wpisujemy tę z największą liczbą słupów (pełny zasięg trafia do uwag/kolumny „inne”).

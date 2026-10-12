@@ -688,6 +688,9 @@ PLACE_SOURCE_NAMES = {
     "uldk": "GUGiK ULDK (obręb ewidencyjny)",
 }
 DEFAULT_PLACE_ORDER = ("nominatim", "overpass", "photon", "uldk")
+# bok komórki siatki [m] do grupowania słupów przy ustalaniu miejscowości stacji:
+# geokodujemy jeden punkt na komórkę (nie każdy słup) - mniej zapytań do serwisów, ten sam wynik
+GESTOSC_MIEJSC = 300.0
 OVERPASS_URLS = ("https://overpass-api.de/api/interpreter",
                  "https://overpass.kumi.systems/api/interpreter")
 PHOTON_URL = "https://photon.komoot.io/reverse"
@@ -1515,7 +1518,7 @@ class Options:
     user_agent: str | None = None
     geocode: bool = True
     place_sources: tuple = DEFAULT_PLACE_ORDER
-    verify_places: bool = True
+    verify_places: bool = False     # domyślnie bez weryfikacji - szybciej (bez pytania wszystkich źródeł)
     majority_place: bool = False
     names_csv: Path | None = None
     only: set | None = None
@@ -1619,27 +1622,33 @@ class Generator:
         return wg_stacji
 
     def _miejscowosci_stacji(self, st: "Station"):
-        """Lista (miejscowość, liczba słupów) dla stacji - z geokodowania KAŻDEGO słupa.
+        """Lista (miejscowość, liczba słupów) dla stacji - jakie miejscowości obejmuje stacja.
 
-        Wynik posortowany malejąco wg liczby słupów. Puste, gdy brak słupów albo
-        geokodowania. Wyniki geokodowania są w pamięci podręcznej, więc powtórne
-        uruchomienia są szybkie."""
+        Dla szybkości NIE geokodujemy każdego słupa z osobna (to tysiące zapytań do serwisów),
+        tylko grupujemy słupy przestrzennie (siatka ~GESTOSC_MIEJSC m) i geokodujemy jeden punkt
+        na grupę; nazwę waży liczba słupów w grupie. Wynik posortowany malejąco wg liczby słupów."""
         klucz = _norm_name_station(st.number)
         if klucz in self.miejscowosci_stacji:
             return self.miejscowosci_stacji[klucz]
         pts = self.slupy_stacji.get(klucz, [])
         liczby = {}
         if pts and self.geocoder:
+            # grupowanie słupów po komórkach siatki (słupy w tej samej komórce = ta sama miejscowość)
+            komorka = GESTOSC_MIEJSC
+            grupy = {}
             for (x, y) in pts:
-                # strefa z easting słupa (plan ze słupami może być w innej strefie niż szablon)
+                g = (round(x / komorka), round(y / komorka))
+                grupy.setdefault(g, []).append((x, y))
+            for g, lista in grupy.items():
+                x, y = lista[0]   # jeden reprezentant grupy
                 lat, lon = pl2000_to_wgs84(x, y, pl2000_zone_from_easting(x))
                 try:
                     r = self.geocoder.resolve(lat, lon, x, y, self.zone)
-                except Exception:  # noqa: BLE001 - pojedynczy słup nie wywraca całości
+                except Exception:  # noqa: BLE001 - pojedyncza grupa nie wywraca całości
                     continue
                 nazwa = (r.get("miejscowosc") or "").strip()
                 if nazwa:
-                    liczby[nazwa] = liczby.get(nazwa, 0) + 1
+                    liczby[nazwa] = liczby.get(nazwa, 0) + len(lista)   # waga = liczba słupów w grupie
         wynik = sorted(liczby.items(), key=lambda kv: (-kv[1], kv[0]))
         self.miejscowosci_stacji[klucz] = wynik
         return wynik
@@ -1976,8 +1985,11 @@ def parse_args(argv=None):
     g.add_argument("--zrodla-nazw", default=",".join(DEFAULT_PLACE_ORDER),
                    help="kolejność źródeł nazw miejscowości (domyślnie: "
                         f"{','.join(DEFAULT_PLACE_ORDER)}); nazwa z pierwszego, które odpowie")
+    g.add_argument("--weryfikuj-nazwy", action="store_true",
+                   help="pytaj WSZYSTKIE źródła dla porównania nazw (wolniej; domyślnie "
+                        "używana jest nazwa z pierwszego źródła, które odpowie)")
     g.add_argument("--bez-weryfikacji-nazw", action="store_true",
-                   help="nie pytaj pozostałych źródeł dla porównania (szybciej)")
+                   help=argparse.SUPPRESS)   # zgodność wstecz - weryfikacja i tak domyślnie wyłączona
     g.add_argument("--nazwa-wg-wiekszosci", action="store_true",
                    help="gdy źródła się różnią, weź nazwę podaną przez większość (min. 3 źródła)")
     g.add_argument("--nazwy", type=Path, help="CSV 'numer;miejscowość' - nadpisuje nazwy z OSM")
@@ -2081,7 +2093,7 @@ def main(argv=None) -> int:
         zoom=a.zoom, resolution=a.rozdzielczosc, basemap_margin=a.margines_podkladu,
         basemap_format=a.format_podkladu,
         tile_url=a.serwer_kafli, basemap_sources=tuple(a.zrodla_podkladu.split(",")), user_agent=a.user_agent, geocode=not a.bez_geokodowania,
-        place_sources=tuple(a.zrodla_nazw.split(",")), verify_places=not a.bez_weryfikacji_nazw,
+        place_sources=tuple(a.zrodla_nazw.split(",")), verify_places=a.weryfikuj_nazwy,
         majority_place=a.nazwa_wg_wiekszosci, refresh_basemap=a.odswiez_podklad,
         names_csv=a.nazwy, plan_slupow=a.plan_slupow, only=only, keep_other_stations=a.zostaw_inne_stacje,
         zone_layer=a.warstwa_obrysow, table_block=a.blok_tabelki,
