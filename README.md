@@ -16,6 +16,12 @@ z projektowanym światłowodem:
 > gdy pole zostanie puste, użyty jest **dołączony `szablon.dxf`**. Pobieranie podkładu mapowego
 > (OSM / Geoportal) wymaga internetu i biblioteki **Pillow** — bez nich krok działa z opcją
 > „bez podkładu”. W pliku .exe Pillow i szablon są już wbudowane.
+>
+> **Nazwa miejscowości w tabelce** jest ustalana na podstawie **położenia słupów należących do
+> danej stacji trafo** (reprezentatywny słup — medoid), a nie z grotu odnośnika stacji. Przypisanie
+> „który słup leży w której stacji” pochodzi z analizy **zestawienia** (obszary `!trafo_<nr>` +
+> drzewo sieci). Gdy w rysunku nie ma ponumerowanych słupów (np. sam szablon poglądowy),
+> program wraca do dawnego sposobu — bierze położenie odnośnika stacji.
 
 Dodatkowo krok **Przewieszenia** tworzy plik **kontrolny** `<plan> - kontrola.dxf` — kopię planu
 (oryginał pozostaje nietknięty) z **numerem przewieszenia wpisanym w miejscu każdego zaznaczenia**,

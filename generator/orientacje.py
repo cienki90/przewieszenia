@@ -700,6 +700,14 @@ def _norm_name(s: str) -> str:
     return re.sub(r"\s+", " ", (s or "").strip()).casefold()
 
 
+def _norm_name_station(s) -> str:
+    """Ujednolica identyfikator stacji do porównań: '03-0541'/'0541'/'541' -> '541'."""
+    s = str(s or "").strip()
+    tok = re.split(r"[-/ ]", s)[-1]            # część po myślniku, np. '0541'
+    digits = re.sub(r"\D", "", tok)
+    return str(int(digits)) if digits else s.casefold()
+
+
 def _haversine(lat1, lon1, lat2, lon2):
     p1, p2 = math.radians(lat1), math.radians(lat2)
     a = (math.sin((p2 - p1) / 2) ** 2
@@ -1553,6 +1561,9 @@ class Generator:
             raise ValueError("Nie znaleziono w szablonie odnośników 'STACJA TRAFO ...'")
         x0 = self.stations[0].x
         self.zone = pl2000_zone_from_easting(x0)
+        # nazwę miejscowości ustalamy na podstawie położenia SŁUPÓW danej stacji
+        # (nie z grotu odnośnika) - do przypisania słup->stacja korzystamy z zestawienia
+        self.punkt_slupow = self._punkty_slupow_stacji(opt.template)
         self._detect_table_texts()
         self.names = load_names_csv(opt.names_csv) if opt.names_csv else {}
         self.geocoder = self.basemap = None
@@ -1571,6 +1582,35 @@ class Generator:
                                            opt.user_agent or DEFAULT_USER_AGENT, log=log)
             self.basemap.error_log = opt.out_dir / "bledy_podkladu.log"
             self.basemap.refresh = opt.refresh_basemap
+
+    def _punkty_slupow_stacji(self, dxf_path):
+        """Zwraca {numer_stacji: (x, y)} - reprezentatywny punkt SŁUPÓW danej stacji.
+
+        Przypisanie słup->stacja bierzemy z zestawienia (ta sama logika: obszary
+        !trafo_<nr> + drzewo sieci). Punkt = słup najbliższy średniej (medoid), żeby
+        nazwa miejscowości wychodziła z realnej lokalizacji słupów, a nie z grotu
+        odnośnika stacji."""
+        punkty = {}
+        try:
+            try:
+                from . import zestawienie as _zest
+            except ImportError:
+                import zestawienie as _zest
+            mapa = _zest.mapa_stacji_slupow(dxf_path)
+        except Exception as ex:  # noqa: BLE001 - gdy zestawienie nie zadziała, zostaje grot odnośnika
+            self.log(f"Uwaga: nie udało się ustalić słupów stacji z zestawienia ({ex}); "
+                     "nazwy miejscowości wg położenia odnośnika stacji.")
+            return punkty
+        wg_stacji = {}
+        for x, y, _nr, st in mapa:
+            wg_stacji.setdefault(_norm_name_station(st), []).append((x, y))
+        for st, pts in wg_stacji.items():
+            cx = sum(p[0] for p in pts) / len(pts)
+            cy = sum(p[1] for p in pts) / len(pts)
+            # medoid: słup najbliższy środkowi (odporny na pojedyncze odstające słupy)
+            mx, my = min(pts, key=lambda p: (p[0] - cx) ** 2 + (p[1] - cy) ** 2)
+            punkty[st] = (mx, my)
+        return punkty
 
     # --- analiza szablonu ----------------------------------------------------
     def _table_entities(self, doc):
@@ -1606,11 +1646,16 @@ class Generator:
 
     # --- nazwy miejscowości ------------------------------------------------------
     def resolve_place(self, st: Station):
-        lat, lon = pl2000_to_wgs84(st.x, st.y, self.zone)
+        # punkt do geokodowania: położenie SŁUPÓW stacji (wg zestawienia), a gdy brak -
+        # grot odnośnika stacji
+        gx, gy = self.punkt_slupow.get(_norm_name_station(st.number), (st.x, st.y))
+        if (gx, gy) != (st.x, st.y):
+            st.notes.append(f"miejscowość wg położenia słupów stacji ({gx:.0f}, {gy:.0f})")
+        lat, lon = pl2000_to_wgs84(gx, gy, self.zone)
         st.place = {"lat": lat, "lon": lon, "miejscowosc": "", "gmina": "", "powiat": "",
                     "wojewodztwo": ""}
         if self.geocoder:
-            r = self.geocoder.resolve(lat, lon, st.x, st.y, self.zone)
+            r = self.geocoder.resolve(lat, lon, gx, gy, self.zone)
             for k in ("miejscowosc", "gmina", "powiat", "wojewodztwo"):
                 st.place[k] = r[k]
             st.place_source = r["zrodlo"]
