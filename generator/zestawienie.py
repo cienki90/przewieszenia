@@ -922,6 +922,37 @@ def przetworz(dxf, wyjscie=None):
     if not wyjscie:
         wyjscie = os.path.join(os.path.dirname(os.path.abspath(dxf)),
                                'zestawienie ' + os.path.splitext(os.path.basename(dxf))[0] + '.xlsx')
+    return _przetworz_dalej(rys, stacje, dxf, wyjscie)
+
+
+def mapa_stacji_slupow(dxf):
+    """Autorytatywna mapa słupów -> stacja (wg logiki zestawienia).
+
+    Zwraca listę krotek (x, y, nr_slupa, stacja) dla każdego ponumerowanego słupa.
+    Stacja jest ustalana tak samo jak w zestawieniu (obszary !trafo_<nr>, opisy
+    STACJA TRAFO i drzewo sieci z regułą „nie łącz słupów z zakresów różnych stacji”).
+    Służy do kontroli stacji dopisanej przy przewieszeniach.
+    """
+    rys = Rysunek(dxf)
+    wynik = zbuduj(rys)
+    slupy = getattr(rys, '_slupy', None)
+    mapa = []
+    if slupy is None:
+        return mapa
+    for st, wiersze in wynik.items():
+        if not st or str(st).startswith('obszar_'):
+            # 'obszar_N' = brak rozpoznanej nazwy stacji; pomijamy, by nie psuć poprawnych opisów
+            continue
+        for w in wiersze:
+            i = w.get('slup')
+            if i is None:
+                continue
+            x, y = slupy[i]['p']
+            mapa.append((x, y, w.get('nr'), st))
+    return mapa
+
+
+def _przetworz_dalej(rys, stacje, dxf, wyjscie):
     zapisz_xlsx(wyjscie, stacje, rys.uwagi)
     raport = ['%s -> %s' % (os.path.basename(dxf), wyjscie)]
     for st in sorted(stacje):

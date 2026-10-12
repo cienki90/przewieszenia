@@ -22,6 +22,7 @@ import sys
 try:  # uruchomienie jako część pakietu: python -m generator.pipeline / okno
     from . import plan as plan_mod
     from . import kontrola as kontrola_mod
+    from . import zestawienie as zestawienie_mod
     from .baza import Baza
     from .geokod import Geokoder
     from .plan import Plan
@@ -34,6 +35,7 @@ except ImportError:  # uruchomienie bezpośrednie: python generator/przewieszeni
     _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
     import plan as plan_mod
     import kontrola as kontrola_mod
+    import zestawienie as zestawienie_mod
     from baza import Baza
     from geokod import Geokoder
     from plan import Plan
@@ -43,6 +45,65 @@ except ImportError:  # uruchomienie bezpośrednie: python generator/przewieszeni
 
 POLA = ["nr", "x", "y", "slup_l", "typ_l", "slup_p", "typ_p", "rozpietosc",
         "stacja", "obwod", "stacja2", "obwod2", "miejscowosc", "ulica"]
+
+
+def _norm_stacja(st):
+    """'ST 05-0507' / '05-0507' -> '05-0507' (do porównań)."""
+    s = (st or "").strip()
+    if s.upper().startswith("ST "):
+        s = s[3:].strip()
+    return s
+
+
+def _stacja_slupa(mapa, x, y, tol=2.0):
+    """Numer stacji dla słupa o współrzędnych (x, y) wg mapy z zestawienia (najbliższy)."""
+    import math
+    best = None
+    for mx, my, _nr, st in mapa:
+        d = math.hypot(mx - x, my - y)
+        if d <= tol and (best is None or d < best[0]):
+            best = (d, st)
+    return best[1] if best else None
+
+
+def zweryfikuj_stacje(lista, mapa, ostrzezenia):
+    """Po numeracji: sprawdź (posiłkując się zestawieniem) stację dopisaną do każdego
+    przewieszenia i popraw, jeśli słupy należą wg zestawienia do innej stacji.
+
+    Reguła: jeśli oba słupy przęsła należą (wg zestawienia) do TEJ SAMEJ stacji,
+    jest ona autorytatywna - nadpisuje stację ustaloną z opisów/odległości, a także
+    uzupełnia brak ('ST ?'). Gdy słupy wskazują dwie różne stacje (przęsło na granicy),
+    nie zmieniamy nic, tylko sygnalizujemy do sprawdzenia."""
+    if not mapa:
+        return 0
+    poprawione = 0
+    for z in lista:
+        st_l = _stacja_slupa(mapa, z.slup_l.x, z.slup_l.y)
+        st_p = _stacja_slupa(mapa, z.slup_p.x, z.slup_p.y)
+        kandydaci = {s for s in (st_l, st_p) if s}
+        if not kandydaci:
+            continue
+        obecna = _norm_stacja(z.obwody[0][0]) if z.obwody else ""
+        if len(kandydaci) == 1:
+            wlasciwa = next(iter(kandydaci))
+            if obecna != wlasciwa:
+                # popraw stację we wszystkich wpisach obwodu tego przewieszenia
+                nowe = []
+                for st, ob in (z.obwody or [("", "")]):
+                    nowe.append(("ST " + wlasciwa, ob))
+                stara = z.obwody[0][0] if z.obwody else "(brak)"
+                z.obwody = nowe
+                poprawione += 1
+                ostrzezenia.append(
+                    f"Przewieszenie {z.nr}: stacja poprawiona z „{stara}” na „ST {wlasciwa}” "
+                    f"(wg zestawienia oba słupy nr {z.slup_l.numer} i {z.slup_p.numer} należą do tej stacji)")
+        else:
+            # słupy w dwóch różnych stacjach - przęsło międzystacyjne
+            if obecna not in kandydaci:
+                ostrzezenia.append(
+                    f"Przewieszenie {z.nr}: słupy należą do różnych stacji {sorted(kandydaci)} "
+                    f"(na rysunku „{z.obwody[0][0] if z.obwody else '-'}”) - sprawdź przypisanie stacji")
+    return poprawione
 
 
 def wczytaj_opisy(path):
@@ -97,6 +158,8 @@ def main(argv=None):
                          "(domyślnie <plan> - kontrola.dxf)")
     ap.add_argument("--bez-kontroli", action="store_true",
                     help="nie twórz kopii planu z numerami przewieszeń")
+    ap.add_argument("--bez-kontroli-stacji", action="store_true",
+                    help="nie sprawdzaj po numeracji stacji trafo na podstawie zestawienia")
     a = ap.parse_args(argv)
 
     wynik = a.wynik or os.path.splitext(a.plan)[0] + " wynik.dxf"
@@ -113,6 +176,18 @@ def main(argv=None):
         for o in P.ostrzezenia:
             print("Uwaga:", o, file=sys.stderr)
         return 1
+
+    # kontrola stacji: po numeracji sprawdź przypisanie stacji trafo, posiłkując się zestawieniem
+    if not a.bez_kontroli_stacji:
+        try:
+            mapa = zestawienie_mod.mapa_stacji_slupow(a.plan)
+            n_popr = zweryfikuj_stacje(lista, mapa, P.ostrzezenia)
+            if n_popr:
+                print(f"Kontrola stacji: poprawiono {n_popr} przypisań stacji trafo (wg zestawienia).")
+        except Exception as ex:  # noqa: BLE001 - kontrola jest dodatkiem, nie przerywaj generowania
+            print(f"Uwaga: kontrola stacji nie powiodła się ({ex}) - użyto stacji z analizy planu.",
+                  file=sys.stderr)
+
     B = Baza(a.baza if os.path.exists(a.baza) else None)
     if not B.rysunki:
         print("Uwaga: brak bazy - użyto domyślnych reguł zwisów.", file=sys.stderr)

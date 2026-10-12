@@ -62,6 +62,7 @@ Sam generator przewieszeń (`python -m generator.przewieszenia`) ma dodatkowo op
 ```
 --kontrola <plik>     plik kontrolny: kopia planu z numerami (domyślnie "<plan> - kontrola.dxf")
 --bez-kontroli        nie twórz kopii planu z numerami przewieszeń
+--bez-kontroli-stacji nie sprawdzaj po numeracji stacji trafo na podstawie zestawienia
 ```
 
 > **Obliczenia** potrzebują zestawienia. Jeśli włączysz je bez kroku „zestawienie”, program
@@ -82,6 +83,16 @@ do których należą słupy, jest wspólnym, mocnym punktem narzędzi `mm` i gen
 | typy słupów | multileadery „słup nN / typ” |
 | stacja | obszar `!trafo_<nr>` (np. `!trafo_05-0355`); gdy brak — opis „STACJA TRAFO / nr” |
 | obwód | multileadery „obw. nr X”; śledzony po trasie zgodnie z numeracją słupów |
+
+#### Kontrola stacji trafo (po numeracji)
+
+Po ustaleniu numeracji program **ponownie sprawdza stację trafo** dopisaną do każdego
+przewieszenia, posiłkując się analizą **zestawienia** (to ona najpewniej rozpoznaje, do której
+stacji należy dany słup — po obszarach `!trafo_<nr>` i drzewie sieci). Jeżeli oba słupy przęsła
+należą — wg zestawienia — do tej samej stacji, a na rysunku jest inna (albo `ST ?`), stacja jest
+**poprawiana**, a w raporcie pojawia się informacja o zmianie. Gdy słupy wskazują dwie różne
+stacje (przęsło na granicy), program tego nie zmienia, tylko sygnalizuje do sprawdzenia.
+Wyłączenie: `--bez-kontroli-stacji`.
 
 ### Przewieszenia — baza i arkusze
 
