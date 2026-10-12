@@ -133,7 +133,8 @@ class Arkusz:
     y0: float
     szer: float             # szerokość okna [m terenu]
     wys: float
-    stacja: str = ""        # numer stacji (np. "03-0494")
+    stacja: str = ""        # oznaczenie stacji (np. "03-0494")
+    nr_stacji: str = ""     # znormalizowany numer stacji (np. "494") - do warstw/zamrażania
     nazwa: str = ""         # nazwa layoutu, np. "494-1"
     nr_rys: str = ""        # numer rysunku, np. "2.1"
     miejscowosci: list = field(default_factory=list)
@@ -404,7 +405,7 @@ def wczytaj(sciezka, wzorzec_sciezka=None):
             if len(pts) >= 3:
                 # numer stacji z nazwy warstwy "!trafo_<nr>" (z poprzedniego uruchomienia) - opcjonalnie
                 reszta = warstwa[len(WARSTWA_ZAKRES):].strip(" _-")
-                poligony.append([reszta or None, pts])
+                poligony.append([reszta or None, pts, get(d, 5)])   # [nr|None, punkty, uchwyt]
         elif t == "MULTILEADER" and _dopasuj(warstwa, "trafo"):
             txt, grot = _mleader_tekst_grot(d)
             if "STACJA" in txt.upper():
@@ -579,15 +580,18 @@ def zaplanuj(we: Wejscie, slupy_miejsc=None, tylko=None, zaklad=ZAKLAD, log=prin
     W, H = we.wzor_okno
     slupy_miejsc = slupy_miejsc or []
 
-    # numer stacji dla każdego poligonu
+    # numer stacji dla każdego poligonu + uchwyty poligonów (do warstw stacji)
     poligony = []
-    for nazwa_warstwy, pts in we.poligony:
+    poligony_stacji = {}          # nr -> [uchwyty poligonów tej stacji]
+    for nazwa_warstwy, pts, uchwyt in we.poligony:
         nr = _norm_nr(nazwa_warstwy) if nazwa_warstwy else None
         if not nr:
             nr = _numer_poligonu(pts, we.stacje, oznaczenia, ostrzezenia)
             nr = _norm_nr(nr) if nr else None
         if nr:
             poligony.append((nr, pts))
+            if uchwyt:
+                poligony_stacji.setdefault(nr, []).append(uchwyt)
 
     arkusze = []
     for nr in sorted({n for n, _ in poligony}, key=lambda s: (len(s), s)):
@@ -602,12 +606,12 @@ def zaplanuj(we: Wejscie, slupy_miejsc=None, tylko=None, zaklad=ZAKLAD, log=prin
             continue
         narozniki = rozmiesc(linie, W, H, we.wzor_zakazane, zaklad=zaklad)
         for i, (x0, y0) in enumerate(narozniki, 1):
-            a = Arkusz(x0, y0, W, H, stacja=oznaczenia.get(nr, nr),
+            a = Arkusz(x0, y0, W, H, stacja=oznaczenia.get(nr, nr), nr_stacji=nr,
                        nazwa=f"{nr}-{i}", nr_rys=f"{PREFIKS_RYS}{i}")
             a.miejscowosci = _miejscowosci_arkusza(a, slupy_miejsc)
             arkusze.append(a)
         log(f"   stacja {oznaczenia.get(nr, nr):<10} arkuszy: {len(narozniki)}")
-    return arkusze, ostrzezenia
+    return arkusze, ostrzezenia, poligony_stacji
 
 
 # ============================================================ zapis layoutów (nieniszczący)
@@ -658,11 +662,16 @@ def _tekst_tabelki(encje_tagi, podmianki):
     return out
 
 
-def zapisz_arkusze(wejscie_sciezka, wyjscie_sciezka, arkusze, wzorzec_sciezka=None, log=print):
+def zapisz_arkusze(wejscie_sciezka, wyjscie_sciezka, arkusze, wzorzec_sciezka=None,
+                   poligony_stacji=None, log=print):
     """Dopisuje do kopii pliku wejściowego po jednym layoucie na każdy arkusz PZT.
 
-    Model i cała reszta pliku pozostają bez zmian. Gdy wzorzec jest w innym pliku,
-    jego layout „a” (block record + encje + rzutnia) jest importowany."""
+    Model pozostaje praktycznie bez zmian - jedyną ingerencją jest przeniesienie poligonów
+    zakresu stacji na warstwy „!trafo_<nr>” (po jednej na stację), żeby w rzutni każdego
+    arkusza można było ZAMROZIĆ warstwy pozostałych stacji - wtedy na arkuszu danej stacji
+    nie widać zasięgów innych stacji (jak w programie LISP). Gdy wzorzec jest w innym pliku,
+    jego layout „a” jest importowany."""
+    poligony_stacji = poligony_stacji or {}
     secs_list = split_sections(read_tags(wejscie_sciezka))
     secs = dict(secs_list)
     kolejnosc = [n for n, _ in secs_list]
@@ -701,6 +710,34 @@ def zapisz_arkusze(wejscie_sciezka, wyjscie_sciezka, arkusze, wzorzec_sciezka=No
     # tab order startuje po istniejących layoutach
     tab0 = _max_tab_order(secs) + 1
 
+    # --- warstwy zakresów stacji "!trafo_<nr>" + przeniesienie poligonów + uchwyty do zamrażania ---
+    # dla każdej stacji tworzymy (jeśli brak) warstwę !trafo_<nr>, przenosimy jej poligony na tę
+    # warstwę i zapamiętujemy uchwyt rekordu warstwy (do kodu 341 w rzutniach).
+    warstwa_stacji_handle = {}            # nr -> uchwyt rekordu warstwy
+    uchwyt_poligonu_warstwa = {}          # uchwyt poligonu -> nazwa warstwy docelowej
+    stacje_z_poligonami = sorted(poligony_stacji, key=_klucz_nr)
+    if stacje_z_poligonami:
+        props_trafo = _props_warstwy(secs, WARSTWA_ZAKRES)
+        istnieje = {(_warstwa_nazwa(d) or "").lower(): get(d, 5)
+                    for t, d in split_entities(secs.get("TABLES", [])) if t == "LAYER"}
+        nowe_warstwy = []
+        for nr in stacje_z_poligonami:
+            lname = f"{WARSTWA_ZAKRES}_{_oznaczenie_dla_warstwy(nr, arkusze)}"
+            klucz = lname.lower()
+            if klucz in istnieje:
+                warstwa_stacji_handle[nr] = istnieje[klucz]
+            else:
+                lh = nh()
+                nowe_warstwy.append(_rekord_warstwy(lh, lname, props_trafo))
+                istnieje[klucz] = lh
+                warstwa_stacji_handle[nr] = lh
+            for uchwyt in poligony_stacji[nr]:
+                uchwyt_poligonu_warstwa[uchwyt] = lname
+        if nowe_warstwy:
+            secs["TABLES"] = _wstaw_warstwy(secs["TABLES"], nowe_warstwy)
+        # przenieś poligony na warstwy stacji (zmiana kodu 8 w encjach modelu)
+        secs["ENTITIES"] = _przenies_poligony(secs["ENTITIES"], uchwyt_poligonu_warstwa)
+
     for i, ark in enumerate(arkusze):
         br = nh()
         lay_h = nh()
@@ -730,6 +767,9 @@ def zapisz_arkusze(wejscie_sciezka, wyjscie_sciezka, arkusze, wzorzec_sciezka=No
                 nd.append((c, v))
             if t == "VIEWPORT" and (get(d, 69) or "").strip() != "1":
                 nd = _ustaw_rzutnie(nd, cx, cy, ark.wys)
+                # zamroź w rzutni warstwy zakresu WSZYSTKICH INNYCH stacji (kod 341 = uchwyt warstwy)
+                frozen = [hh for n, hh in warstwa_stacji_handle.items() if n != ark.nr_stacji]
+                nd = _dodaj_zamrozone(nd, frozen)
                 vp_glowna = h
             enc_tagi.append((t, nd))
 
@@ -840,10 +880,101 @@ def _ustaw_rzutnie(nd, cx, cy, view_h):
     return out
 
 
+def _dodaj_zamrozone(nd, frozen_handles):
+    """Dodaje do tagów rzutni kody 341 (po jednym na warstwę zamrożoną w tej rzutni).
+
+    Kod 341 musi stać w części AcDbViewport (po kodzie 90 flag). Wstawiamy je tuż przed
+    końcem encji, co GstarCAD/AutoCAD akceptują (należą do rekordu AcDbViewport)."""
+    if not frozen_handles:
+        return nd
+    # nie duplikuj, gdy już są
+    maja = {v for c, v in nd if c == 341}
+    dodatki = [(341, h) for h in frozen_handles if h not in maja]
+    return list(nd) + dodatki
+
+
 def _fmt(x):
     if abs(x) < 1e-12:
         x = 0.0
     return repr(float(x))
+
+
+def _klucz_nr(nr):
+    """Sortowanie numerów stacji numerycznie."""
+    try:
+        return (0, int(re.sub(r"\D", "", nr)))
+    except (ValueError, TypeError):
+        return (1, str(nr))
+
+
+def _oznaczenie_dla_warstwy(nr, arkusze):
+    """Pełne oznaczenie stacji (np. '03-0494') dla numeru - do nazwy warstwy !trafo_<ozn>."""
+    for a in arkusze:
+        if a.nr_stacji == nr and a.stacja:
+            return a.stacja
+    return nr
+
+
+def _warstwa_nazwa(d):
+    return get(d, 2)
+
+
+def _props_warstwy(secs, nazwa):
+    """Właściwości warstwy wzorcowej (kolor 62, linia 6, waga 370) - do klonowania."""
+    for t, d in split_entities(secs.get("TABLES", [])):
+        if t == "LAYER" and (get(d, 2) or "").lower() == nazwa.lower():
+            return [(c, v) for c, v in d if c in (62, 6, 370, 290, 420, 430)]
+    return [(62, "     6"), (6, "Continuous")]
+
+
+def _rekord_warstwy(handle, nazwa, props):
+    tagi = [(5, handle), (330, "2"), (100, "AcDbSymbolTableRecord"), (100, "AcDbLayerTableRecord"),
+            (2, nazwa), (70, "     0")]
+    # dołóż właściwości (kolor/linia/waga), unikając duplikatów kodów
+    uzyte = {c for c, _ in tagi}
+    kolor_jest = False
+    for c, v in props:
+        if c == 62:
+            kolor_jest = True
+        tagi.append((c, v))
+    if not kolor_jest:
+        tagi.append((62, "     6"))
+    if not any(c == 6 for c, _ in props):
+        tagi.append((6, "Continuous"))
+    return tagi
+
+
+def _wstaw_warstwy(tables_tagi, nowe_warstwy):
+    """Wstawia nowe rekordy LAYER przed ENDTAB tabeli LAYER i aktualizuje licznik 70."""
+    ents = split_entities(tables_tagi)
+    out, cur = [], None
+    for t, d in ents:
+        if t == "TABLE":
+            cur = get(d, 2)
+            if cur == "LAYER":
+                n = sum(1 for tt, _ in ents if tt == "LAYER") + len(nowe_warstwy)
+                d = [(c, (f"{n:>6}" if c == 70 else v)) for c, v in d]
+        if t == "ENDTAB" and cur == "LAYER":
+            for w in nowe_warstwy:
+                out.append(("LAYER", w))
+            cur = None
+        out.append((t, d))
+    return _join(out)
+
+
+def _przenies_poligony(entities_tagi, uchwyt_warstwa):
+    """Zmienia kod 8 (warstwę) encji o danych uchwytach na warstwę docelową."""
+    if not uchwyt_warstwa:
+        return entities_tagi
+    ents = split_entities(entities_tagi)
+    out = []
+    for t, d in ents:
+        h = get(d, 5)
+        if h in uchwyt_warstwa:
+            cel = uchwyt_warstwa[h]
+            d = [(c, (cel if c == 8 else v)) for c, v in d]
+        out.append((t, d))
+    return _join(out)
 
 
 def _klon_layout(lay_wzor, lay_h, br, nazwa, tab, vp_glowna, wlasc_dict):
@@ -954,15 +1085,16 @@ def przetworz(dxf, wyjscie=None, wzorzec=None, tylko=None, slupy_miejsc=None, za
     if not we.trasy:
         raise ValueError(f"W pliku nie ma trasy na warstwie {WARSTWA_TRASA}.")
     norm_tylko = {_norm_nr(s) for s in tylko} if tylko else None
-    arkusze, ostrzezenia = zaplanuj(we, slupy_miejsc=slupy_miejsc or [], tylko=norm_tylko,
-                                    zaklad=zaklad, log=log)
+    arkusze, ostrzezenia, poligony_stacji = zaplanuj(we, slupy_miejsc=slupy_miejsc or [],
+                                                     tylko=norm_tylko, zaklad=zaklad, log=log)
     if not arkusze:
         raise ValueError("Nie powstał żaden arkusz (brak trasy w zakresach stacji?).")
     if not wyjscie:
         import os
         baza = os.path.splitext(os.path.basename(dxf))[0]
         wyjscie = os.path.join(os.path.dirname(os.path.abspath(dxf)), f"{baza} - PZT.dxf")
-    zapisz_arkusze(dxf, wyjscie, arkusze, wzorzec_sciezka=wzorzec, log=log)
+    zapisz_arkusze(dxf, wyjscie, arkusze, wzorzec_sciezka=wzorzec,
+                   poligony_stacji=poligony_stacji, log=log)
     for o in ostrzezenia:
         log("Uwaga: " + o)
     return wyjscie, len(arkusze), ostrzezenia

@@ -16,7 +16,12 @@ z projektowanym światłowodem:
 > w jej zakresie (poligony `!trafo`), przy minimalnej liczbie arkuszy i zakładzie 50 m między
 > sąsiednimi arkuszami. Każdy arkusz to kopia **layoutu-wzorca „a”** (ramka A3, tabelka, legenda,
 > rzutnia 1:1000) — z pliku planu albo ze wskazanego pliku-wzorca. Wynik to kopia planu z dopisanymi
-> layoutami; model i reszta pliku pozostają bez zmian.
+> layoutami; model pozostaje praktycznie bez zmian.
+>
+> **Zasięgi innych stacji są ukrywane na arkuszu:** poligony zakresu każdej stacji są przenoszone
+> na własną warstwę `!trafo_<nr>`, a w rzutni każdego arkusza **zamrażane są warstwy pozostałych
+> stacji** — dzięki temu na arkuszu danej stacji widać tylko jej zasięg, nie zasięgi sąsiednich
+> stacji (tak jak w programie LISP).
 
 > **Uwaga o rysunkach stałych (orientacjach):** ten krok działa na **szablonie rysunków stałych**
 > (`szablon.dxf` – wszystkie stacje na jednym rysunku, z odnośnikami „STACJA TRAFO” i obrysami
