@@ -76,6 +76,7 @@ class Aplikacja:
         self.obl_kabel = tk.StringVar(value=str(pipeline.mod_obliczenia.DOMYSLNY_KABEL))
         # opcje rysunków stałych
         self.orient_szablon = tk.StringVar()
+        self.orient_plan_slupow = tk.StringVar()           # plan ze słupami (źródło miejscowości)
         self.orient_podklad = tk.BooleanVar(value=True)
 
         self._przyciski = []                               # przyciski "Generuj" do blokowania
@@ -179,6 +180,11 @@ class Aplikacja:
                           "Nazwa miejscowości w tabelce jest ustalana z położenia słupów stacji (wg zestawienia).")
         self._pole_pliku(f, "Szablon rysunków stałych:", self.we["orientacje"], "Wybierz szablon DXF")
         ttk.Label(f, text="(puste = dołączony szablon.dxf)", foreground="#777").pack(anchor="w", padx=10)
+        self._pole_pliku(f, "Plan ze słupami (nazwy):", self.orient_plan_slupow,
+                         "Wybierz plan DXF ze słupami (źródło miejscowości)")
+        ttk.Label(f, text="(opcjonalnie — miejscowości ustalane z geokodowania słupów tego planu i wiązane "
+                          "z szablonem po NUMERZE stacji trafo; puste = słupy z samego szablonu)",
+                  foreground="#777", wraplength=760, justify="left").pack(anchor="w", padx=10)
         box = ttk.LabelFrame(f, text="Opcje")
         box.pack(fill="x", padx=10, pady=6)
         ttk.Checkbutton(box, text="Pobieraj podkład mapowy (OSM/Geoportal; wymaga internetu i biblioteki Pillow)",
@@ -299,6 +305,7 @@ class Aplikacja:
             kabel=_int(self.obl_kabel.get(), pipeline.mod_obliczenia.DOMYSLNY_KABEL),
             orient_podklad=self.orient_podklad.get(),
             orient_szablon=orient_szablon or (self.orient_szablon.get().strip() or None),
+            orient_plan_slupow=(self.orient_plan_slupow.get().strip() or None),
             log=lambda t="": self._kolejka.put(("log", t)),
         )
         threading.Thread(target=self._praca, args=(opcje,), daemon=True).start()

@@ -53,6 +53,7 @@ class Opcje:
     # orientacje (rysunki stałe)
     orient_podklad: bool = True                  # pobierać podkład mapowy (wymaga internetu + Pillow)
     orient_szablon: str | None = None            # szablon rysunków stałych (gdy inny niż plan; None = dołączony)
+    orient_plan_slupow: str | None = None        # plan ze słupami - źródło miejscowości (wiązanie po nr stacji)
     log: object = print                          # funkcja logowania (podmieniana w GUI)
 
 
@@ -141,10 +142,17 @@ def uruchom(opcje: Opcje) -> Wynik:
                 r = _krok_obliczenia(zestawienie_plik, wyj["obliczenia"], opcje)
             elif krok == "orientacje":
                 szablon = opcje.orient_szablon
+                plan_slupow = None
                 if not szablon:
                     from . import zasoby
                     szablon = zasoby.szablon_orientacji_dxf() or plan
-                r = _krok_orientacje(szablon, wyj["orientacje"], opcje)
+                if opcje.orient_plan_slupow:
+                    plan_slupow = opcje.orient_plan_slupow        # jawnie wskazany plan ze słupami
+                elif os.path.abspath(szablon) != os.path.abspath(plan):
+                    # szablon rysunków stałych jest innym plikiem niż plan tras ze słupami ->
+                    # miejscowości ustal ze słupów planu i powiąż z szablonem po NUMERZE stacji
+                    plan_slupow = plan
+                r = _krok_orientacje(szablon, wyj["orientacje"], opcje, plan_slupow)
             else:
                 continue
         except Exception as ex:  # noqa: BLE001 - raport trafia do użytkownika
@@ -209,15 +217,18 @@ def _krok_obliczenia(zestawienie_plik: str, wyjscie: str, opcje: Opcje) -> Wynik
                       blad=None if ok else "Nie udało się wykonać obliczeń.")
 
 
-def _krok_orientacje(dxf: str, wyjscie_dir: str, opcje: Opcje) -> WynikKroku:
-    """Rysunki stałe (orientacje): dla każdej stacji trafo z rysunku - osobny plan DXF + zestawienie.
+def _krok_orientacje(szablon: str, wyjscie_dir: str, opcje: Opcje, plan_slupow=None) -> WynikKroku:
+    """Rysunki stałe (orientacje): dla każdej stacji trafo z szablonu - osobny plan DXF + zestawienie.
 
-    Jako szablon używany jest ten sam plik DXF co w pozostałych krokach (musi zawierać
-    odnośniki 'STACJA TRAFO' i obrysy zasięgu na warstwie !trafo)."""
+    szablon       - szablon rysunków stałych (odnośniki 'STACJA TRAFO' + obrysy !trafo),
+    plan_slupow   - opcjonalny plan ze słupami: miejscowości ustalane z geokodowania słupów
+                    i wiązane z szablonem po NUMERZE stacji trafo."""
     os.makedirs(wyjscie_dir, exist_ok=True)
-    argv = [dxf, "--wyniki", wyjscie_dir, "--bez-pytania"]
+    argv = [szablon, "--wyniki", wyjscie_dir, "--bez-pytania"]
     if not opcje.orient_podklad:
         argv.append("--bez-podkladu")
+    if plan_slupow:
+        argv += ["--plan-slupow", plan_slupow]
     kod, raport = _przechwyc(mod_orientacje.main, argv)
     # sukces: powstało zestawienie_stacji.xlsx albo przynajmniej jeden plik .dxf
     zest = os.path.join(wyjscie_dir, "zestawienie_stacji.xlsx")
@@ -257,6 +268,9 @@ def main(argv=None):
                     help="rysunki stałe (orientacje) bez pobierania podkładu mapowego z internetu")
     ap.add_argument("--szablon-orientacji", default=None,
                     help="plik szablonu DXF dla rysunków stałych (domyślnie dołączony 'szablon.dxf')")
+    ap.add_argument("--plan-slupow", default=None,
+                    help="plan DXF ze słupami - źródło miejscowości dla rysunków stałych "
+                         "(wiązanie z szablonem po numerze stacji trafo; domyślnie plan wejściowy)")
     a = ap.parse_args(argv)
 
     wybrane = tuple(k.strip().lower() for k in a.tylko.split(",") if k.strip())
@@ -267,7 +281,7 @@ def main(argv=None):
     opcje = Opcje(plan=a.plan, katalog=a.katalog, kroki=wybrane, adresy=a.adresy,
                   obrot_od=a.obrot_od, zostaw_puste_arkusze=a.zostaw_puste_arkusze,
                   seed=a.seed, kabel=a.kabel, orient_podklad=not a.bez_podkladu,
-                  orient_szablon=a.szablon_orientacji, log=print)
+                  orient_szablon=a.szablon_orientacji, orient_plan_slupow=a.plan_slupow, log=print)
     wynik = uruchom(opcje)
 
     print("\n" + "=" * 60)

@@ -1525,6 +1525,7 @@ class Options:
     place_phrase: str = "w miejscowości"
     station_placeholder: str | None = None     # np. "03-xx"; None = autodetekcja
     file_pattern: str = "{nr}.dxf"
+    plan_slupow: Path | None = None             # plan ze słupami - źródło miejscowości wiązanych po NUMERZE stacji
 
 
 def load_names_csv(path: Path) -> dict:
@@ -1562,8 +1563,15 @@ class Generator:
             raise ValueError("Nie znaleziono w szablonie odnośników 'STACJA TRAFO ...'")
         x0 = self.stations[0].x
         self.zone = pl2000_zone_from_easting(x0)
-        # słupy należące do każdej stacji (wg zestawienia) - podstawa do ustalenia miejscowości
-        self.slupy_stacji = self._slupy_stacji(opt.template)       # {nr stacji: [(x, y), ...]}
+        # słupy należące do każdej stacji (wg zestawienia) - podstawa do ustalenia miejscowości.
+        # Źródłem słupów jest plan ze słupami (gdy wskazany) - stacje wiązane po NUMERZE,
+        # a gdy nie - sam szablon. Dzięki temu plan tras i rysunki stałe nie muszą być tym
+        # samym plikiem; wystarczy, że numery stacji trafo się zgadzają.
+        zrodlo_slupow = opt.plan_slupow or opt.template
+        self.slupy_stacji = self._slupy_stacji(zrodlo_slupow)      # {nr stacji: [(x, y), ...]}
+        if opt.plan_slupow and self.slupy_stacji:
+            self.log(f"Miejscowości stacji ustalane ze słupów planu: {Path(opt.plan_slupow).name} "
+                     f"(powiązanie po numerze stacji trafo).")
         self.punkt_slupow = {}                                     # {nr stacji: (x, y)} - medoid (podkład/fallback)
         for st, pts in self.slupy_stacji.items():
             cx = sum(p[0] for p in pts) / len(pts)
@@ -1623,7 +1631,8 @@ class Generator:
         liczby = {}
         if pts and self.geocoder:
             for (x, y) in pts:
-                lat, lon = pl2000_to_wgs84(x, y, self.zone)
+                # strefa z easting słupa (plan ze słupami może być w innej strefie niż szablon)
+                lat, lon = pl2000_to_wgs84(x, y, pl2000_zone_from_easting(x))
                 try:
                     r = self.geocoder.resolve(lat, lon, x, y, self.zone)
                 except Exception:  # noqa: BLE001 - pojedynczy słup nie wywraca całości
@@ -1972,6 +1981,9 @@ def parse_args(argv=None):
     g.add_argument("--nazwa-wg-wiekszosci", action="store_true",
                    help="gdy źródła się różnią, weź nazwę podaną przez większość (min. 3 źródła)")
     g.add_argument("--nazwy", type=Path, help="CSV 'numer;miejscowość' - nadpisuje nazwy z OSM")
+    g.add_argument("--plan-slupow", type=Path,
+                   help="plan DXF ze słupami - miejscowości ustalane z geokodowania słupów danej stacji "
+                        "i wiązane z szablonem po NUMERZE stacji trafo (np. gdy słupów nie ma w szablonie)")
 
     g = p.add_argument_group("podkład mapowy")
     g.add_argument("--bez-podkladu", action="store_true",
@@ -2071,7 +2083,7 @@ def main(argv=None) -> int:
         tile_url=a.serwer_kafli, basemap_sources=tuple(a.zrodla_podkladu.split(",")), user_agent=a.user_agent, geocode=not a.bez_geokodowania,
         place_sources=tuple(a.zrodla_nazw.split(",")), verify_places=not a.bez_weryfikacji_nazw,
         majority_place=a.nazwa_wg_wiekszosci, refresh_basemap=a.odswiez_podklad,
-        names_csv=a.nazwy, only=only, keep_other_stations=a.zostaw_inne_stacje,
+        names_csv=a.nazwy, plan_slupow=a.plan_slupow, only=only, keep_other_stations=a.zostaw_inne_stacje,
         zone_layer=a.warstwa_obrysow, table_block=a.blok_tabelki,
         place_phrase=a.fraza_miejscowosci, station_placeholder=a.znacznik_stacji,
         file_pattern=a.nazwa_pliku,

@@ -17,11 +17,18 @@ z projektowanym światłowodem:
 > (OSM / Geoportal) wymaga internetu i biblioteki **Pillow** — bez nich krok działa z opcją
 > „bez podkładu”. W pliku .exe Pillow i szablon są już wbudowane.
 >
-> **Nazwa miejscowości w tabelce** jest ustalana na podstawie **położenia słupów należących do
-> danej stacji trafo** (reprezentatywny słup — medoid), a nie z grotu odnośnika stacji. Przypisanie
-> „który słup leży w której stacji” pochodzi z analizy **zestawienia** (obszary `!trafo_<nr>` +
-> drzewo sieci). Gdy w rysunku nie ma ponumerowanych słupów (np. sam szablon poglądowy),
-> program wraca do dawnego sposobu — bierze położenie odnośnika stacji.
+> **Nazwa miejscowości w tabelce** jest ustalana z **geokodowania słupów danej stacji trafo**:
+> dla każdego słupa odczytujemy miejscowość, więc wiadomo, jakie miejscowości obejmuje stacja;
+> w tabelce wpisujemy tę z największą liczbą słupów (pełny zasięg trafia do uwag/kolumny „inne”).
+> Przypisanie „który słup leży w której stacji” pochodzi z analizy **zestawienia** (obszary
+> `!trafo_<nr>` + drzewo sieci).
+>
+> **Powiązanie po numerze stacji trafo.** Słupy i szablon rysunków stałych nie muszą być w tym
+> samym pliku — wystarczy, że **numery stacji się zgadzają**. W łańcuchu plan tras (ze słupami)
+> jest automatycznie źródłem miejscowości dla szablonu; można też wskazać go ręcznie
+> (`--plan-slupow`, w oknie pole „Plan ze słupami”). Stacje wiązane są po numerze
+> (`03-0541` = `0541` = `541`). Gdy nie ma ani planu ze słupami, ani słupów w szablonie,
+> program wraca do położenia odnośnika stacji.
 
 Dodatkowo krok **Przewieszenia** tworzy plik **kontrolny** `<plan> - kontrola.dxf` — kopię planu
 (oryginał pozostaje nietknięty) z **numerem przewieszenia wpisanym w miejscu każdego zaznaczenia**,
