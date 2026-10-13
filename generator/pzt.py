@@ -378,42 +378,6 @@ def _dopasuj(nazwa_warstwy, wzor):
     return wzor.lower() in n
 
 
-# kolory wg wyglądu (jak w plan.py): trasa 30, zakres stacji 6 (magenta)
-KOLOR_TRASY = 30
-KOLOR_ZAKRESU = 6
-SLOWA_TRASY = ("tele", "sw", "światł", "swiatl", "trasa", "kabel", "linia")
-
-
-def _ma_slowo_trasy(nazwa):
-    n = (nazwa or "").lower()
-    return any(s in n for s in SLOWA_TRASY)
-
-
-def _mapa_kolorow_warstw(secs):
-    mapa = {}
-    for t, d in split_entities(secs.get("TABLES", [])):
-        if t == "LAYER":
-            nm = get(d, 2)
-            if nm is not None:
-                try:
-                    mapa[nm] = abs(int(get(d, 62, "7")))
-                except ValueError:
-                    mapa[nm] = 7
-    return mapa
-
-
-def _kolor_encji(d, kolory_warstw):
-    c = get(d, 62)
-    if c is not None:
-        try:
-            ci = int(c)
-            if ci not in (0, 256):
-                return abs(ci)
-        except ValueError:
-            pass
-    return kolory_warstw.get(get(d, 8, ""), 7)
-
-
 @dataclass
 class Wejscie:
     trasy: list                       # [[(x,y), ...], ...] polilinie !tele
@@ -428,46 +392,26 @@ def wczytaj(sciezka, wzorzec_sciezka=None):
     z `wzorzec_sciezka` (gdy None - z tego samego pliku)."""
     secs = dict(split_sections(read_tags(sciezka)))
     ents = split_entities(secs.get("ENTITIES", []))
-    kolory = _mapa_kolorow_warstw(secs)
-    kol = lambda d: _kolor_encji(d, kolory)   # noqa: E731
 
-    trasy, stacje = [], []
-    trasy_wg = {"warstwa": [], "kolor": []}       # trasa: najpierw po nazwie, potem po kolorze
-    poligony = []
+    trasy, poligony, stacje = [], [], []
     for t, d in ents:
         warstwa = get(d, 8, "")
-        if t == "LWPOLYLINE":
-            pts, zamkn = _lwpoly_punkty(d)
-            if zamkn and len(pts) >= 3 and (_dopasuj(warstwa, WARSTWA_ZAKRES)
-                                            or _dopasuj(warstwa, "trafo") or kol(d) == KOLOR_ZAKRESU):
-                # numer stacji z nazwy warstwy "!trafo_<nr>" (gdy jest); inaczej dopięty geometrycznie
-                reszta = None
-                if _dopasuj(warstwa, "trafo"):
-                    reszta = warstwa.lower().split("trafo", 1)[-1].strip(" _-/") or None
-                    reszta = _norm_nr(reszta) if reszta else None
-                poligony.append([reszta, pts, get(d, 5)])
-            elif not zamkn and len(pts) >= 2:
-                if _dopasuj(warstwa, WARSTWA_TRASA) or _ma_slowo_trasy(warstwa):
-                    trasy_wg["warstwa"].append(pts)
-                elif kol(d) == KOLOR_TRASY:
-                    trasy_wg["kolor"].append(pts)
-        elif t == "MULTILEADER":
+        if t == "LWPOLYLINE" and _dopasuj(warstwa, WARSTWA_TRASA):
+            pts, _zamkn = _lwpoly_punkty(d)
+            if len(pts) >= 2:
+                trasy.append(pts)
+        elif t == "LWPOLYLINE" and warstwa.lower().startswith(WARSTWA_ZAKRES.lower()):
+            pts, _zamkn = _lwpoly_punkty(d)
+            if len(pts) >= 3:
+                # numer stacji z nazwy warstwy "!trafo_<nr>" (z poprzedniego uruchomienia) - opcjonalnie
+                reszta = warstwa[len(WARSTWA_ZAKRES):].strip(" _-")
+                poligony.append([reszta or None, pts, get(d, 5)])   # [nr|None, punkty, uchwyt]
+        elif t == "MULTILEADER" and _dopasuj(warstwa, "trafo"):
             txt, grot = _mleader_tekst_grot(d)
             if "STACJA" in txt.upper():
                 m = RE_STACJA.search(txt)
                 if m:
                     stacje.append((_norm_nr(m.group(1)), grot))
-    trasy = trasy_wg["warstwa"] or trasy_wg["kolor"]
-
-    # poligony bez numeru w nazwie: dopnij numer z opisu STACJA TRAFO leżącego w środku (geometria)
-    for p in poligony:
-        if not p[0] and stacje:
-            wew = [nr for nr, g in stacje if w_poligonie(g, p[1])]
-            if wew:
-                p[0] = _norm_nr(wew[0])
-            else:
-                nr = min(stacje, key=lambda s: dist_pt_poligon(s[1], p[1]))[0]
-                p[0] = _norm_nr(nr)
 
     W, H, zak = _wczytaj_wzorzec(sciezka if wzorzec_sciezka is None else wzorzec_sciezka)
     return Wejscie(trasy, poligony, stacje, (W, H), zak)

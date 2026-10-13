@@ -10,25 +10,11 @@ try:
 except ImportError:
     from dxfio import get, getf, mtext_plain, read_tags, seg_dist, split_entities, split_sections
 
-# --- domyślne nazwy warstw / bloków (jedna z WIELU wskazówek - nie wymóg) ---
-# Program rozpoznaje elementy po WYGLĄDZIE (typ encji + geometria + kolor), a nazwa warstwy
-# jest tylko dodatkową wskazówką. Dzięki temu działa, gdy warstwy nazywają się inaczej.
+# --- domyślne nazwy warstw / bloków (można zmienić parametrami programu) ---
 WARSTWA_PRZEWIESZEN = "_PRZEWIESZENIA"
 WARSTWA_TRASY = "!TELE"          # polilinie trasy światłowodu
 WARSTWA_NUMEROW = "_numery"       # teksty z numerami słupów
 BLOKI_SLUPOW = ("ZN", "E", "R")   # bloki symboli słupów nN
-
-# kolory wg wyglądu (ACI): trasa zwykle 30 (pomarańczowy), przewieszenia 3 (zielony),
-# zakres stacji zwykle 6 (magenta) - używane jako WSKAZÓWKA, nie warunek
-KOLOR_TRASY = 30
-KOLOR_PRZEWIESZEN = 3
-KOLOR_ZAKRESU = 6
-# słowa-klucze w nazwach warstw (wskazówki)
-SLOWA_TRASY = ("tele", "sw", "światł", "swiatl", "trasa", "kabel", "linia")
-SLOWA_ZAKRESU = ("trafo",)
-SLOWA_PRZEWIESZEN = ("przewiesz",)
-SLOWA_NUMEROW = ("numer", "nr slup", "numery")
-RE_NUMER_SLUPA = re.compile(r"^\d+(\.\d+)*$")   # 1, 2, 2.1, 7.4 ...
 
 
 def _warstwa_trasy(nazwa: str) -> bool:
@@ -37,38 +23,6 @@ def _warstwa_trasy(nazwa: str) -> bool:
     n = (nazwa or "").strip().lower()
     w = WARSTWA_TRASY.strip().lower()
     return n == w or n.startswith(w)
-
-
-def _mapa_kolorow_warstw(secs):
-    """Zwraca {nazwa_warstwy: kolor ACI} z tabeli LAYER - do wyliczania koloru efektywnego."""
-    mapa = {}
-    for t, d in split_entities(secs.get("TABLES", [])):
-        if t == "LAYER":
-            nm = get(d, 2)
-            if nm is not None:
-                try:
-                    mapa[nm] = abs(int(get(d, 62, "7")))
-                except ValueError:
-                    mapa[nm] = 7
-    return mapa
-
-
-def _kolor_encji(d, kolory_warstw):
-    """Efektywny kolor encji: własny (kod 62) albo z warstwy (BYLAYER)."""
-    c = get(d, 62)
-    if c is not None:
-        try:
-            ci = int(c)
-            if ci not in (0, 256):      # 0 = BYBLOCK, 256 = BYLAYER
-                return abs(ci)
-        except ValueError:
-            pass
-    return kolory_warstw.get(get(d, 8, ""), 7)
-
-
-def _ma_slowo(nazwa, slowa):
-    n = (nazwa or "").lower()
-    return any(s in n for s in slowa)
 
 
 @dataclass
@@ -174,102 +128,45 @@ class Plan:
             if all(math.dist((x, y), (u[0], u[1])) > 0.05 for u in uniq):
                 uniq.append((x, y, b))
         self.slupy = [Slup(i, x, y, b) for i, (x, y, b) in enumerate(uniq)]
-
-        # kolory warstw (do koloru efektywnego) i funkcja pomocnicza
-        kolory = _mapa_kolorow_warstw(secs)
-        kol = lambda d: _kolor_encji(d, kolory)   # noqa: E731
-
-        # numery słupów: TEKST wyglądający jak numer (1, 2, 2.1, ...), niezależnie od warstwy;
-        # warstwa z "numer" to dodatkowa wskazówka (nie wymóg)
-        numery = []
-        for t, d in E:
-            if t != "TEXT":
-                continue
-            s = (get(d, 1) or "").strip()
-            if s and (RE_NUMER_SLUPA.match(s) or _ma_slowo(get(d, 8, ""), SLOWA_NUMEROW)):
-                if RE_NUMER_SLUPA.match(s):
-                    numery.append((s, getf(d, 10), getf(d, 20)))
-
-        # --- znaczniki przewieszeń: wg WYGLĄDU (zielone okręgi), nie wg nazwy warstwy ---
+        numery = [(get(d, 1).strip(), getf(d, 10), getf(d, 20)) for t, d in E
+                  if t == "TEXT" and get(d, 8) == WARSTWA_NUMEROW and (get(d, 1) or "").strip()]
+        # znaczniki przewieszeń: okręgi oraz kreski (LINE / LWPOLYLINE) przecinające przęsło
         self.znaczniki = []
-        okregi_wg = {"warstwa": [], "kolor": [], "inne": []}
-        kreski_zielone = []
         for t, d in E:
-            w = get(d, 8, "")
+            if get(d, 8) != WARSTWA_PRZEWIESZEN:
+                continue
             if t == "CIRCLE":
-                c = kol(d)
-                grupa = ("warstwa" if _ma_slowo(w, SLOWA_PRZEWIESZEN)
-                         else "kolor" if c == KOLOR_PRZEWIESZEN else "inne")
-                okregi_wg[grupa].append(("O", (getf(d, 10), getf(d, 20)), getf(d, 40)))
-            elif t == "LINE" and (_ma_slowo(w, SLOWA_PRZEWIESZEN) or kol(d) == KOLOR_PRZEWIESZEN):
-                kreski_zielone.append(("K", [(getf(d, 10), getf(d, 20)), (getf(d, 11), getf(d, 21))], 0.0))
-            elif t == "LWPOLYLINE" and (_ma_slowo(w, SLOWA_PRZEWIESZEN) or kol(d) == KOLOR_PRZEWIESZEN):
+                self.znaczniki.append(("O", (getf(d, 10), getf(d, 20)), getf(d, 40)))
+            elif t == "LINE":
+                self.znaczniki.append(("K", [(getf(d, 10), getf(d, 20)), (getf(d, 11), getf(d, 21))], 0.0))
+            elif t == "LWPOLYLINE":
                 pts = list(zip([float(v) for k, v in d if k == 10], [float(v) for k, v in d if k == 20]))
-                if 2 <= len(pts) <= 3 and not (int(get(d, 70, "0")) & 1):   # krótka otwarta kreska
-                    kreski_zielone.append(("K", pts, 0.0))
-        # wybierz najlepszą grupę okręgów: najpierw warstwa "_PRZEWIESZENIA", potem zielone, potem reszta
-        if okregi_wg["warstwa"]:
-            self.znaczniki += okregi_wg["warstwa"]
-            self._zrodlo_znacznikow = "warstwa z „przewiesz”"
-        elif okregi_wg["kolor"]:
-            self.znaczniki += okregi_wg["kolor"]
-            self._zrodlo_znacznikow = f"zielone okręgi (kolor {KOLOR_PRZEWIESZEN})"
-        else:
-            self.znaczniki += okregi_wg["inne"]
-            self._zrodlo_znacznikow = "okręgi (dowolny kolor)" if okregi_wg["inne"] else "brak"
-        self.znaczniki += kreski_zielone
+                if len(pts) >= 2:
+                    self.znaczniki.append(("K", pts, 0.0))
         self.okregi = [(z[1][0], z[1][1], z[2]) for z in self.znaczniki if z[0] == "O"]
-
-        # --- obszary (zakresy) stacji: zamknięte polilinie wg wyglądu/geometrii ---
-        # kandydatki: nazwa z "trafo" (z numerem w nazwie) albo kolor magenta albo zamknięta
-        # polilinia otaczająca słupy. Numer stacji z nazwy warstwy, gdy jest.
+        # obszary stacji: zamknięte polilinie na warstwach "!trafo_<nr stacji>"
         self.obszary = []
-        self._zakres_bez_nazwy = []           # zamknięte polilinie-kandydatki bez numeru w nazwie
         for t, d in E:
-            if t != "LWPOLYLINE":
-                continue
             L = get(d, 8) or ""
-            zamkn = bool(int(get(d, 70, "0")) & 1)
-            if not zamkn:
-                continue
-            pts = list(zip([float(v) for k, v in d if k == 10], [float(v) for k, v in d if k == 20]))
-            if len(pts) < 3:
-                continue
-            m = re.search(r"trafo[_\- ]*([\dA-Za-z\-/]+)$", L.lower())
-            if m and m.group(1):
-                self.obszary.append(("ST " + L.split("trafo", 1)[-1].strip(" _-/").strip(), pts))
-            elif _ma_slowo(L, SLOWA_ZAKRESU) or kol(d) == KOLOR_ZAKRESU:
-                self._zakres_bez_nazwy.append(pts)   # bez numeru - dopniemy stację z opisu/geometrii
-
-        # --- trasa: polilinie wg wyglądu (kolor trasy / słowo w nazwie / rola geometryczna) ---
+            if t == "LWPOLYLINE" and L.lower().startswith("!trafo_"):
+                pts = list(zip([float(v) for k, v in d if k == 10], [float(v) for k, v in d if k == 20]))
+                if len(pts) >= 3:
+                    self.obszary.append(("ST " + L[7:].strip(), pts))
         self.trasy = []
-        self._warstwy_kandydaci_trasy = set()
-        trasy_wg = {"warstwa": [], "kolor": []}
+        self._warstwy_kandydaci_trasy = set()      # warstwy polilinii wyglądające na trasę (do diagnostyki)
         for t, d in E:
             if t != "LWPOLYLINE":
                 continue
             w = get(d, 8, "")
-            xs = [float(v) for k, v in d if k == 10]
-            ys = [float(v) for k, v in d if k == 20]
-            pts = list(zip(xs, ys))
-            if len(pts) < 2:
-                continue
-            if int(get(d, 70, "0")) & 1 and pts:
-                pts.append(pts[0])
-            if _warstwa_trasy(w) or _ma_slowo(w, SLOWA_TRASY):
-                trasy_wg["warstwa"].append(pts)
-            elif kol(d) == KOLOR_TRASY and not (int(get(d, 70, "0")) & 1):
-                trasy_wg["kolor"].append(pts)
+            if _warstwa_trasy(w):
+                xs = [float(v) for k, v in d if k == 10]
+                ys = [float(v) for k, v in d if k == 20]
+                pts = list(zip(xs, ys))
+                if int(get(d, 70, "0")) & 1 and pts:
+                    pts.append(pts[0])
+                self.trasy.append(pts)
+            elif any(k in w.lower() for k in ("tele", "sw", "światł", "swiatl", "trasa", "kabel", "linia")):
                 self._warstwy_kandydaci_trasy.add(w)
-        # priorytet: trasa po nazwie warstwy; gdy brak - trasa po kolorze (pomarańczowa)
-        if trasy_wg["warstwa"]:
-            self.trasy = trasy_wg["warstwa"]
-            self._zrodlo_trasy = "warstwa z nazwą trasy"
-        elif trasy_wg["kolor"]:
-            self.trasy = trasy_wg["kolor"]
-            self._zrodlo_trasy = f"polilinie koloru {KOLOR_TRASY} (pomarańczowe)"
-        else:
-            self._zrodlo_trasy = "brak"
 
         # wymiary przęseł (np. warstwa !wymiary): punkty definicyjne 13/14 przy słupach, wartość 42 lub tekst
         self.wymiary = []
@@ -286,7 +183,6 @@ class Plan:
         self._przypisz_numery(numery)
         self._przypisz_typy(mls, tol=max(2.0, tol_slup))
         self._zbuduj_przesla(tol_slup)
-        self._dopnij_numery_zakresow(mls)      # zakresy rozpoznane po wyglądzie -> numer stacji z opisu
         self._obwody(mls, max_odl_stacji)
 
     # ------------------------------------------------------------------
@@ -426,37 +322,6 @@ class Plan:
         if not self.przesla:
             return None
         return min(self.przesla, key=lambda p: p.odleglosc(pt))
-
-    def _dopnij_numery_zakresow(self, mls):
-        """Zakresom stacji rozpoznanym po WYGLĄDZIE (bez numeru w nazwie warstwy) nadaje numer
-        stacji z opisu „STACJA TRAFO”, którego grot leży w danym poligonie (geometria)."""
-        if not getattr(self, "_zakres_bez_nazwy", None):
-            return
-        stacje = [(t.split("\n")[-1].strip(), tips[0]) for t, tips, _ in mls
-                  if "STACJA" in t.upper() and tips]
-        for pts in self._zakres_bez_nazwy:
-            nr = None
-            wew = [(s, p) for s, p in stacje if self._w_wielokacie(p, pts)]
-            if wew:
-                nr = wew[0][0]
-            elif stacje:   # brak opisu w środku - najbliższy opis stacji do poligonu
-                nr = min(stacje, key=lambda sp: self._odl_pkt_poligon(sp[1], pts))[0]
-            self.obszary.append(("ST " + nr if nr else "ST ?", pts))
-
-    @staticmethod
-    def _w_wielokacie(pt, poly):
-        x, y = pt
-        wew = False
-        n = len(poly)
-        for i in range(n):
-            (x1, y1), (x2, y2) = poly[i], poly[(i + 1) % n]
-            if (y1 > y) != (y2 > y) and x < x1 + (y - y1) * (x2 - x1) / (y2 - y1):
-                wew = not wew
-        return wew
-
-    @staticmethod
-    def _odl_pkt_poligon(pt, poly):
-        return min(seg_dist(pt, poly[i], poly[(i + 1) % len(poly)]) for i in range(len(poly)))
 
     def _obwody(self, mls, max_odl):
         stacje = [(t.split("\n")[-1].strip(), tips[0]) for t, tips, _ in mls
