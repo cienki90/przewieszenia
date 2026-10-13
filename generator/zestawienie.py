@@ -32,6 +32,8 @@ from xml.sax.saxutils import escape
 
 # ---------------------------------------------------------------- ustawienia
 WARSTWA_ZAKRESOW = '!trafo'      # zamknięte polilinie = zakres stacji
+WARSTWA_SIECI = '!tele'          # polilinie = ciąg logiczny sieci (łączą słupy w gałęzie/obwody)
+TOL_SIEC = 8.0                   # [m] maks. odległość wierzchołka polilinii sieci od słupa
 TOL_WYMIAR = 3.0                 # [m] maks. odległość końca wymiaru od słupa
 TOL_NUMER = 15.0                 # [m] maks. odległość numeru od słupa
 TOL_DUPLIKAT = 1.0               # [m] opisy słupów bliżej niż to = ten sam słup
@@ -153,6 +155,7 @@ class Rysunek:
         self.zakresy = []    # [punkty]
         self.nazwy_zakresow = []  # numer stacji z nazwy warstwy (np. '!trafo_05-0181') lub None
         self.mufy = []       # punkty wstawienia bloków mufy
+        self.sieci = []      # [punkty] - polilinie warstwy !tele (ciąg logiczny sieci)
         self.uwagi = []
         self._wczytaj()
 
@@ -224,6 +227,11 @@ class Rysunek:
                     self.zakresy.append(list(zip(xs, ys)))
                     reszta = warstwa[len(WARSTWA_ZAKRESOW):].strip(' _-')
                     self.nazwy_zakresow.append(reszta or None)
+            elif typ == 'LWPOLYLINE' and warstwa.lower() == WARSTWA_SIECI.lower():
+                xs = [float(v) for k, v in g if k == 10]
+                ys = [float(v) for k, v in g if k == 20]
+                if len(xs) >= 2:
+                    self.sieci.append(list(zip(xs, ys)))
 
 
 def w_wielokacie(pt, poly):
@@ -233,6 +241,31 @@ def w_wielokacie(pt, poly):
         if (y1 > y) != (y2 > y) and x < x1 + (y - y1) * (x2 - x1) / (y2 - y1):
             w = not w
     return w
+
+
+def graf_sieci(sieci, slupy, num):
+    """Graf sąsiedztwa słupów z polilinii warstwy !tele (ciąg logiczny sieci).
+    Kolejne wierzchołki polilinii, które pokrywają się ze słupami, tworzą krawędź
+    słup-słup. To pewniejszy ciąg logiczny niż wymiary (brak dziur w gałęziach)."""
+    sas = collections.defaultdict(set)
+    if not num:
+        return sas
+
+    def slup_przy(pt):
+        d, j = min((math.dist(pt, slupy[i]['p']), i) for i in num)
+        return j if d <= TOL_SIEC else None
+
+    for pts in sieci:
+        seq = []
+        for pt in pts:
+            j = slup_przy(pt)
+            if j is not None and (not seq or seq[-1] != j):
+                seq.append(j)
+        for a, b in zip(seq, seq[1:]):
+            if a != b:
+                sas[a].add(b)
+                sas[b].add(a)
+    return sas
 
 
 def klucz(nr):
@@ -567,39 +600,116 @@ def zbuduj(rys):
     for i in num:
         grupy[stacja_wg_zakresu(i)].append(i)
 
+    # ---------- obwody: budowane od sieci !tele (ciąg logiczny), nie od pozycji stacji
+    # Graf połączeń = sieć !tele uzupełniona o wymiary (gdy sieć ma lukę). Obwód to gałąź
+    # tego grafu o ciągłej, niepowtarzalnej numeracji, startująca od słupa "nr 1". Grot opisu
+    # "obw. nr X" wskazuje pierwsze przęsło obwodu, więc start obwodu = słup najbliższy grotowi.
+    # Dwa słupy "nr 1" obok siebie (przy jednej stacji) = dwa obwody - przęsło między nimi
+    # jest ignorowane dzięki regule "nie wchodź na numer już użyty w obwodzie".
+    sas_sieci = graf_sieci(rys.sieci, slupy, num)
+    polaczenia = collections.defaultdict(set)
+    for i in num:
+        polaczenia[i] |= sas_sieci.get(i, set())
+        polaczenia[i] |= sasiad.get(i, set())
+
+    def obwod_od(start, wolne):
+        """BFS po grafie połączeń od słupa `start`; nie wchodzi na numer już obecny
+        w obwodzie (to rozdziela splecione gałęzie przy stacji). Zwraca zbiór indeksów."""
+        grupa = {start}
+        numery = {slupy[start]['nr']}
+        kol = collections.deque([start])
+        while kol:
+            i = kol.popleft()
+            for j in polaczenia[i]:
+                if j in wolne and j not in grupa and slupy[j]['nr'] not in numery:
+                    grupa.add(j)
+                    numery.add(slupy[j]['nr'])
+                    kol.append(j)
+        return grupa
+
     rys._slupy, rys._sasiad = slupy, sasiad  # do diagnostyki
     wynik = {}
     obw_slupa = {}
     for st, ids in grupy.items():
-        korzenie = [i for i in ids if slupy[i]['rodzic'] is None]
         sp = poz_stacji.get(st)
-        ob = [(n, p) for n, p in obwody
-              if sp is None or math.dist(p, sp) < TOL_STACJA]
-        oceny = sorted((min(math.dist(p, slupy[r]['p']), 1e9), r, n) for r in korzenie for n, p in ob)
-        obw, uzyte = {}, set()
-        for d, r, n in oceny:
-            if r in obw or n in uzyte:
+        ob = [(n, p) for n, p in obwody if obszar(p) is not None
+              and zakres_stacji.get(obszar(p)) == st]
+        if not ob:          # fallback dla stacji bez zakresu !trafo z nazwą
+            ob = [(n, p) for n, p in obwody
+                  if sp is not None and math.dist(p, sp) < TOL_STACJA]
+        wolne = set(ids)
+        obw_grup = []       # [(nr_obwodu, set(idx))]
+        uzyte_nr = set()
+        # 1) obwody wskazane grotem "obw. nr X": start = słup najbliższy grotowi
+        for n, grot in sorted(ob, key=lambda x: x[0]):
+            if n in uzyte_nr or not wolne:
                 continue
-            obw[r] = n
-            uzyte.add(n)
-        for r in sorted(korzenie, key=lambda r: math.dist(slupy[r]['p'], sp) if sp else 0):
-            if r not in obw:
-                n = min(set(range(1, 100)) - uzyte)
-                obw[r] = n
-                uzyte.add(n)
-                if len(korzenie) > 1:
-                    U(UWAGA, 'Nie rozpoznano opisu "obw. nr" dla tego obwodu - przyjęto obwód %d.' % n, r)
-        if len([n for n, p in ob]) != len(set(n for n, p in ob)):
-            U(UWAGA, 'Powtórzony numer obwodu w opisach "obw. nr" - sprawdź numery obwodów.', st=st, p=sp)
-        for i in ids:
-            k = korzen(i)
-            if k in obw:
-                obw_slupa[i] = obw[k]           # korzeń w tej samej stacji - obwód z korzenia
+            start = min(wolne, key=lambda i: math.dist(grot, slupy[i]['p']))
+            grupa = obwod_od(start, wolne)
+            wolne -= grupa
+            obw_grup.append((n, grupa))
+            uzyte_nr.add(n)
+        powt_opis = len(ob) != len({n for n, _ in ob})
+        # 2) pozostałe gałęzie bez (rozpoznanego) opisu obwodu: każdy wolny "nr 1" = nowy obwód
+        while True:
+            jedynki = [i for i in wolne if slupy[i]['nr'] == '1']
+            if not jedynki:
+                break
+            start = min(jedynki, key=lambda i: math.dist(slupy[i]['p'], sp) if sp else 0.0)
+            grupa = obwod_od(start, wolne)
+            wolne -= grupa
+            n = min(set(range(1, 1000)) - uzyte_nr)
+            uzyte_nr.add(n)
+            obw_grup.append((n, grupa))
+            if len(obw_grup) > 1 and not powt_opis:
+                U(UWAGA, 'Nie rozpoznano opisu "obw. nr" dla tego obwodu - przyjęto obwód %d.' % n, start)
+        if powt_opis:
+            U(UWAGA, 'Powtórzony numer obwodu w opisach "obw." - ponumerowano obwody po kolei.',
+              st=st, p=sp)
+        # 3) domknięcie: słupy nieosiągalne z grafu (luki w sieci) - dołącz po ciągłości
+        # numeracji do obwodu, w którym jest ich słup poprzedni, a numer jest wolny; przy
+        # wielu kandydatach wybór najbliższy geometrycznie
+        numery_grup = [{slupy[i]['nr'] for i in gr} for _, gr in obw_grup]
+        zmiana = True
+        while zmiana and wolne and obw_grup:
+            zmiana = False
+            for i in sorted(wolne, key=lambda i: klucz(slupy[i]['nr'])):
+                nr = slupy[i]['nr']
+                pn = nr_rodzica(nr)
+                kand = []
+                for k, (_, gr) in enumerate(obw_grup):
+                    if nr in numery_grup[k]:
+                        continue
+                    if pn is not None and pn in numery_grup[k]:
+                        d = min(math.dist(slupy[i]['p'], slupy[j]['p']) for j in gr)
+                        kand.append((d, k))
+                if kand:
+                    kand.sort()
+                    k = kand[0][1]
+                    obw_grup[k][1].add(i)
+                    numery_grup[k].add(nr)
+                    wolne.discard(i)
+                    zmiana = True
+        # 4) resztki (bez połączenia siecią i bez ciągłości numeracji) - zwykle słup, którego
+        # poprzednik nie został odczytany z rysunku. Dołącz do geometrycznie najbliższego
+        # obwodu z błędem, a gdy nie ma żadnego obwodu - utwórz osobny.
+        for i in sorted(wolne, key=lambda i: klucz(slupy[i]['nr'])):
+            if obw_grup:
+                k = min(range(len(obw_grup)),
+                        key=lambda k: min(math.dist(slupy[i]['p'], slupy[j]['p'])
+                                          for j in obw_grup[k][1]))
+                obw_grup[k][1].add(i)
+                U(BLAD, 'Słup nie łączy się siecią (!tele) ani numeracją z żadnym obwodem - '
+                  'brak słupa poprzedniego na rysunku? Dołączono do najbliższego obwodu %d.'
+                  % obw_grup[k][0], i)
             else:
-                # słup przeniesiony do stacji wg zakresu (korzeń w innej stacji) - obwód z najbliższego
-                # opisu "obw. nr" tej stacji, a gdy brak - obwód 1
-                obw_slupa[i] = (min(ob, key=lambda nb: math.dist(nb[1], slupy[i]['p']))[0]
-                                if ob else 1)
+                n = min(set(range(1, 1000)) - uzyte_nr)
+                uzyte_nr.add(n)
+                obw_grup.append((n, {i}))
+                U(UWAGA, 'Słup nie jest połączony siecią z żadnym obwodem - przyjęto osobny obwód %d.' % n, i)
+        for n, gr in obw_grup:
+            for i in gr:
+                obw_slupa[i] = n
         wiersze = []
         for i in ids:
             P = slupy[i]
