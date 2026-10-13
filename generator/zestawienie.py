@@ -39,7 +39,8 @@ TOL_NUMER = 15.0                 # [m] maks. odległość numeru od słupa
 TOL_DUPLIKAT = 1.0               # [m] opisy słupów bliżej niż to = ten sam słup
 TOL_STACJA = 150.0               # [m] słup nr 1 poza zakresem -> najbliższa stacja
 
-RE_SLUP = re.compile(r's[łl]up\s*nN\s*\n\s*([A-Za-ząćęłńóśźżĄĆĘŁŃÓŚŹŻ]*)\s*(-.+?)\s*$', re.I | re.S)
+# "słup nN" lub "słup nN/SN" (słup na granicy sieci nN/SN) - przyrostek "/SN" (ew. inny "/XX") opcjonalny
+RE_SLUP = re.compile(r's[łl]up\s*nN(?:\s*/\s*\w+)?\s*\n\s*([A-Za-ząćęłńóśźżĄĆĘŁŃÓŚŹŻ]*)\s*(-.+?)\s*$', re.I | re.S)
 PRZESLO_MAX = 70                 # [m] dłuższe przęsło -> uwaga
 PRZESLO_MIN = 5                  # [m] krótsze przęsło -> uwaga
 TOL_MUFA = 5.0                   # [m] maks. odległość bloku mufy od słupa
