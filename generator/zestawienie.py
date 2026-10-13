@@ -556,6 +556,30 @@ def zbuduj(rys):
                 P, Q = Q, P
         P['odl'] = (d + 1) // 2
         Q['odl'] = d // 2
+    # Dziura w sieci: słup ma rodzica, ale NIE ma do niego wymiaru (przęsło niewymiarowane),
+    # za to ma wymiar "z przodu" - do następnego słupa. Wtedy ten wymiar z przodu dzielimy
+    # na pół: połowa na przęsło poprzednik->i, połowa na i->następny (analogicznie do
+    # pierwszego przęsła od stacji). Robimy to PRZED zwykłym przypisaniem, by następny słup
+    # też dostał połowę (a nie cały swój wymiar).
+    for i in num:
+        P = slupy[i]
+        if 'odl' in P or P['rodzic'] is None or 'wym' in P:
+            continue
+        przod = [j for j in sasiad[i]
+                 if slupy[j]['rodzic'] == i and 'odl' not in slupy[j] and wym(i, j) is not None]
+        if not przod:
+            przod = [j for j in sasiad[i] if wym(i, j) is not None and 'odl' not in slupy[j]
+                     and j != P['rodzic'] and klucz(slupy[j]['nr']) > klucz(P['nr'])]
+        if przod:
+            j = min(przod, key=lambda j: klucz(slupy[j]['nr']))
+            d = round(wym(i, j))
+            P['odl'] = (d + 1) // 2
+            slupy[j]['odl'] = d // 2
+            przesla[frozenset((i, j))] = 'podział'
+            U(BLAD, 'Brak wymiaru do słupa nr %s (dziura w sieci) - przęsło do słupa nr %s '
+              '(%d m) podzielono na pół (dorysuj brakujący wymiar).'
+              % (slupy[P['rodzic']]['nr'], slupy[j]['nr'], d), i)
+
     for i in num:
         P = slupy[i]
         if 'odl' in P:
