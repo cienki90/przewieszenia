@@ -1,4 +1,7 @@
-# Program działa na samym Pythonie 3.10+ (biblioteka standardowa + tkinter).
-# Jedyna zewnętrzna zależność jest OPCJONALNA i dotyczy tylko kroku "Rysunki stałe"
-# (orientacje) przy pobieraniu podkładu mapowego z internetu:
+# Rdzeń programu działa na samym Pythonie 3.10+ (biblioteka standardowa + tkinter).
+# Zależności zewnętrzne są OPCJONALNE i dotyczą wybranych modułów:
+#  - Pillow                – krok "Rysunki stałe" (orientacje): podkład mapowy z internetu,
+#  - python-docx, openpyxl – krok "Opisy techniczne": generowanie opisów .docx z zestawienia.
 Pillow>=9.0
+python-docx>=1.1
+openpyxl>=3.1

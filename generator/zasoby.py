@@ -17,6 +17,8 @@ import sys
 BAZA = "przewieszenia baza.dxf"
 ARKUSZE = "arkusze.dxf"
 SZABLON_ORIENTACJI = "szablon.dxf"       # szablon rysunków stałych (orientacje arkuszy)
+SZABLON_OPISU = "szablon_opisu.docx"     # szablon opisu technicznego (.docx) - moduł Opisy
+WZOR_TABELI_OBLICZEN = os.path.join("wzorce", "wzor_tabeli_obliczen.docx")  # wzorzec tabeli nośności
 
 
 def _katalogi():
@@ -59,3 +61,11 @@ def arkusze_dxf():
 
 def szablon_orientacji_dxf():
     return sciezka_zasobu(SZABLON_ORIENTACJI)
+
+
+def szablon_opisu_docx():
+    return sciezka_zasobu(SZABLON_OPISU)
+
+
+def wzor_tabeli_obliczen_docx():
+    return sciezka_zasobu(WZOR_TABELI_OBLICZEN)

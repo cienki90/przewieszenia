@@ -19,7 +19,7 @@ jobs:
           python-version: "3.12"
 
       - name: Instalacja zależności
-        run: python -m pip install --upgrade pip pyinstaller pillow
+        run: python -m pip install --upgrade pip pyinstaller pillow python-docx openpyxl
 
       - name: Test wiersza poleceń (cały łańcuch, bez internetu)
         shell: bash
@@ -38,7 +38,11 @@ jobs:
           --add-data "arkusze.dxf;."
           --add-data "szablon.dxf;."
           --add-data "orientacja.png;."
+          --add-data "szablon_opisu.docx;."
+          --add-data "wzorce;wzorce"
           --hidden-import PIL._tkinter_finder
+          --hidden-import docx
+          --hidden-import openpyxl
           generator_gui.py
 
       - name: Publikacja (Releases)

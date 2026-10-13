@@ -10,6 +10,16 @@ z projektowanym światłowodem:
 | **Obliczenia** | obliczenia nośności słupów na podstawie zestawienia | `Obliczenia - zestawienie <plan>.xlsx` |
 | **Rysunki stałe** | osobny plan orientacyjny DXF dla każdej stacji trafo + zestawienie | `rysunki stałe/<nr>.dxf`, `rysunki stałe/zestawienie_stacji.xlsx` |
 | **Arkusze PZT** | komplet arkuszy A3 1:1000 dla każdej stacji (minimalna liczba, zakład 50 m) | `<plan> - PZT.dxf` |
+| **Opisy techniczne** | osobny opis techniczny `.docx` dla każdej stacji (z szablonu Word) | `opisy/<nr>.docx` |
+
+> **Opisy techniczne** (z repo `generator_opisow`): dla każdej stacji z zestawienia tworzy opis
+> `.docx` z szablonu Word (kontrolki `trafo`, `miejscowosc`, `wt`). Zestawienie można **podpiąć
+> wprost z „Rysunków stałych”** (`zestawienie_stacji.xlsx`) — program rozpoznaje kolumny po
+> nagłówkach (`Oznaczenie stacji`→trafo, `Nr stacji`→nazwa pliku, `Miejscowość`), więc działa też
+> z formatem „domtel” (`Plik/trafo/miejscowosc/wt`). **Numer warunków (WT)** – jeden wspólny –
+> wpisuje się ręcznie (pole „Numer warunków (WT)” / `--opisy-wt`), bo nie ma go w zestawieniu z
+> Orientacji. Opcjonalnie dołącza tabelę nośności słupów z pliku obliczeń. Wymaga bibliotek
+> `python-docx` i `openpyxl` (w `.exe` są wbudowane).
 
 > **Arkusze PZT** (odpowiednik programu AutoLISP `PZT_ARKUSZE`, przeniesiony na Pythona bez CAD-a):
 > dla każdej stacji trafo tworzy komplet arkuszy A3 1:1000 pokrywających całą trasę (`!tele`)
@@ -193,5 +203,7 @@ generator/
   obliczenia.py         – obliczenia nośności słupów (z programu "mm")
   orientacje.py         – rysunki stałe: plan orientacyjny per stacja + podkład mapowy (z repo Orientacje-arkusze)
   pzt.py                – arkusze PZT A3 1:1000 per stacja (z repo ARKUSZE_PZT; rozkład jak generator_wt/arkusze.py)
+  opisy.py              – opisy techniczne .docx z szablonu Word + zestawienia (z repo generator_opisow)
+  obliczenia2word.py    – (opcjonalnie) tabela nośności słupów dołączana do opisu .docx
   zasoby.py             – odnajdywanie plików bazy/arkuszy/szablonu (kod źródłowy lub .exe)
 ```

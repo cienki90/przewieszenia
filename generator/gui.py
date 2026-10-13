@@ -40,6 +40,9 @@ OPIS_KROKOW = {
     "pzt":           ("Arkusze PZT (A3 1:1000)",
                       "Dla każdej stacji trafo komplet arkuszy A3 1:1000 pokrywających trasę — na wzór "
                       "layoutu „a” z pliku. Minimalna liczba arkuszy, zakład 50 m."),
+    "opisy":         ("Opisy techniczne (.docx)",
+                      "Dla każdej stacji osobny opis techniczny .docx z szablonu Word — na podstawie "
+                      "zestawienia (bezpośrednio z „Rysunków stałych”) + ręcznie podany numer WT."),
 }
 
 DXF_TYPY = [("Rysunek DXF", "*.dxf"), ("Wszystkie pliki", "*.*")]
@@ -67,8 +70,9 @@ class Aplikacja:
 
         # zakładka "Wszystko"
         self.all_plan = tk.StringVar()
-        # orientacje i PZT domyślnie wyłączone - wymagają osobnego szablonu/wzorca
-        self.all_kroki = {k: tk.BooleanVar(value=(k not in ("orientacje", "pzt"))) for k in pipeline.KROKI}
+        # orientacje/PZT/opisy domyślnie wyłączone - wymagają osobnego szablonu/wzorca/WT
+        self.all_kroki = {k: tk.BooleanVar(value=(k not in ("orientacje", "pzt", "opisy")))
+                          for k in pipeline.KROKI}
 
         # per-moduł: plik wejściowy
         self.we = {k: tk.StringVar() for k in pipeline.KROKI}
@@ -85,6 +89,10 @@ class Aplikacja:
         # opcje arkuszy PZT
         self.pzt_wzorzec = tk.StringVar()                  # plik z layoutem-wzorcem "a" (puste = plan)
         self.pzt_zaklad = tk.StringVar(value="50")
+        # opcje opisów technicznych (.docx)
+        self.opisy_szablon = tk.StringVar()                # szablon .docx (puste = dołączony)
+        self.opisy_zestawienie = tk.StringVar()            # xlsx (puste = z Rysunków stałych)
+        self.opisy_wt = tk.StringVar()                     # numer WT (ręcznie)
 
         self._przyciski = []                               # przyciski "Generuj" do blokowania
         self._buduj()
@@ -104,6 +112,7 @@ class Aplikacja:
         self._zakladka_obliczenia()
         self._zakladka_orientacje()
         self._zakladka_pzt()
+        self._zakladka_opisy()
 
         self._dol(root)
 
@@ -216,6 +225,40 @@ class Aplikacja:
         ttk.Label(r, text="Zakład (wspólny odcinek sąsiednich arkuszy) [m]:").pack(side="left")
         ttk.Entry(r, textvariable=self.pzt_zaklad, width=6).pack(side="left", padx=6)
         self._przycisk_generuj(f, "Utwórz arkusze PZT", lambda: self._start_modul("pzt"))
+
+    def _zakladka_opisy(self):
+        f = ttk.Frame(self.nb)
+        self.nb.add(f, text="Opisy techniczne")
+        self._naglowek(f, "Dla każdej stacji powstaje osobny opis techniczny .docx z szablonu Word. "
+                          "Dane (nr stacji + miejscowość) bierzemy z zestawienia — można podpiąć wprost "
+                          "plik „zestawienie_stacji.xlsx” z Rysunków stałych. Numer warunków (WT) wpisz ręcznie.")
+        self._pole_pliku(f, "Zestawienie (.xlsx):", self.opisy_zestawienie,
+                         "Wybierz zestawienie (np. z Rysunków stałych)")
+        ttk.Label(f, text="(puste = zestawienie_stacji.xlsx z zakładki „Rysunki stałe” po jej uruchomieniu)",
+                  foreground="#777").pack(anchor="w", padx=10)
+        self._pole_pliku(f, "Szablon opisu (.docx):", self.opisy_szablon, "Wybierz szablon .docx")
+        ttk.Label(f, text="(puste = dołączony szablon_opisu.docx)", foreground="#777").pack(anchor="w", padx=10)
+        box = ttk.LabelFrame(f, text="Dane wspólne")
+        box.pack(fill="x", padx=10, pady=6)
+        r = ttk.Frame(box)
+        r.pack(fill="x", padx=8, pady=8)
+        ttk.Label(r, text="Numer warunków (WT):").pack(side="left")
+        ttk.Entry(r, textvariable=self.opisy_wt, width=28).pack(side="left", padx=6)
+        ttk.Label(box, text="(jeden wspólny numer dla wszystkich opisów — np. 100/RE-5/KŚ/2026)",
+                  foreground="#777").pack(anchor="w", padx=8, pady=(0, 6))
+        self._przycisk_generuj(f, "Utwórz opisy .docx", self._start_opisy)
+
+    def _start_opisy(self):
+        zest = self.opisy_zestawienie.get().strip()
+        if not zest or not os.path.isfile(zest):
+            messagebox.showwarning(TYTUL, "Wskaż plik zestawienia (.xlsx) — np. „zestawienie_stacji.xlsx” "
+                                          "z Rysunków stałych.", parent=self.root)
+            return
+        if not self.opisy_wt.get().strip():
+            if not messagebox.askyesno(TYTUL, "Nie podano numeru warunków (WT). Opisy powstaną z pustym WT. "
+                                              "Kontynuować?", parent=self.root):
+                return
+        self._uruchom(zest, ("opisy",))
 
     # ---------------------------------------------------------------- dół okna
     def _dol(self, root):
@@ -334,6 +377,9 @@ class Aplikacja:
             orient_plan_slupow=(self.orient_plan_slupow.get().strip() or None),
             pzt_wzorzec=(self.pzt_wzorzec.get().strip() or None),
             pzt_zaklad=_float(self.pzt_zaklad.get(), 50.0),
+            opisy_szablon=(self.opisy_szablon.get().strip() or None),
+            opisy_zestawienie=(self.opisy_zestawienie.get().strip() or None),
+            opisy_wt=self.opisy_wt.get().strip(),
             log=lambda t="": self._kolejka.put(("log", t)),
         )
         threading.Thread(target=self._praca, args=(opcje,), daemon=True).start()

@@ -28,13 +28,14 @@ from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import dataclass, field
 
 from . import obliczenia as mod_obliczenia
+from . import opisy as mod_opisy
 from . import orientacje as mod_orientacje
 from . import przewieszenia as mod_przewieszenia
 from . import pzt as mod_pzt
 from . import zestawienie as mod_zestawienie
 
 # nazwy kroków (kolejność ma znaczenie)
-KROKI = ("przewieszenia", "zestawienie", "obliczenia", "orientacje", "pzt")
+KROKI = ("przewieszenia", "zestawienie", "obliczenia", "orientacje", "pzt", "opisy")
 
 
 # ---------------------------------------------------------------------------
@@ -58,6 +59,11 @@ class Opcje:
     # arkusze PZT
     pzt_wzorzec: str | None = None               # plik z layoutem-wzorcem "a" (None = plan wejściowy)
     pzt_zaklad: float = 50.0                     # wspólny odcinek trasy sąsiednich arkuszy [m]
+    # opisy techniczne (.docx)
+    opisy_szablon: str | None = None             # szablon .docx (None = dołączony szablon_opisu.docx)
+    opisy_zestawienie: str | None = None         # xlsx z danymi (None = zestawienie z kroku orientacje)
+    opisy_wt: str = ""                           # numer warunków (WT) - wspólny, wpisywany ręcznie
+    opisy_obliczenia: str | None = None          # opcjonalny xlsx obliczeń (tabela nośności)
     log: object = print                          # funkcja logowania (podmieniana w GUI)
 
 
@@ -100,6 +106,7 @@ def domyslne_wyjscia(plan: str, katalog: str | None = None) -> dict:
         "obliczenia": os.path.join(kat, f"Obliczenia - zestawienie {baza}.xlsx"),
         "orientacje": os.path.join(kat, "rysunki stałe"),   # podfolder z planami stacji + zestawieniem
         "pzt": os.path.join(kat, f"{baza} - PZT.dxf"),       # kopia planu z arkuszami PZT
+        "opisy": os.path.join(kat, "opisy"),                 # podfolder z opisami .docx
     }
 
 
@@ -129,6 +136,13 @@ def uruchom(opcje: Opcje) -> Wynik:
     if "obliczenia" in kroki and "zestawienie" not in kroki:
         kroki.insert(kroki.index("obliczenia"), "zestawienie")
         zestawienie_tymczasowe = True
+
+    # opisy mogą korzystać z zestawienia_stacji.xlsx z kroku „orientacje” - uruchom go wcześniej,
+    # gdy opisy zaznaczono bez własnego zestawienia i bez orientacji
+    orient_zest = None
+    if ("opisy" in kroki and "orientacje" not in kroki
+            and not opcje.opisy_zestawienie):
+        kroki.insert(kroki.index("opisy"), "orientacje")
 
     wynik = Wynik()
 
@@ -160,8 +174,13 @@ def uruchom(opcje: Opcje) -> Wynik:
                 r = _krok_orientacje(szablon, wyj["orientacje"], opcje, plan_slupow)
             elif krok == "pzt":
                 r = _krok_pzt(plan, wyj["pzt"], opcje)
+            elif krok == "opisy":
+                r = _krok_opisy(opcje, wyj["opisy"], orient_zest)
             else:
                 continue
+            if krok == "orientacje" and r.ok and r.wyjscie:
+                zc = os.path.join(r.wyjscie, "zestawienie_stacji.xlsx")
+                orient_zest = zc if os.path.exists(zc) else orient_zest
         except Exception as ex:  # noqa: BLE001 - raport trafia do użytkownika
             r = WynikKroku(krok, ok=False, blad=str(ex),
                            raport=traceback.format_exc())
@@ -261,6 +280,38 @@ def _krok_pzt(dxf: str, wyjscie: str, opcje: Opcje) -> WynikKroku:
                                            "(czy w pliku są warstwy !tele, !trafo i layout-wzorzec „a”?).")
 
 
+def _krok_opisy(opcje: Opcje, wyjscie_dir: str, orient_zest) -> WynikKroku:
+    """Opisy techniczne .docx: dla każdej stacji z zestawienia osobny plik .docx z szablonu.
+
+    Zestawienie: wskazane przez użytkownika albo zestawienie_stacji.xlsx z kroku „orientacje”.
+    Numer WT (jeden wspólny) wpisywany ręcznie - gdy zestawienie go nie zawiera."""
+    from . import zasoby
+    szablon = opcje.opisy_szablon or zasoby.szablon_opisu_docx()
+    zestawienie = opcje.opisy_zestawienie or orient_zest
+    if not szablon:
+        return WynikKroku("opisy", ok=False, blad="Brak szablonu opisu (.docx) - wskaż plik szablonu.")
+    if not zestawienie:
+        return WynikKroku("opisy", ok=False,
+                          blad="Brak zestawienia - wskaż plik .xlsx albo włącz krok „rysunki stałe” "
+                               "(użyte zostanie jego zestawienie_stacji.xlsx).")
+    os.makedirs(wyjscie_dir, exist_ok=True)
+
+    def uruchom():
+        return mod_opisy.generuj(szablon, zestawienie, out=wyjscie_dir, wt=opcje.opisy_wt,
+                                 obliczenia=opcje.opisy_obliczenia, log=print)
+    try:
+        (utworzone, raport) = _przechwyc(uruchom)
+    except ImportError:
+        return WynikKroku("opisy", ok=False,
+                          raport="Moduł opisów wymaga bibliotek python-docx i openpyxl "
+                                 "(zainstaluj: pip install python-docx openpyxl).",
+                          blad="Brak bibliotek python-docx / openpyxl.")
+    pliki = [f for f in os.listdir(wyjscie_dir) if f.lower().endswith(".docx")] if os.path.isdir(wyjscie_dir) else []
+    ok = bool(pliki)
+    return WynikKroku("opisy", ok=ok, wyjscie=wyjscie_dir if ok else None, raport=raport,
+                      blad=None if ok else "Nie utworzono żadnego opisu .docx.")
+
+
 # ---------------------------------------------------------------------------
 def main(argv=None):
     for strumien in (sys.stdout, sys.stderr):  # polskie znaki w konsoli Windows
@@ -297,6 +348,14 @@ def main(argv=None):
                     help="plik DXF z layoutem-wzorcem „a” dla arkuszy PZT (domyślnie plan wejściowy)")
     ap.add_argument("--pzt-zaklad", type=float, default=50.0,
                     help="arkusze PZT: wspólny odcinek trasy sąsiednich arkuszy [m] (domyślnie 50)")
+    ap.add_argument("--opisy-szablon", default=None,
+                    help="szablon .docx dla opisów technicznych (domyślnie dołączony szablon_opisu.docx)")
+    ap.add_argument("--opisy-zestawienie", default=None,
+                    help="plik .xlsx z danymi do opisów (domyślnie zestawienie_stacji.xlsx z rysunków stałych)")
+    ap.add_argument("--opisy-wt", default="",
+                    help="numer warunków technicznych (WT) do opisów - jeden wspólny, wpisywany ręcznie")
+    ap.add_argument("--opisy-obliczenia", default=None,
+                    help="opcjonalny .xlsx z obliczeniami nośności - dołącza tabelę do opisów")
     a = ap.parse_args(argv)
 
     wybrane = tuple(k.strip().lower() for k in a.tylko.split(",") if k.strip())
@@ -308,7 +367,9 @@ def main(argv=None):
                   obrot_od=a.obrot_od, zostaw_puste_arkusze=a.zostaw_puste_arkusze,
                   seed=a.seed, kabel=a.kabel, orient_podklad=not a.bez_podkladu,
                   orient_szablon=a.szablon_orientacji, orient_plan_slupow=a.plan_slupow,
-                  pzt_wzorzec=a.pzt_wzorzec, pzt_zaklad=a.pzt_zaklad, log=print)
+                  pzt_wzorzec=a.pzt_wzorzec, pzt_zaklad=a.pzt_zaklad,
+                  opisy_szablon=a.opisy_szablon, opisy_zestawienie=a.opisy_zestawienie,
+                  opisy_wt=a.opisy_wt, opisy_obliczenia=a.opisy_obliczenia, log=print)
     wynik = uruchom(opcje)
 
     print("\n" + "=" * 60)
