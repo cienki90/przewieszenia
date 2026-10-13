@@ -553,9 +553,19 @@ def zbuduj(rys):
                 U(BLAD, 'Nie można ustalić odległości - uzupełnij ręcznie.', i)
 
     # ---------- grupowanie na stacje i obwody
+    # Stacja słupa: gdy słup leży jednoznacznie w zakresie stacji (poligon !trafo z rozpoznanym
+    # numerem), to TEN zakres decyduje - niezależnie od korzenia drzewa. Zakresy się nie nakładają,
+    # więc jest to pewne i nie przenosi słupów między stacjami przez błędne połączenie w numeracji.
+    # Gdy słup nie leży w żadnym zakresie - stacja z korzenia drzewa (jak dotąd).
+    def stacja_wg_zakresu(i):
+        obsz = slupy[i].get('obszar')
+        if obsz is not None and obsz in zakres_stacji:
+            return zakres_stacji[obsz]
+        return slupy[korzen(i)]['stacja']
+
     grupy = collections.defaultdict(list)
     for i in num:
-        grupy[slupy[korzen(i)]['stacja']].append(i)
+        grupy[stacja_wg_zakresu(i)].append(i)
 
     rys._slupy, rys._sasiad = slupy, sasiad  # do diagnostyki
     wynik = {}
@@ -582,7 +592,14 @@ def zbuduj(rys):
         if len([n for n, p in ob]) != len(set(n for n, p in ob)):
             U(UWAGA, 'Powtórzony numer obwodu w opisach "obw. nr" - sprawdź numery obwodów.', st=st, p=sp)
         for i in ids:
-            obw_slupa[i] = obw[korzen(i)]
+            k = korzen(i)
+            if k in obw:
+                obw_slupa[i] = obw[k]           # korzeń w tej samej stacji - obwód z korzenia
+            else:
+                # słup przeniesiony do stacji wg zakresu (korzeń w innej stacji) - obwód z najbliższego
+                # opisu "obw. nr" tej stacji, a gdy brak - obwód 1
+                obw_slupa[i] = (min(ob, key=lambda nb: math.dist(nb[1], slupy[i]['p']))[0]
+                                if ob else 1)
         wiersze = []
         for i in ids:
             P = slupy[i]
