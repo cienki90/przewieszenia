@@ -33,6 +33,7 @@ from xml.sax.saxutils import escape
 # ---------------------------------------------------------------- ustawienia
 WARSTWA_ZAKRESOW = '!trafo'      # zamknięte polilinie = zakres stacji
 WARSTWA_SIECI = '!tele'          # polilinie = ciąg logiczny sieci (łączą słupy w gałęzie/obwody)
+PREFIX_NUMERY = '_numery_'       # warstwy numerów z programu numeruj_slupy: _numery_<stacja>_<obwod>
 TOL_SIEC = 8.0                   # [m] maks. odległość wierzchołka polilinii sieci od słupa
 TOL_WYMIAR = 3.0                 # [m] maks. odległość końca wymiaru od słupa
 TOL_NUMER = 15.0                 # [m] maks. odległość numeru od słupa
@@ -152,6 +153,7 @@ class Rysunek:
         self.sciezka = sciezka
         self.opisy = []      # (tekst, punkt)
         self.teksty = []     # (tekst, punkt)
+        self.teksty_warstwa = []  # warstwa i-tego numeru (np. '_numery_05-0181_1') lub '' - równolegle do self.teksty
         self.wymiary = []    # (dlugosc, p1, p2)
         self.zakresy = []    # [punkty]
         self.nazwy_zakresow = []  # numer stacji z nazwy warstwy (np. '!trafo_05-0181') lub None
@@ -208,6 +210,7 @@ class Rysunek:
                 p = (fl(d, 10), fl(d, 20))
                 if RE_NUMER.match(txt):
                     self.teksty.append((txt, p))
+                    self.teksty_warstwa.append(warstwa)
                 elif RE_SLUP.search(txt) or RE_STACJA.search(txt) or RE_OBWOD.search(txt):
                     self.opisy.append((txt, p))
             elif typ == 'DIMENSION':
@@ -233,6 +236,24 @@ class Rysunek:
                 ys = [float(v) for k, v in g if k == 20]
                 if len(xs) >= 2:
                     self.sieci.append(list(zip(xs, ys)))
+
+        self._odfiltruj_markery_startowe()
+
+    def _odfiltruj_markery_startowe(self):
+        """Gdy rysunek pochodzi z programu numeruj_slupy, pełna numeracja jest na
+        warstwach '_numery_<stacja>_<obwod>'. Ręczne markery startowe '1'/'2' leżą na
+        gołej warstwie '_numery' (bez stacji/obwodu) i dublują te numery w tym samym
+        miejscu - pomijamy je, żeby nie raportować ich jako "nieprzypisanych"."""
+        ma_pelne = any(parsuj_warstwe_numeru(w) for w in self.teksty_warstwa)
+        if not ma_pelne:
+            return
+        teksty, warstwy = [], []
+        for (t, p), w in zip(self.teksty, self.teksty_warstwa):
+            if w == PREFIX_NUMERY.rstrip('_'):   # dokładnie '_numery' = marker startowy
+                continue
+            teksty.append((t, p))
+            warstwy.append(w)
+        self.teksty, self.teksty_warstwa = teksty, warstwy
 
 
 def w_wielokacie(pt, poly):
@@ -267,6 +288,23 @@ def graf_sieci(sieci, slupy, num):
                 sas[a].add(b)
                 sas[b].add(a)
     return sas
+
+
+def parsuj_warstwe_numeru(warstwa):
+    """Z nazwy warstwy numeru z programu numeruj_slupy wyciąga (stacja, numer_obwodu).
+    Format: '_numery_<stacja>_<obwod>', gdzie <obwod> to liczba, a <stacja> może
+    zawierać '_' i '-' (np. '_numery_05-0181_2' -> ('05-0181', 2)).
+    Zwraca (stacja, nr_obwodu:int) albo None, gdy to nie jest taka warstwa."""
+    if not warstwa or not warstwa.startswith(PREFIX_NUMERY):
+        return None
+    reszta = warstwa[len(PREFIX_NUMERY):]
+    pos = reszta.rfind('_')
+    if pos <= 0:
+        return None
+    stacja, obw = reszta[:pos], reszta[pos + 1:]
+    if not obw.isdigit():
+        return None
+    return stacja, int(obw)
 
 
 def klucz(nr):
@@ -383,6 +421,12 @@ def zbuduj(rys):
     for a, x in przyp.items():
         slupy[x]['nr'] = rys.teksty[a][0]
         slupy[x]['p_nr'] = rys.teksty[a][1]
+        # numer z programu numeruj_slupy: warstwa _numery_<stacja>_<obwod> niesie
+        # jednoznaczną stację i obwód tego słupa - zapamiętujemy je jako pewne źródło
+        warstwa = rys.teksty_warstwa[a] if a < len(rys.teksty_warstwa) else ''
+        meta = parsuj_warstwe_numeru(warstwa)
+        if meta:
+            slupy[x]['num_stacja'], slupy[x]['num_obwod'] = meta
     for i, (t, tp) in enumerate(rys.teksty):
         if i not in przyp:
             ob = obszar(tp)
@@ -616,6 +660,10 @@ def zbuduj(rys):
     # więc jest to pewne i nie przenosi słupów między stacjami przez błędne połączenie w numeracji.
     # Gdy słup nie leży w żadnym zakresie - stacja z korzenia drzewa (jak dotąd).
     def stacja_wg_zakresu(i):
+        # 1) jeśli słup był ponumerowany programem numeruj_slupy, warstwa _numery_
+        #    jednoznacznie podaje stację - to najpewniejsze źródło
+        if slupy[i].get('num_stacja'):
+            return slupy[i]['num_stacja']
         obsz = slupy[i].get('obszar')
         if obsz is not None and obsz in zakres_stacji:
             return zakres_stacji[obsz]
@@ -624,6 +672,10 @@ def zbuduj(rys):
     grupy = collections.defaultdict(list)
     for i in num:
         grupy[stacja_wg_zakresu(i)].append(i)
+
+    # Czy rysunek pochodzi z programu numeruj_slupy (ma warstwy _numery_<stacja>_<obwod>)?
+    # Wtedy obwód każdego słupa bierzemy WPROST z warstwy - bez odtwarzania z geometrii.
+    ponumerowany = any(slupy[i].get('num_obwod') is not None for i in num)
 
     # ---------- obwody: budowane od sieci !tele (ciąg logiczny), nie od pozycji stacji
     # Graf połączeń = sieć !tele uzupełniona o wymiary (gdy sieć ma lukę). Obwód to gałąź
@@ -657,6 +709,32 @@ def zbuduj(rys):
     obw_slupa = {}
     for st, ids in grupy.items():
         sp = poz_stacji.get(st)
+        # --- TRYB PONUMEROWANY: obwód wprost z warstwy _numery_<stacja>_<obwod> ---
+        # Gdy rysunek przeszedł przez program numeruj_slupy, numer obwodu jest pewny
+        # (nie trzeba go odtwarzać z sieci !tele / geometrii). Słupy bez warstwy numeru
+        # (np. dorysowane ręcznie) dołączamy do najbliższego obwodu wg sąsiedztwa/odległości.
+        if ponumerowany and any(slupy[i].get('num_obwod') is not None for i in ids):
+            znane = [i for i in ids if slupy[i].get('num_obwod') is not None]
+            for i in znane:
+                obw_slupa[i] = slupy[i]['num_obwod']
+            for i in ids:
+                if i in obw_slupa:
+                    continue
+                sasiad_obw = [slupy[j]['num_obwod'] for j in polaczenia[i]
+                              if slupy[j].get('num_obwod') is not None]
+                if sasiad_obw:
+                    obw_slupa[i] = collections.Counter(sasiad_obw).most_common(1)[0][0]
+                else:
+                    obw_slupa[i] = min(znane, key=lambda j: math.dist(slupy[i]['p'], slupy[j]['p']))
+                    obw_slupa[i] = slupy[obw_slupa[i]]['num_obwod']
+                    U(UWAGA, 'Słup bez numeru z programu numeruj_slupy - przypisano do '
+                      'najbliższego obwodu %d (dodaj numer na rysunku).' % obw_slupa[i], i)
+            wiersze = [{'nr': slupy[i]['nr'], 'oz': slupy[i]['oz'], 'typ': slupy[i]['typ'],
+                        'odl': slupy[i]['odl'], 'mufa': slupy[i].get('mufa'),
+                        'obw': obw_slupa[i], 'slup': i, 'kontrola': []} for i in ids]
+            wiersze.sort(key=lambda w: (w['obw'], klucz(w['nr'])))
+            wynik[st] = wiersze
+            continue
         ob = [(n, p) for n, p in obwody if obszar(p) is not None
               and zakres_stacji.get(obszar(p)) == st]
         if not ob:          # fallback dla stacji bez zakresu !trafo z nazwą
