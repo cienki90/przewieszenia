@@ -105,21 +105,23 @@ def _ma_wymiar(model, i):
 
 
 def _rozmieszczenie(model, i, ref):
-    """Zwraca (punkt_wstawienia, kąt_tekstu_deg, odwrocony) dla numeru słupa i.
+    """Zwraca (punkt_srodka, kąt_tekstu_deg) dla numeru słupa i.
     Numer: obrócony zgodnie z kierunkiem linii !tele (czytelny), odsunięty od linii
-    wzdłuż `ref` (uśredniona strona wymiarowania całego obwodu - spójne dla wszystkich
-    słupów i odporne na węzły), o ODSTEP_OD_LINII jednostek."""
+    wzdłuż `ref` (uśredniona strona wymiarowania całego obwodu). Zwracany punkt to
+    ŚRODEK cyfry (wyrównanie MIDDLE_CENTER) - leży o (ODSTEP + pół wysokości) od słupa,
+    więc cała cyfra jest po stronie `ref`, a jej krawędź bliższa linii ~ODSTEP od linii.
+    Dzięki użyciu środka wynik NIE zależy od zwrotu przęsła (brak znikania pod linią)."""
     p = model.slupy[i]['p']
     kx, ky = _kierunek_przesla(model, i)
     rn = math.hypot(ref[0], ref[1])
     ux, uy = (ref[0] / rn, ref[1] / rn) if rn > 0 else (-ky, kx)
-    px = p[0] + ux * ODSTEP_OD_LINII
-    py = p[1] + uy * ODSTEP_OD_LINII
+    off = ODSTEP_OD_LINII + WYS_TEKSTU / 2.0     # środek cyfry: ODSTEP od linii + pół wys.
+    px = p[0] + ux * off
+    py = p[1] + uy * off
     kat = math.degrees(math.atan2(ky, kx))
-    odwrocony = kat <= -90 or kat > 90
-    if odwrocony:
+    if kat <= -90 or kat > 90:                   # czytelność: nie "do góry nogami"
         kat += 180.0
-    return (px, py), kat, odwrocony
+    return (px, py), kat
 
 
 def _sciezka_obwodu(model, ob):
@@ -219,17 +221,16 @@ def _enc_layer(nazwa, kolor, h, hwn, lineweight=None, plot=None):
     return _grupy(*g)
 
 
-def _enc_text(numer, px, py, kat, wys, warstwa, kolor, odwrocony, h):
-    """Encja TEXT: wyrównanie poziome center (72=1), pionowe top/bottom (73=3/1),
-    punkt wyrównania w (px,py) - kod 11/21."""
-    valign = 1 if odwrocony else 3               # 1=bottom, 3=top
+def _enc_text(numer, px, py, kat, wys, warstwa, kolor, h):
+    """Encja TEXT wyrównana MIDDLE_CENTER (72=1 poziomo center, 73=2 pionowo middle),
+    punkt wyrównania = ŚRODEK cyfry w (px,py) - kod 11/21."""
     return _grupy(
         (0, 'TEXT'), (5, h), (330, '1F'), (100, 'AcDbEntity'), (8, warstwa),
         (62, kolor), (100, 'AcDbText'),
         (10, '%.6f' % px), (20, '%.6f' % py), (30, '0.0'),
         (40, '%.6f' % wys), (1, numer), (50, '%.6f' % kat),
         (72, 1), (11, '%.6f' % px), (21, '%.6f' % py), (31, '0.0'),
-        (100, 'AcDbText'), (73, valign))
+        (100, 'AcDbText'), (73, 2))
 
 
 def _enc_lwpolyline(pts, warstwa, kolor, h):
@@ -278,9 +279,9 @@ def zapisz(model, obwody, sciezka_wej, sciezka_wyj=None):
         ref = _ref_obwodu(model, ob)
 
         for i, numer in ob['slupy'].items():
-            (px, py), kat, odwrocony = _rozmieszczenie(model, i, (ref[0], ref[1]))
+            (px, py), kat = _rozmieszczenie(model, i, (ref[0], ref[1]))
             nowe_encje.append(_enc_text(numer, px, py, kat, WYS_TEKSTU,
-                                        warstwa_num, 7, odwrocony, H.nowy()))
+                                        warstwa_num, 7, H.nowy()))
 
         for a, b in _sciezka_obwodu(model, ob):
             nowe_encje.append(_enc_lwpolyline(
