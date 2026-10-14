@@ -18,17 +18,33 @@ if "%~1"=="" (
 )
 
 if exist ".venv\Scripts\python.exe" (
-    set "PYEXE=.venv\Scripts\python.exe"
-) else (
-    set "PYEXE="
-    py -3 --version >nul 2>&1 && set "PYEXE=py -3"
-    if not defined PYEXE python --version >nul 2>&1 && set "PYEXE=python"
-    if not defined PYEXE (
-        echo Nie znaleziono srodowiska. Uruchom najpierw setup.bat
-        pause
-        exit /b 1
-    )
+    ".venv\Scripts\python.exe" _waliduj.py %1
+    goto :po_uruchomieniu
 )
 
-%PYEXE% _waliduj.py %1
+set "PY="
+call :wykryj_py
+if not defined PY (
+    echo Nie znaleziono srodowiska. Uruchom najpierw setup.bat
+    pause
+    exit /b 1
+)
+%PY% _waliduj.py %1
+
+:po_uruchomieniu
 pause
+exit /b 0
+
+rem ------------------------------------------------------------
+:wykryj_py
+py -3 --version >nul 2>&1
+if %errorlevel%==0 (
+    set "PY=py -3"
+    goto :eof
+)
+python --version >nul 2>&1
+if %errorlevel%==0 (
+    set "PY=python"
+    goto :eof
+)
+goto :eof

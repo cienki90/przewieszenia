@@ -11,21 +11,22 @@ setlocal
 cd /d "%~dp0"
 
 if exist ".venv\Scripts\python.exe" (
-    set "PYEXE=.venv\Scripts\python.exe"
-) else (
-    rem brak .venv - sprobuj systemowego Pythona (wymaga ezdxf)
-    set "PYEXE="
-    py -3 --version >nul 2>&1 && set "PYEXE=py -3"
-    if not defined PYEXE python --version >nul 2>&1 && set "PYEXE=python"
-    if not defined PYEXE (
-        echo Nie znaleziono srodowiska. Uruchom najpierw setup.bat
-        pause
-        exit /b 1
-    )
-    echo UWAGA: brak .venv - uzywam systemowego Pythona ^(musi miec ezdxf^).
+    ".venv\Scripts\python.exe" numeruj.py %*
+    goto :po_uruchomieniu
 )
 
-%PYEXE% numeruj.py %*
+rem brak .venv - sprobuj systemowego Pythona (wymaga ezdxf)
+set "PY="
+call :wykryj_py
+if not defined PY (
+    echo Nie znaleziono srodowiska. Uruchom najpierw setup.bat
+    pause
+    exit /b 1
+)
+echo UWAGA: brak .venv - uzywam systemowego Pythona ^(musi miec ezdxf^).
+%PY% numeruj.py %*
+
+:po_uruchomieniu
 if errorlevel 1 (
     echo.
     echo Program zakonczyl sie bledem.
@@ -33,3 +34,18 @@ if errorlevel 1 (
     exit /b 1
 )
 pause
+exit /b 0
+
+rem ------------------------------------------------------------
+:wykryj_py
+py -3 --version >nul 2>&1
+if %errorlevel%==0 (
+    set "PY=py -3"
+    goto :eof
+)
+python --version >nul 2>&1
+if %errorlevel%==0 (
+    set "PY=python"
+    goto :eof
+)
+goto :eof
