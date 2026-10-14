@@ -42,6 +42,15 @@ Tworzy **nowy** plik DXF `… - ponumerowane.dxf` (oryginał nie jest zmieniany)
 - każdy obwód ma własną numerację od `1`; granicę obwodu wyznacza stacja trafo
   oraz starty innych obwodów (BFS nie przekracza cudzego słupa „1”).
 
+### Przerwa w linii `!tele` (brak wymiaru)
+
+Gdy linia `!tele` ma przerwę (urwany ciąg słupów, bez wymiaru łączącego), program
+„zszywa” obwód: słupy leżące w **zakresie `!trafo`** tej samej stacji, które zostały
+nieponumerowane, doczepia do obwodu i **kontynuuje numerację magistrali**. Dopasowanie:
+najbliższy wolny koniec urwanego ciągu do **ostatniego słupa magistrali** danego obwodu
+(np. obwód kończy się na `4` → doczepiony ciąg dostaje `5, 6, 7…`). Każde takie zszycie
+jest raportowane (z długością luki).
+
 Walidacja na rysunkach z pełną numeracją odtworzyła numerację projektanta
 (np. `zofinin - PZT.dxf`: 135/135 słupów, `pw.dxf`: 339/341).
 

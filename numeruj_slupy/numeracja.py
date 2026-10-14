@@ -166,6 +166,45 @@ def nadaj_numery_obwod(model, start, obwod_ids, slup2=None):
     return numery
 
 
+def _ostatni_magistrali(numery):
+    """Zwraca (idx, numer) słupa o najwyższym numerze GŁÓWNYM (bez kropki) - koniec
+    magistrali, od którego kontynuujemy numerację po przerwie w sieci !tele."""
+    glowne = [(int(nr), i) for i, nr in numery.items() if '.' not in nr]
+    if not glowne:
+        return None, None
+    n, i = max(glowne)
+    return i, str(n)
+
+
+def _kontynuuj_od(model, wejscie, start, obwod_ids, nr_startowy):
+    """Numeruje doczepiony ciąg jako kontynuację magistrali, zaczynając od słupa `start`
+    numerem `nr_startowy` i idąc "w głąb" ciągu (kierunek dojścia = `wejscie`->start).
+    Zwraca {idx: numer}. Rozgałęzienia w ciągu numeruje jak zwykle (x.1, x.2 od lewej)."""
+    slupy = model.slupy
+    numery = {start: str(nr_startowy)}
+    v_start = _wektor(slupy[wejscie]['p'], slupy[start]['p']) if wejscie is not None \
+        else _wektor(slupy[start]['p'], slupy[start]['p'])
+
+    def odwiedz(i, rodzic, v_wej):
+        dzieci = [j for j in model.polaczenia[i]
+                  if j in obwod_ids and j != rodzic and j not in numery]
+        if not dzieci:
+            return
+        dzieci.sort(key=lambda j: _kat_skretu(v_wej, _wektor(slupy[i]['p'], slupy[j]['p'])))
+        glowny = dzieci[0]
+        boczne = dzieci[1:]
+        v_mag = _wektor(slupy[i]['p'], slupy[glowny]['p'])
+        boczne.sort(key=lambda j: -_strona(v_mag, _wektor(slupy[i]['p'], slupy[j]['p'])))
+        numery[glowny] = _num_dziecka(numery[i], True, 0)
+        for k, j in enumerate(boczne, start=1):
+            numery[j] = _num_dziecka(numery[i], False, k)
+        for j in [glowny] + boczne:
+            odwiedz(j, i, _wektor(slupy[i]['p'], slupy[j]['p']))
+
+    odwiedz(start, None, v_start)
+    return numery
+
+
 def numeruj(model):
     """Numeruje wszystkie obwody rysunku. Zwraca:
       obwody - lista dict {'stacja','nr_obwodu','start','slupy':{idx:numer}, 'ids':set}
@@ -212,4 +251,82 @@ def numeruj(model):
             obwody.append({'stacja': st, 'nr_obwodu': nr_obw, 'start': start,
                            'grot': grot, 'slupy': przyp, 'ids': set(przyp)})
 
+        # ---------- zszycie przerw w sieci !tele (reguła projektanta):
+        # słupy w zakresie !trafo tej stacji, które zostały wolne (oderwany ciąg, bo
+        # linia !tele ma przerwę i NIE ma wymiaru), doczepiamy do obwodu kontynuując
+        # numerację magistrali. Dopasowanie: najbliższy WOLNY KONIEC ciągu do ostatniego
+        # słupa magistrali danego obwodu (w obrębie tej samej stacji).
+        _zszyj_przerwy(model, st, ids, obwody, log)
+
     return obwody, log
+
+
+def _zszyj_przerwy(model, st, ids, obwody, log):
+    """Doczepia wolne słupy (w zakresie !trafo stacji st) do obwodów, kontynuując
+    numerację magistrali od ostatniego ponumerowanego słupa."""
+    obwody_st = [o for o in obwody if o['stacja'] == st]
+    if not obwody_st:
+        return
+
+    def wolne_w_zakresie():
+        objete = set()
+        for o in obwody_st:
+            objete |= o['ids']
+        wolne = set()
+        for i in ids:
+            if i in objete:
+                continue
+            # tylko słupy leżące w zakresie !trafo z nazwą tej stacji (pewna przynależność)
+            obsz = model.slupy[i].get('obszar')
+            if obsz is not None and model.zakres_stacji.get(obsz) == st:
+                wolne.add(i)
+        return wolne
+
+    postep = True
+    while postep:
+        postep = False
+        wolne = wolne_w_zakresie()
+        if not wolne:
+            break
+
+        # spójne składowe wolnych słupów (oderwane ciągi)
+        skladowe = []
+        poz = set(wolne)
+        while poz:
+            s0 = next(iter(poz))
+            gr, stos = set(), [s0]
+            while stos:
+                x = stos.pop()
+                if x in gr:
+                    continue
+                gr.add(x)
+                poz.discard(x)
+                stos.extend(j for j in model.polaczenia[x] if j in poz)
+            skladowe.append(gr)
+
+        # najlepsze dopasowanie (ostatni słup magistrali obwodu <-> wolny koniec ciągu)
+        najlepsze = None   # (dystans, obwod, koniec_idx, skladowa)
+        for ob in obwody_st:
+            io, no = _ostatni_magistrali(ob['slupy'])
+            if io is None:
+                continue
+            po = model.slupy[io]['p']
+            for gr in skladowe:
+                konce = [i for i in gr if sum(1 for j in model.polaczenia[i] if j in gr) <= 1]
+                if not konce:
+                    konce = list(gr)
+                for k in konce:
+                    d = math.dist(po, model.slupy[k]['p'])
+                    if najlepsze is None or d < najlepsze[0]:
+                        najlepsze = (d, ob, k, gr, io, int(no))
+        if najlepsze is None:
+            break
+
+        d, ob, koniec, gr, io, no = najlepsze
+        przyp = _kontynuuj_od(model, io, koniec, gr, no + 1)
+        ob['slupy'].update(przyp)
+        ob['ids'] |= set(przyp)
+        log.append(('UWAGA', 'Obwód %s/%d: przerwa w sieci !tele - doczepiono %d słup(ów) '
+                    'z zakresu stacji (kontynuacja numeracji od nr %d, luka %.0f m).'
+                    % (st, ob['nr_obwodu'], len(przyp), no + 1, d), koniec))
+        postep = True
