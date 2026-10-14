@@ -111,12 +111,16 @@ def _rozmieszczenie(model, i, ref):
     wtedy "góra" tekstu jest po przeciwnej stronie i wyrównanie trzeba odwrócić."""
     p = model.slupy[i]['p']
     kx, ky = _kierunek_przesla(model, i)
-    nx, ny = -ky, kx                      # normalna do przęsła
-    # dopasuj znak normalnej do ref (strona wymiarowania obwodu)
-    if nx * ref[0] + ny * ref[1] < 0:
-        nx, ny = -nx, -ny
-    px = p[0] + nx * ODSTEP_OD_LINII
-    py = p[1] + ny * ODSTEP_OD_LINII
+    # Kierunek odsunięcia = jednolity `ref` (uśredniona strona wymiarowania całego
+    # obwodu). To odporne na WĘZŁY i ostre zakręty: prostopadła do pojedynczego przęsła
+    # wpadałaby pod sąsiednie przęsło, a `ref` zawsze wskazuje spójnie "na zewnątrz".
+    rn = math.hypot(ref[0], ref[1])
+    if rn > 0:
+        ux, uy = ref[0] / rn, ref[1] / rn
+    else:
+        ux, uy = -ky, kx                  # brak ref - normalna do przęsła
+    px = p[0] + ux * ODSTEP_OD_LINII
+    py = p[1] + uy * ODSTEP_OD_LINII
     kat = math.degrees(math.atan2(ky, kx))
     odwrocony = kat <= -90 or kat > 90
     if odwrocony:
