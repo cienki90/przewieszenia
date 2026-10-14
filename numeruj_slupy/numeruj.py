@@ -42,12 +42,58 @@ def przetworz(dxf, wyjscie=None):
         raport.append('   %-14s obw %d:  %3d słupów' % (ob['stacja'], ob['nr_obwodu'],
                                                         len(ob['slupy'])))
     if ile_slupow < len(model.slupy):
-        raport.append('   UWAGA: %d słupów nie trafiło do żadnego obwodu '
-                      '(brak opisu "obw. nr" lub markerów 1/2?).'
+        raport.append('   UWAGA: %d słupów nie trafiło do żadnego obwodu:'
                       % (len(model.slupy) - ile_slupow))
+        for opis in _diagnoza_nieobjetych(model, obwody):
+            raport.append('      - ' + opis)
     for poziom, opis, _ in log:
         raport.append('   [%s] %s' % (poziom, opis))
     return wynik, '\n'.join(raport)
+
+
+def _diagnoza_nieobjetych(model, obwody):
+    """Grupuje słupy nieprzypisane do żadnego obwodu i podpowiada, czego brakuje
+    w rysunku: spójne ciągi przy stacji bez startu (dodaj markery 1/2 + 'obw. nr')
+    lub słupy poza zasięgiem jakiejkolwiek stacji."""
+    import collections
+    objete = set()
+    for ob in obwody:
+        objete |= set(ob['slupy'])
+    nieobjete = [i for i in range(len(model.slupy)) if i not in objete]
+    if not nieobjete:
+        return []
+
+    # spójne składowe wśród nieobjętych (po grafie połączeń)
+    pozostaly = set(nieobjete)
+    skladowe = []
+    while pozostaly:
+        start = next(iter(pozostaly))
+        grupa, stos = set(), [start]
+        while stos:
+            x = stos.pop()
+            if x in grupa:
+                continue
+            grupa.add(x)
+            pozostaly.discard(x)
+            stos.extend(j for j in model.polaczenia[x] if j in pozostaly)
+        skladowe.append(grupa)
+
+    opisy = []
+    for gr in sorted(skladowe, key=lambda g: -len(g)):
+        i0 = next(iter(gr))
+        st = model.stacja_slupa.get(i0)
+        x = sum(model.slupy[i]['p'][0] for i in gr) / len(gr)
+        y = sum(model.slupy[i]['p'][1] for i in gr) / len(gr)
+        gdzie = 'ok. (%.0f, %.0f)' % (x, y)
+        if st and not str(st).startswith(('obszar_', 'nieznana')):
+            opisy.append('ciąg %d słup(ów) przy stacji %s %s - dodaj marker "1" i "2" '
+                         'oraz opis "obw. nr X" na starcie tego obwodu.'
+                         % (len(gr), st, gdzie))
+        else:
+            opisy.append('%d słup(ów) poza zasięgiem stacji %s - sprawdź, czy to słupy '
+                         'projektu (brak przynależności do stacji trafo).'
+                         % (len(gr), gdzie))
+    return opisy
 
 
 def main(argv=None):

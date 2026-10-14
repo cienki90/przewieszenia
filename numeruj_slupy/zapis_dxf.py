@@ -28,6 +28,7 @@ import math
 # paleta kolorów ACI dla kolejnych obwodów (pomijamy biały/czarny 7 i czerwień 1 zarezerw.)
 PALETA_ACI = [1, 3, 5, 6, 2, 4, 30, 150, 190, 210, 40, 90, 230, 8, 250, 170]
 WYS_TEKSTU = 2.5                   # [j. rysunku] stała wysokość numeru słupa
+ODSTEP_OD_LINII = 2.0              # [j. rysunku] odstęp górnej krawędzi cyfry od linii !tele
 
 
 def _kolor_obwodu(k):
@@ -102,24 +103,25 @@ def _ma_wymiar(model, i):
 
 
 def _rozmieszczenie(model, i, ref):
-    """Zwraca (punkt_wstawienia, kąt_tekstu_deg) dla numeru słupa i.
+    """Zwraca (punkt_wstawienia, kąt_tekstu_deg, odwrocony) dla numeru słupa i.
     Numer: obrócony zgodnie z kierunkiem linii !tele (czytelny), odsunięty PROSTOPADLE
-    'pod linię'. Strona = normalna do przęsła, obrócona tak, by była ZGODNA z
-    referencyjnym kierunkiem odsunięcia obwodu `ref` (jedna strona dla całego obwodu)."""
+    od linii po stronie `ref` (strona wymiarowania, jedna dla całego obwodu). Punkt
+    wstawienia jest tak dobrany, by GÓRNA krawędź cyfry (bliższa linii) była ODSTEP
+    jednostek od linii. `odwrocony` mówi, czy tekst obrócono o 180° (do czytelności) -
+    wtedy "góra" tekstu jest po przeciwnej stronie i wyrównanie trzeba odwrócić."""
     p = model.slupy[i]['p']
     kx, ky = _kierunek_przesla(model, i)
     nx, ny = -ky, kx                      # normalna do przęsła
     # dopasuj znak normalnej do ref (strona wymiarowania obwodu)
     if nx * ref[0] + ny * ref[1] < 0:
         nx, ny = -nx, -ny
-    off = WYS_TEKSTU * 1.1                # odsunięcie "pod linię"
-    px = p[0] + nx * off
-    py = p[1] + ny * off
+    px = p[0] + nx * ODSTEP_OD_LINII
+    py = p[1] + ny * ODSTEP_OD_LINII
     kat = math.degrees(math.atan2(ky, kx))
-    # czytelność: tekst w zakresie (-90, 90]; obróć o 180° gdy "do góry nogami"
-    if kat <= -90 or kat > 90:
+    odwrocony = kat <= -90 or kat > 90
+    if odwrocony:
         kat += 180.0
-    return (px, py), kat
+    return (px, py), kat, odwrocony
 
 
 def _sciezka_obwodu(model, ob):
@@ -188,15 +190,21 @@ def zapisz(model, obwody, sciezka_wej, sciezka_wyj=None):
             ref = list(_kierunek_odsuniecia(model, ob['start']))
 
         # --- numery jako TEXT: obrócone zgodnie z !tele, pod linią (strona = ref), wys. 2.5
+        #     górna krawędź cyfry (bliższa linii) odsunięta ODSTEP_OD_LINII od !tele
         from ezdxf.enums import TextEntityAlignment
         for i, numer in ob['slupy'].items():
-            (px, py), kat = _rozmieszczenie(model, i, (ref[0], ref[1]))
+            (px, py), kat, odwrocony = _rozmieszczenie(model, i, (ref[0], ref[1]))
+            # wyrównanie w pionie tak, by krawędź cyfry przy linii leżała w punkcie:
+            # tekst nieodwrócony -> jego "góra" patrzy od linii -> wyrównaj do TOP;
+            # odwrócony o 180° -> "góra" patrzy ku linii -> wyrównaj do BOTTOM
+            align = (TextEntityAlignment.BOTTOM_CENTER if odwrocony
+                     else TextEntityAlignment.TOP_CENTER)
             txt = msp.add_text(
                 numer,
                 dxfattribs={'layer': warstwa_num, 'height': WYS_TEKSTU,
                             'color': 7, 'rotation': kat},
             )
-            txt.set_placement((px, py), align=TextEntityAlignment.MIDDLE_CENTER)
+            txt.set_placement((px, py), align=align)
 
         # --- obrys kontrolny: łamana wzdłuż ścieżki numeracji
         for a, b in _sciezka_obwodu(model, ob):
