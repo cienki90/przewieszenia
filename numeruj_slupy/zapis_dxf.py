@@ -13,17 +13,19 @@ Obrys kontrolny to łamana prowadzona wzdłuż ścieżki numeracji (rodzic->dzie
 magistrala + odgałęzienia, dzięki czemu wizualnie widać, które słupy program połączył
 w jeden obwód i w jakiej kolejności je ponumerował.
 
-Oryginalny plik NIE jest modyfikowany - wynik zapisywany jest do nowego pliku
-(domyślnie "<nazwa> - ponumerowane.dxf").
+Zapis DOPISUJE tylko nowe encje (numery + obrysy) i nowe warstwy do ORYGINALNEGO
+pliku DXF - reszta (multileadery z opisami słupów/stacji/obwodów, style, bloki) zostaje
+BAJT W BAJT jak w oryginale. Dzięki temu żaden element nie znika w CAD (ezdxf saveas
+potrafił psuć render multileaderów przy przepisywaniu całego pliku). Oryginał nie jest
+modyfikowany - wynik to nowy plik (domyślnie "<nazwa> - ponumerowane.dxf").
 """
+import math
 import os
+import re
 
 import ezdxf
 
 from numeracja import _wektor
-
-
-import math
 
 # paleta kolorów ACI dla kolejnych obwodów (pomijamy biały/czarny 7 i czerwień 1 zarezerw.)
 PALETA_ACI = [1, 3, 5, 6, 2, 4, 30, 150, 190, 210, 40, 90, 230, 8, 250, 170]
@@ -104,21 +106,13 @@ def _ma_wymiar(model, i):
 
 def _rozmieszczenie(model, i, ref):
     """Zwraca (punkt_wstawienia, kąt_tekstu_deg, odwrocony) dla numeru słupa i.
-    Numer: obrócony zgodnie z kierunkiem linii !tele (czytelny), odsunięty PROSTOPADLE
-    od linii po stronie `ref` (strona wymiarowania, jedna dla całego obwodu). Punkt
-    wstawienia jest tak dobrany, by GÓRNA krawędź cyfry (bliższa linii) była ODSTEP
-    jednostek od linii. `odwrocony` mówi, czy tekst obrócono o 180° (do czytelności) -
-    wtedy "góra" tekstu jest po przeciwnej stronie i wyrównanie trzeba odwrócić."""
+    Numer: obrócony zgodnie z kierunkiem linii !tele (czytelny), odsunięty od linii
+    wzdłuż `ref` (uśredniona strona wymiarowania całego obwodu - spójne dla wszystkich
+    słupów i odporne na węzły), o ODSTEP_OD_LINII jednostek."""
     p = model.slupy[i]['p']
     kx, ky = _kierunek_przesla(model, i)
-    # Kierunek odsunięcia = jednolity `ref` (uśredniona strona wymiarowania całego
-    # obwodu). To odporne na WĘZŁY i ostre zakręty: prostopadła do pojedynczego przęsła
-    # wpadałaby pod sąsiednie przęsło, a `ref` zawsze wskazuje spójnie "na zewnątrz".
     rn = math.hypot(ref[0], ref[1])
-    if rn > 0:
-        ux, uy = ref[0] / rn, ref[1] / rn
-    else:
-        ux, uy = -ky, kx                  # brak ref - normalna do przęsła
+    ux, uy = (ref[0] / rn, ref[1] / rn) if rn > 0 else (-ky, kx)
     px = p[0] + ux * ODSTEP_OD_LINII
     py = p[1] + uy * ODSTEP_OD_LINII
     kat = math.degrees(math.atan2(ky, kx))
@@ -152,19 +146,120 @@ def _sciezka_obwodu(model, ob):
     return kraw
 
 
+def _ref_obwodu(model, ob):
+    """Referencyjny kierunek odsunięcia obwodu (strona wymiarowania)."""
+    ref = [0.0, 0.0]
+    for i in ob['slupy']:
+        if _ma_wymiar(model, i):
+            ux, uy = _kierunek_odsuniecia(model, i)
+            ref[0] += ux
+            ref[1] += uy
+    if ref == [0.0, 0.0]:
+        ref = list(_kierunek_odsuniecia(model, ob['start']))
+    return ref
+
+
+# =============================================================== zapis DXF (dopisywanie)
+# Zapis dopisuje TYLKO nowe encje (numery TEXT + obrysy LWPOLYLINE) oraz nowe warstwy do
+# ORYGINALNEGO pliku DXF, nie przepisując reszty. Dzięki temu multileadery (opisy słupów,
+# stacji, obwodów), style i wszystkie inne encje pozostają BAJT W BAJT jak w oryginale -
+# żaden element rysunku nie znika w CAD (ezdxf saveas potrafił psuć render multileaderów).
+
+def _czytaj_tekst_dxf(sciezka):
+    raw = open(sciezka, 'rb').read()
+    enc = 'utf-8'
+    head = raw[:20000].decode('latin-1')
+    m = re.search(r'\$ACADVER\s*\r?\n\s*1\s*\r?\n\s*AC(\d+)', head)
+    if not (m and int(m.group(1)) >= 1021):
+        m2 = re.search(r'\$DWGCODEPAGE\s*\r?\n\s*3\s*\r?\n\s*ANSI_(\d+)', head)
+        enc = 'cp' + m2.group(1) if m2 else 'cp1250'
+    return raw.decode(enc, errors='replace'), enc
+
+
+def _max_handle(tekst):
+    mx = 0
+    linie = tekst.splitlines()
+    for i in range(len(linie) - 1):
+        k = linie[i].strip()
+        if k in ('5', '105'):
+            try:
+                mx = max(mx, int(linie[i + 1].strip(), 16))
+            except ValueError:
+                pass
+    return mx
+
+
+class _Handles:
+    def __init__(self, start):
+        self.n = start
+
+    def nowy(self):
+        self.n += 1
+        return format(self.n, 'X')
+
+
+def _grupy(*pary):
+    """Składa pary (kod, wartość) w tekst DXF (po dwie linie)."""
+    out = []
+    for kod, wart in pary:
+        out.append('%3d' % kod if isinstance(kod, int) and kod < 100 else str(kod))
+        out.append(str(wart))
+    return '\n'.join(out)
+
+
+def _enc_layer(nazwa, kolor, h, hwn, lineweight=None, plot=None):
+    """Wpis tabeli LAYER (minimalny, zgodny z R2007)."""
+    g = [(0, 'LAYER'), (5, h), (330, hwn), (100, 'AcDbSymbolTableRecord'),
+         (100, 'AcDbLayerTableRecord'), (2, nazwa), (70, 0), (62, kolor),
+         (6, 'Continuous')]
+    if plot is not None:
+        g.append((290, plot))                    # 290: plottable (0 = niedrukowalna)
+    if lineweight is not None:
+        g.append((370, lineweight))              # 370: lineweight (setne mm)
+    return _grupy(*g)
+
+
+def _enc_text(numer, px, py, kat, wys, warstwa, kolor, odwrocony, h):
+    """Encja TEXT: wyrównanie poziome center (72=1), pionowe top/bottom (73=3/1),
+    punkt wyrównania w (px,py) - kod 11/21."""
+    valign = 1 if odwrocony else 3               # 1=bottom, 3=top
+    return _grupy(
+        (0, 'TEXT'), (5, h), (330, '1F'), (100, 'AcDbEntity'), (8, warstwa),
+        (62, kolor), (100, 'AcDbText'),
+        (10, '%.6f' % px), (20, '%.6f' % py), (30, '0.0'),
+        (40, '%.6f' % wys), (1, numer), (50, '%.6f' % kat),
+        (72, 1), (11, '%.6f' % px), (21, '%.6f' % py), (31, '0.0'),
+        (100, 'AcDbText'), (73, valign))
+
+
+def _enc_lwpolyline(pts, warstwa, kolor, h):
+    g = [(0, 'LWPOLYLINE'), (5, h), (330, '1F'), (100, 'AcDbEntity'), (8, warstwa),
+         (62, kolor), (100, 'AcDbPolyline'), (90, len(pts)), (70, 0)]
+    for x, y in pts:
+        g += [(10, '%.6f' % x), (20, '%.6f' % y)]
+    return _grupy(*g)
+
+
 def zapisz(model, obwody, sciezka_wej, sciezka_wyj=None):
-    """Zapisuje numery i obrysy kontrolne do nowego DXF. Zwraca ścieżkę wyniku."""
+    """Zapisuje numery i obrysy kontrolne, DOPISUJĄC je do oryginalnego pliku DXF
+    (bez przepisywania reszty). Zwraca ścieżkę wyniku."""
     if sciezka_wyj is None:
         baza, _ = os.path.splitext(sciezka_wej)
         sciezka_wyj = baza + ' - ponumerowane.dxf'
 
-    # Startujemy od KOPII oryginału, żeby zachować całą zawartość rysunku.
-    doc = ezdxf.readfile(sciezka_wej)
-    msp = doc.modelspace()
+    tekst, enc = _czytaj_tekst_dxf(sciezka_wej)
+    H = _Handles(_max_handle(tekst))
 
-    # stały, powtarzalny indeks koloru per (stacja, obwod)
+    # istniejące nazwy warstw (żeby nie dublować) - czytamy przez ezdxf tylko do odczytu
+    doc = ezdxf.readfile(sciezka_wej)
+    istniejace = {l.dxf.name for l in doc.layers}
+    hwn_layer = '2'                               # owner tabeli LAYER (standard: handle 2)
+
     klucze = sorted({(o['stacja'], o['nr_obwodu']) for o in obwody})
     kolor_dla = {k: _kolor_obwodu(i) for i, k in enumerate(klucze)}
+
+    nowe_warstwy = []
+    nowe_encje = []
 
     for ob in sorted(obwody, key=lambda o: (o['stacja'], o['nr_obwodu'])):
         st, nr_obw = ob['stacja'], ob['nr_obwodu']
@@ -172,50 +267,69 @@ def zapisz(model, obwody, sciezka_wej, sciezka_wyj=None):
         warstwa_num = _nazwa_warstwy('_numery', st, nr_obw)
         warstwa_ctrl = _nazwa_warstwy('_kontrola', st, nr_obw)
 
-        if warstwa_num not in doc.layers:
-            doc.layers.add(warstwa_num, color=7)
-        if warstwa_ctrl not in doc.layers:
-            lay = doc.layers.add(warstwa_ctrl, color=kolor)
-            lay.dxf.lineweight = 50     # 0,5 mm (jednostka: setne mm)
-            lay.dxf.plot = 0            # warstwa NIEDRUKOWALNA
+        if warstwa_num not in istniejace:
+            nowe_warstwy.append(_enc_layer(warstwa_num, 7, H.nowy(), hwn_layer))
+            istniejace.add(warstwa_num)
+        if warstwa_ctrl not in istniejace:
+            nowe_warstwy.append(_enc_layer(warstwa_ctrl, kolor, H.nowy(), hwn_layer,
+                                           lineweight=50, plot=0))
+            istniejace.add(warstwa_ctrl)
 
-        # --- referencyjny kierunek odsunięcia obwodu: uśredniony wektor odsunięcia
-        #     słupów, które MAJĄ wymiar (wskazuje stronę wymiarowania). Dzięki temu
-        #     wszystkie numery obwodu lądują PO TEJ SAMEJ stronie linii, także te,
-        #     przy których lokalny kierunek przęsła jest odwrócony.
-        ref = [0.0, 0.0]
-        for i in ob['slupy']:
-            if _ma_wymiar(model, i):
-                ux, uy = _kierunek_odsuniecia(model, i)
-                ref[0] += ux
-                ref[1] += uy
-        if ref == [0.0, 0.0]:
-            # brak wymiarów w obwodzie - weź odsunięcie startu (przeciwnie do stacji)
-            ref = list(_kierunek_odsuniecia(model, ob['start']))
+        ref = _ref_obwodu(model, ob)
 
-        # --- numery jako TEXT: obrócone zgodnie z !tele, pod linią (strona = ref), wys. 2.5
-        #     górna krawędź cyfry (bliższa linii) odsunięta ODSTEP_OD_LINII od !tele
-        from ezdxf.enums import TextEntityAlignment
         for i, numer in ob['slupy'].items():
             (px, py), kat, odwrocony = _rozmieszczenie(model, i, (ref[0], ref[1]))
-            # wyrównanie w pionie tak, by krawędź cyfry przy linii leżała w punkcie:
-            # tekst nieodwrócony -> jego "góra" patrzy od linii -> wyrównaj do TOP;
-            # odwrócony o 180° -> "góra" patrzy ku linii -> wyrównaj do BOTTOM
-            align = (TextEntityAlignment.BOTTOM_CENTER if odwrocony
-                     else TextEntityAlignment.TOP_CENTER)
-            txt = msp.add_text(
-                numer,
-                dxfattribs={'layer': warstwa_num, 'height': WYS_TEKSTU,
-                            'color': 7, 'rotation': kat},
-            )
-            txt.set_placement((px, py), align=align)
+            nowe_encje.append(_enc_text(numer, px, py, kat, WYS_TEKSTU,
+                                        warstwa_num, 7, odwrocony, H.nowy()))
 
-        # --- obrys kontrolny: łamana wzdłuż ścieżki numeracji
         for a, b in _sciezka_obwodu(model, ob):
-            msp.add_lwpolyline(
-                [model.slupy[a]['p'], model.slupy[b]['p']],
-                dxfattribs={'layer': warstwa_ctrl, 'color': kolor},
-            )
+            nowe_encje.append(_enc_lwpolyline(
+                [model.slupy[a]['p'], model.slupy[b]['p']], warstwa_ctrl, kolor, H.nowy()))
 
-    doc.saveas(sciezka_wyj)
+    tekst = _wstrzyknij(tekst, nowe_warstwy, nowe_encje, H.n)
+    with open(sciezka_wyj, 'w', encoding=enc, errors='replace', newline='\n') as f:
+        f.write(tekst)
     return sciezka_wyj
+
+
+def _wstrzyknij(tekst, nowe_warstwy, nowe_encje, nowy_handseed):
+    """Wstawia nowe wpisy LAYER do tabeli LAYER, nowe encje przed ENDSEC ENTITIES,
+    i aktualizuje $HANDSEED. Operuje na surowym tekście DXF (CRLF/LF-agnostycznie)."""
+    nl = '\r\n' if '\r\n' in tekst else '\n'
+    linie = tekst.split(nl)
+
+    # 1) $HANDSEED
+    for i in range(len(linie) - 1):
+        if linie[i].strip() == '9' and linie[i + 1].strip() == '$HANDSEED':
+            linie[i + 3] = format(nowy_handseed + 10, 'X')
+            break
+
+    # 2) wstaw wpisy LAYER przed ENDTAB tabeli LAYER
+    #    znajdź "TABLE"->"LAYER" ... potem pierwszy ENDTAB
+    i_layer = None
+    for i in range(len(linie) - 1):
+        if linie[i].strip() == '2' and linie[i + 1].strip() == 'LAYER' \
+                and i >= 2 and linie[i - 1].strip() == 'TABLE':
+            i_layer = i
+            break
+    if i_layer is not None and nowe_warstwy:
+        for j in range(i_layer, len(linie) - 1):
+            if linie[j].strip() == '0' and linie[j + 1].strip() == 'ENDTAB':
+                blok = nl.join(nowe_warstwy)
+                linie[j:j] = blok.split(nl)
+                break
+
+    # 3) wstaw encje przed ENDSEC sekcji ENTITIES
+    i_ent = None
+    for i in range(len(linie) - 1):
+        if linie[i].strip() == '2' and linie[i + 1].strip() == 'ENTITIES':
+            i_ent = i
+            break
+    if i_ent is not None and nowe_encje:
+        for j in range(i_ent, len(linie) - 1):
+            if linie[j].strip() == '0' and linie[j + 1].strip() == 'ENDSEC':
+                blok = nl.join(nowe_encje)
+                linie[j:j] = blok.split(nl)
+                break
+
+    return nl.join(linie)
