@@ -63,11 +63,17 @@ def _starty_stacji(model, st, ids):
     słup grotowi (z uwagą)."""
     obszar = model.obszar
     sp = next((s['p'] for s in model.stacje if s['nr'] == st), None)
+    # czy ta stacja ma w ogóle zakres !trafo z nazwą (poligon)?
+    ma_zakres = st in model.zakres_stacji.values()
 
     def grot_tej_stacji(p):
         o = obszar(p)
         if o is not None and model.zakres_stacji.get(o) == st:
-            return True
+            return True        # grot w zakresie !trafo TEJ stacji - jedyny pewny sygnał
+        if ma_zakres:
+            # stacja ma zakres, a grot nie leży w nim -> opis NIE należy do tej stacji
+            return False
+        # stacja bez zakresu !trafo (tylko opis STACJA TRAFO) - fallback po odległości
         return sp is not None and math.dist(p, sp) < 150.0 and o is None
 
     jedynki = [i for i in ids if model.slupy[i].get('nr') == '1']
@@ -122,14 +128,40 @@ def _obwod_bfs(model, start, dozwolone, blokady):
     return grupa
 
 
-def nadaj_numery_obwod(model, start, obwod_ids, slup2=None):
+def _dlugosc_galezi(model, od, pierwszy, dozwolone):
+    """Długość gałęzi zaczynającej się krawędzią od->pierwszy, idąc w głąb (zawsze do
+    najdalszego kolejnego sąsiada). Służy do wyboru kierunku magistrali bez markera '2'."""
+    seen = {od, pierwszy}
+    dl = math.dist(model.slupy[od]['p'], model.slupy[pierwszy]['p'])
+    cur = pierwszy
+    while True:
+        nxt = [j for j in model.polaczenia[cur] if j in dozwolone and j not in seen]
+        if not nxt:
+            break
+        j = max(nxt, key=lambda j: math.dist(model.slupy[cur]['p'], model.slupy[j]['p']))
+        dl += math.dist(model.slupy[cur]['p'], model.slupy[j]['p'])
+        seen.add(j)
+        cur = j
+    return dl
+
+
+def nadaj_numery_obwod(model, start, obwod_ids, slup2=None, w_glab=False):
     """Nadaje numery słupom jednego obwodu. Zwraca {idx: 'numer'}.
-    Kierunek magistrali: start -> slup2 (gdy podany), inaczej od stacji do startu."""
+    Kierunek magistrali: start -> slup2 (gdy podany); przy auto-starcie bez markera '2'
+    (w_glab=True) kierunek = w stronę sąsiada rozpoczynającego NAJDŁUŻSZĄ gałąź (w głąb
+    sieci); inaczej od stacji do startu."""
     slupy = model.slupy
     numery = {start: '1'}
 
     if slup2 is not None:
         v_start = _wektor(slupy[start]['p'], slupy[slup2]['p'])
+    elif w_glab:
+        sasiedzi = [j for j in model.polaczenia[start] if j in obwod_ids]
+        if sasiedzi:
+            daleki = max(sasiedzi, key=lambda j: _dlugosc_galezi(model, start, j, obwod_ids))
+            v_start = _wektor(slupy[start]['p'], slupy[daleki]['p'])
+        else:
+            v_start = (1.0, 0.0)
     else:
         st = model.stacja_slupa.get(start)
         sp = next((s['p'] for s in model.stacje if s['nr'] == st), None)
@@ -148,12 +180,16 @@ def nadaj_numery_obwod(model, start, obwod_ids, slup2=None):
                   if j in obwod_ids and j != rodzic and j not in numery]
         if not dzieci:
             return
-        # magistrala = gałąź najbardziej "na wprost" (najmniejszy kąt skrętu)
-        dzieci.sort(key=lambda j: _kat_skretu(v_wej, _wektor(slupy[i]['p'], slupy[j]['p'])))
+        if w_glab:
+            # AUTO-START (bez markera "2"): magistrala = NAJDŁUŻSZA gałąź w rozwidleniu
+            dzieci.sort(key=lambda j: -_dlugosc_galezi(model, i, j, obwod_ids))
+        else:
+            # magistrala = gałąź najbardziej "na wprost" (najmniejszy kąt skrętu) - reguła
+            # dla obwodów z markerami/opisem (walidacja zofinin - PZT: 135/135)
+            dzieci.sort(key=lambda j: _kat_skretu(v_wej, _wektor(slupy[i]['p'], slupy[j]['p'])))
         glowny = dzieci[0]
         boczne = dzieci[1:]
-        # boczne odgałęzienia numerujemy OD LEWEJ STRONY magistrali (CCW) - ta reguła
-        # odtwarza w 100% ręczną numerację projektanta (walidacja na zofinin - PZT: 135/135)
+        # boczne odgałęzienia numerujemy OD LEWEJ STRONY magistrali (CCW)
         v_mag = _wektor(slupy[i]['p'], slupy[glowny]['p'])
         boczne.sort(key=lambda j: -_strona(v_mag, _wektor(slupy[i]['p'], slupy[j]['p'])))
         numery[glowny] = _num_dziecka(numery[i], True, 0)
@@ -164,6 +200,67 @@ def nadaj_numery_obwod(model, start, obwod_ids, slup2=None):
 
     odwiedz(start, None, v_start)
     return numery
+
+
+def _auto_starty(model, st, ids, sp):
+    """Auto-start obwodów stacji bez opisu "obw. nr" i bez markerów (reguła 3):
+    znajdź stację trafo, a następnie NAJBLIŻSZY KONIEC MAGISTRALI do stacji i nadaj
+    mu "1". Dla każdej spójnej składowej grafu (osobny obwód) zwraca jeden start.
+    Zwraca listę indeksów startowych (posortowaną: najbliższy stacji pierwszy)."""
+    ids_set = set(ids)
+
+    # spójne składowe grafu w obrębie stacji
+    skladowe = []
+    poz = set(ids)
+    while poz:
+        s0 = next(iter(poz))
+        gr, stos = set(), [s0]
+        while stos:
+            x = stos.pop()
+            if x in gr:
+                continue
+            gr.add(x)
+            poz.discard(x)
+            stos.extend(j for j in model.polaczenia[x] if j in poz)
+        skladowe.append(gr)
+
+    def dlugosc_magistrali(k, gr):
+        """Przybliżona długość trasy idąc od końca k w głąb (zawsze do najdalszego
+        sąsiada) - pozwala odróżnić pełną magistralę od krótkiego 'ogona' przy stacji."""
+        seen = {k}
+        dl = 0.0
+        cur = k
+        while True:
+            nxt = [j for j in model.polaczenia[cur] if j in gr and j not in seen]
+            if not nxt:
+                break
+            j = max(nxt, key=lambda j: math.dist(model.slupy[cur]['p'], model.slupy[j]['p']))
+            dl += math.dist(model.slupy[cur]['p'], model.slupy[j]['p'])
+            seen.add(j)
+            cur = j
+        return dl
+
+    starty = []
+    for gr in skladowe:
+        # końce magistrali = słupy stopnia <=1 w obrębie składowej; brak -> cała składowa
+        konce = [i for i in gr if sum(1 for j in model.polaczenia[i] if j in gr) <= 1]
+        if not konce:
+            konce = list(gr)
+        if sp is not None:
+            d_min = min(math.dist(model.slupy[i]['p'], sp) for i in konce)
+            # końce "blisko stacji" (najbliższy + margines) - przy magistrali przechodzącej
+            # tuż obok stacji dwa końce bywają prawie równo blisko; wtedy startem jest ten,
+            # od którego magistrala jest DŁUŻSZA (pełna trasa, nie krótki ogon)
+            MARGINES = 15.0
+            bliskie = [i for i in konce if math.dist(model.slupy[i]['p'], sp) <= d_min + MARGINES]
+            start = max(bliskie, key=lambda i: dlugosc_magistrali(i, gr))
+            d = math.dist(model.slupy[start]['p'], sp)
+        else:
+            start = konce[0]
+            d = 0.0
+        starty.append((d, start))
+    starty.sort()
+    return [i for _, i in starty]
 
 
 def _ostatni_magistrali(numery):
@@ -216,19 +313,36 @@ def numeruj(model):
     for st in sorted(model.grupy):
         ids = model.grupy[st]
         starty = _starty_stacji(model, st, ids)
+        auto_starty = set()   # indeksy startów wyznaczonych automatycznie (bez markera/opisu)
 
         if not starty:
-            # brak opisu "obw. nr X" dla tej stacji - przyjmij słupy '1' jako starty
-            jedynki = [i for i in ids if model.slupy[i].get('nr') == '1']
-            if not jedynki:
-                log.append((('UWAGA'), 'Stacja %s: brak opisu "obw. nr" i brak słupa "1" '
-                            '- pomijam.' % st, None))
-                continue
+            # Brak opisu "obw. nr X" w obszarze tej stacji. Hierarchia startu:
+            #  2) marker "1" (ręczny numer) = pewnik,
+            #  3) brak markera -> auto-start: najbliższy KONIEC magistrali do stacji = "1".
             sp = next((s['p'] for s in model.stacje if s['nr'] == st), None)
-            jedynki.sort(key=lambda i: math.dist(model.slupy[i]['p'], sp) if sp else 0.0)
-            starty = [(k + 1, i, None) for k, i in enumerate(jedynki)]
-            log.append(('UWAGA', 'Stacja %s: brak opisów "obw. nr" - obwody ponumerowano '
-                        'po kolei od słupów "1".' % st, None))
+            jedynki = [i for i in ids if model.slupy[i].get('nr') == '1']
+            if jedynki:
+                jedynki.sort(key=lambda i: math.dist(model.slupy[i]['p'], sp) if sp else 0.0)
+                starty = [(k + 1, i, None) for k, i in enumerate(jedynki)]
+                log.append(('UWAGA', 'Stacja %s: brak opisów "obw. nr" - start od ręcznych '
+                            'markerów "1".' % st, None))
+            else:
+                # auto-start TYLKO dla realnej stacji trafo (reguła 3: "znajdujesz gdzie
+                # jest stacja trafo"). Grupa "nieznana"/"obszar_N" = słupy bez przynależności
+                # do żadnego zakresu !trafo - NIE numerujemy automatycznie, raportujemy.
+                if sp is None or str(st).startswith(('nieznana', 'obszar_')):
+                    log.append(('UWAGA', 'Grupa "%s": słupy bez przynależności do stacji '
+                                'trafo - pomijam (sprawdź, czy to słupy projektu).' % st, None))
+                    continue
+                auto = _auto_starty(model, st, ids, sp)
+                if not auto:
+                    log.append(('UWAGA', 'Stacja %s: brak opisu "obw. nr", markera "1" i '
+                                'nie udało się wyznaczyć startu - pomijam.' % st, None))
+                    continue
+                starty = [(k + 1, i, None) for k, i in enumerate(auto)]
+                auto_starty = set(auto)   # te starty prowadzą magistralę "w głąb"
+                log.append(('UWAGA', 'Stacja %s: brak opisu "obw. nr" i markerów - '
+                            'auto-start od najbliższego końca magistrali do stacji.' % st, None))
 
         start_idx = {s for _, s, _ in starty}
 
@@ -247,7 +361,8 @@ def numeruj(model):
                 log.append(('UWAGA', 'Obwód %s/%d: nie znaleziono słupa "2" (kierunku) '
                             '- magistrala poprowadzona od stacji.' % (st, nr_obw), start))
 
-            przyp = nadaj_numery_obwod(model, start, obwod_ids, slup2)
+            w_glab = (slup2 is None) and (start in auto_starty)
+            przyp = nadaj_numery_obwod(model, start, obwod_ids, slup2, w_glab=w_glab)
             obwody.append({'stacja': st, 'nr_obwodu': nr_obw, 'start': start,
                            'grot': grot, 'slupy': przyp, 'ids': set(przyp)})
 

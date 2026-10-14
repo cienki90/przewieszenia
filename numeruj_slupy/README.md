@@ -42,6 +42,18 @@ Tworzy **nowy** plik DXF `… - ponumerowane.dxf` (oryginał nie jest zmieniany)
 - każdy obwód ma własną numerację od `1`; granicę obwodu wyznacza stacja trafo
   oraz starty innych obwodów (BFS nie przekracza cudzego słupa „1”).
 
+### Jak program ustala START obwodu (hierarchia)
+
+1. **Opis „obw. nr X” w obszarze `!trafo` tej stacji** → start = słup „1” przy grocie.
+   Opis leżący POZA obszarem stacji jest **ignorowany**.
+2. **Marker „1”** (ręczny numer) → traktowany jako **pewnik**, także bez opisu „obw. nr”.
+3. **Brak opisu i markera** → **auto-start**: program znajduje stację trafo i bierze
+   **najbliższy koniec magistrali** do stacji jako słup „1” (przy remisie dwóch końców
+   blisko stacji wybiera ten, od którego magistrala jest dłuższa). Auto-start działa
+   tylko dla realnej stacji (grupa „nieznana” / słupy spoza zasięgu są pomijane).
+   W auto-starcie magistrala w każdym rozwidleniu idzie **najdłuższą gałęzią**
+   (przy markerach/opisie magistrala idzie „na wprost”, kierunek 1→2).
+
 ### Przerwa w linii `!tele` (brak wymiaru)
 
 Gdy linia `!tele` ma przerwę (urwany ciąg słupów, bez wymiaru łączącego), program
