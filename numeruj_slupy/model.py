@@ -46,6 +46,7 @@ class Model:
         self.stacje = []
         self.starty = []
         self.zakresy = rys.zakresy
+        self.wymiary = rys.wymiary       # (L, p1, p2, nadpis, text_midpoint|None)
         self.zakres_stacji = {}
         self.polaczenia = collections.defaultdict(set)
         self.stacja_slupa = {}

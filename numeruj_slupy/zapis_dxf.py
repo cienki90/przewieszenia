@@ -23,31 +23,15 @@ import ezdxf
 from numeracja import _wektor
 
 
+import math
+
 # paleta kolorów ACI dla kolejnych obwodów (pomijamy biały/czarny 7 i czerwień 1 zarezerw.)
 PALETA_ACI = [1, 3, 5, 6, 2, 4, 30, 150, 190, 210, 40, 90, 230, 8, 250, 170]
-WYS_TEKSTU_DOMYSLNA = 2.5          # [j. rysunku] fallback wysokości numeru
+WYS_TEKSTU = 2.5                   # [j. rysunku] stała wysokość numeru słupa
 
 
 def _kolor_obwodu(k):
     return PALETA_ACI[k % len(PALETA_ACI)]
-
-
-def _wysokosc_tekstu(model):
-    """Wysokość numeru = mediana wysokości istniejących TEXT-ów numerów, jeśli znana;
-    inaczej wartość domyślna. (Model nie przechowuje wysokości - używamy heurystyki
-    opartej na rozstawie słupów, by numer był czytelny przy dowolnej skali.)"""
-    # heurystyka: ~ 1/8 mediany długości przęsła
-    import math
-    dl = []
-    for i, s in enumerate(model.slupy):
-        for j in model.polaczenia[i]:
-            if j > i:
-                dl.append(math.dist(s['p'], model.slupy[j]['p']))
-    if not dl:
-        return WYS_TEKSTU_DOMYSLNA
-    dl.sort()
-    med = dl[len(dl) // 2]
-    return max(1.0, round(med / 8.0, 2))
 
 
 def _nazwa_warstwy(prefix, stacja, obwod):
@@ -55,22 +39,74 @@ def _nazwa_warstwy(prefix, stacja, obwod):
     return '%s_%s_%s' % (prefix, st, obwod)
 
 
-def _odsuniecie(model, i, numery):
-    """Mały wektor odsunięcia numeru od słupa (w stronę przeciwną do rodzica),
-    by numer nie nachodził na symbol słupa. Zwraca (dx, dy)."""
-    import math
+def _kierunek_przesla(model, i):
+    """Jednostkowy wektor kierunku linii !tele przy słupie i (kierunek przęsła).
+    Bierzemy przęsło do najbliższego sąsiada w grafie - lokalny kierunek trasy."""
     p = model.slupy[i]['p']
-    # kierunek: od sąsiadów (średnia) - odsuwamy "na zewnątrz"
-    sas = [j for j in model.polaczenia[i] if numery.get(j)]
+    sas = list(model.polaczenia[i])
     if not sas:
-        return (0.0, 0.0)
-    sx = sum(model.slupy[j]['p'][0] - p[0] for j in sas) / len(sas)
-    sy = sum(model.slupy[j]['p'][1] - p[1] for j in sas) / len(sas)
-    d = math.hypot(sx, sy)
+        return (1.0, 0.0)
+    j = min(sas, key=lambda j: math.dist(p, model.slupy[j]['p']))
+    q = model.slupy[j]['p']
+    vx, vy = q[0] - p[0], q[1] - p[1]
+    d = math.hypot(vx, vy)
     if d == 0:
-        return (0.0, 0.0)
-    h = _wysokosc_tekstu(model)
-    return (-sx / d * h * 1.2, -sy / d * h * 1.2)
+        return (1.0, 0.0)
+    return (vx / d, vy / d)
+
+
+def _strona_wymiaru(model, i, kier):
+    """Zwraca znak (+1 / -1) strony linii !tele, po której leży NAJBLIŻSZY tekst
+    wymiaru (text_midpoint), licząc względem normalnej do kierunku `kier`.
+    Gdy brak wymiarów w pobliżu - None (użyjemy strony domyślnej)."""
+    p = model.slupy[i]['p']
+    nx, ny = -kier[1], kier[0]           # normalna (lewa strona kierunku)
+    najl = None
+    for L, p1, p2, nadpis, mid in model.wymiary:
+        if mid is None:
+            continue
+        # wymiar dotyczy tego słupa, jeśli któryś koniec jest przy nim
+        d_end = min(math.dist(p, p1), math.dist(p, p2))
+        if d_end > 8.0:
+            continue
+        d_mid = math.dist(p, mid)
+        if najl is None or d_mid < najl[0]:
+            s = (mid[0] - p[0]) * nx + (mid[1] - p[1]) * ny
+            najl = (d_mid, s)
+    if najl is None:
+        return None
+    return 1.0 if najl[1] >= 0 else -1.0
+
+
+def _strona_domyslna_stacji(model, i, kier):
+    """Fallback strony, gdy brak wymiaru: strona przeciwna do stacji (opisy słupów
+    i wymiary zwykle są po jednej stronie, a numery po drugiej - trzymamy spójność
+    w obrębie obwodu). Zwraca +1/-1."""
+    p = model.slupy[i]['p']
+    nx, ny = -kier[1], kier[0]
+    st = model.stacja_slupa.get(i)
+    sp = next((s['p'] for s in model.stacje if s['nr'] == st), None)
+    if sp is None:
+        return -1.0
+    s = (sp[0] - p[0]) * nx + (sp[1] - p[1]) * ny
+    return -1.0 if s >= 0 else 1.0
+
+
+def _rozmieszczenie(model, i, strona_obw):
+    """Zwraca (punkt_wstawienia, kąt_tekstu_deg) dla numeru słupa i.
+    Numer: obrócony zgodnie z kierunkiem linii !tele, odsunięty PROSTOPADLE na stronę
+    `strona_obw` (ta sama co wymiarowanie), czytelny (nie do góry nogami)."""
+    p = model.slupy[i]['p']
+    kx, ky = _kierunek_przesla(model, i)
+    nx, ny = -ky, kx                      # normalna (lewa strona kierunku)
+    off = WYS_TEKSTU * 1.1                # odsunięcie "pod linię"
+    px = p[0] + nx * off * strona_obw
+    py = p[1] + ny * off * strona_obw
+    kat = math.degrees(math.atan2(ky, kx))
+    # czytelność: tekst w zakresie (-90, 90]; obróć o 180° gdy "do góry nogami"
+    if kat <= -90 or kat > 90:
+        kat += 180.0
+    return (px, py), kat
 
 
 def _sciezka_obwodu(model, ob):
@@ -106,7 +142,6 @@ def zapisz(model, obwody, sciezka_wej, sciezka_wyj=None):
     # Startujemy od KOPII oryginału, żeby zachować całą zawartość rysunku.
     doc = ezdxf.readfile(sciezka_wej)
     msp = doc.modelspace()
-    wys = _wysokosc_tekstu(model)
 
     # stały, powtarzalny indeks koloru per (stacja, obwod)
     klucze = sorted({(o['stacja'], o['nr_obwodu']) for o in obwody})
@@ -125,14 +160,31 @@ def zapisz(model, obwody, sciezka_wej, sciezka_wyj=None):
             lay.dxf.lineweight = 50     # 0,5 mm (jednostka: setne mm)
             lay.dxf.plot = 0            # warstwa NIEDRUKOWALNA
 
-        # --- numery jako TEXT
+        # --- strona obwodu = większościowa strona wymiarowania (spójnie dla całego
+        #     obwodu, by numery były po jednej stronie linii, jak przy wymiarach)
+        glosy = 0.0
+        for i in ob['slupy']:
+            kier = _kierunek_przesla(model, i)
+            s = _strona_wymiaru(model, i, kier)
+            if s is not None:
+                glosy += s
+        if glosy != 0.0:
+            strona_obw = 1.0 if glosy > 0 else -1.0
+        else:
+            # brak wymiarów - weź stronę przeciwną do stacji (spójną dla startu)
+            strona_obw = _strona_domyslna_stacji(model, ob['start'],
+                                                 _kierunek_przesla(model, ob['start']))
+
+        # --- numery jako TEXT: obrócone zgodnie z !tele, pod linią, wys. 2.5
+        from ezdxf.enums import TextEntityAlignment
         for i, numer in ob['slupy'].items():
-            px, py = model.slupy[i]['p']
-            dx, dy = _odsuniecie(model, i, ob['slupy'])
-            msp.add_text(
+            (px, py), kat = _rozmieszczenie(model, i, strona_obw)
+            txt = msp.add_text(
                 numer,
-                dxfattribs={'layer': warstwa_num, 'height': wys, 'color': 7},
-            ).set_placement((px + dx, py + dy))
+                dxfattribs={'layer': warstwa_num, 'height': WYS_TEKSTU,
+                            'color': 7, 'rotation': kat},
+            )
+            txt.set_placement((px, py), align=TextEntityAlignment.MIDDLE_CENTER)
 
         # --- obrys kontrolny: łamana wzdłuż ścieżki numeracji
         for a, b in _sciezka_obwodu(model, ob):

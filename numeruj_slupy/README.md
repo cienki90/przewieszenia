@@ -24,7 +24,11 @@ Pozostałe elementy rozpoznawane są jak w generatorze zestawień (`generator/ze
 Tworzy **nowy** plik DXF `… - ponumerowane.dxf` (oryginał nie jest zmieniany):
 
 - **numery słupów** jako TEXT, każdy obwód na osobnej warstwie
-  `_numery_<stacja>_<obwod>` (np. `_numery_05-0433_1`) – ułatwia robienie zestawień,
+  `_numery_<stacja>_<obwod>` (np. `_numery_05-0433_1`) – ułatwia robienie zestawień.
+  Numer jest: wysokości **2,5**, **obrócony zgodnie z kierunkiem linii `!tele`**
+  (czytelny, nie „do góry nogami”), odsunięty prostopadle **pod linię** i umieszczony
+  **po tej samej stronie co wymiarowanie** (strona ustalana większościowo z pozycji
+  tekstów wymiarów, spójnie dla całego obwodu),
 - **obrys kontrolny** każdego obwodu – łamana prowadzona wzdłuż ścieżki numeracji
   (magistrala + odgałęzienia) na warstwie `_kontrola_<stacja>_<obwod>`:
   **inny kolor** dla każdego obwodu, grubość linii **0,5 mm**, warstwa **NIEDRUKOWALNA**.

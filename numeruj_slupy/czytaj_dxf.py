@@ -146,7 +146,7 @@ class Rysunek:
         self.sciezka = sciezka
         self.opisy = []          # (tekst, punkt) - opisy słupów/stacji/obwodów
         self.teksty = []         # (tekst, punkt) - numery (RE_NUMER), w praktyce warstwa _numery
-        self.wymiary = []        # (dlugosc, p1, p2, nadpis)
+        self.wymiary = []        # (dlugosc, p1, p2, nadpis, text_midpoint|None)
         self.zakresy = []        # [punkty] - polilinie !trafo
         self.nazwy_zakresow = [] # numer stacji z nazwy warstwy (!trafo_05-0181 -> 05-0181) lub None
         self.mufy = []           # punkty wstawienia bloków mufy
@@ -214,7 +214,10 @@ class Rysunek:
                         m = re.search(r'\d+(?:[.,]\d+)?', t)
                         if m:
                             nadpis = float(m.group(0).replace(',', '.'))
-                    self.wymiary.append((L, p1, p2, nadpis))
+                    # text_midpoint (kod 11/21) - pozycja tekstu wymiaru; po tej stronie
+                    # linii !tele ma znaleźć się numer słupa
+                    mid = (fl(d, 11), fl(d, 21)) if 11 in d and 21 in d else None
+                    self.wymiary.append((L, p1, p2, nadpis, mid))
             elif typ == 'LWPOLYLINE' and warstwa.lower().startswith(WARSTWA_ZAKRESOW.lower()):
                 xs = [float(v) for k, v in g if k == 10]
                 ys = [float(v) for k, v in g if k == 20]
@@ -266,7 +269,7 @@ def graf_sieci(sieci, slupy, num):
 def graf_wymiarow(wymiary, slupy, num):
     """Graf sąsiedztwa z wymiarów (DIMENSION) - uzupełnia luki w sieci !tele."""
     sas = collections.defaultdict(set)
-    for L, a, b, _ in wymiary:
+    for L, a, b, _nadpis, _mid in wymiary:
         if not num:
             break
         da, ja = min((math.dist(a, slupy[j]['p']), j) for j in num)
