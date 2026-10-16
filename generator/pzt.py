@@ -52,6 +52,7 @@ KROK = 15.0                         # siatka kandydatów na arkusze [m]
 BB_LIMIT = 20000                    # limit dokładnego przeszukiwania
 
 RE_STACJA = re.compile(r"(\d{2,3}-\d{3,4}|\d{3,4})")   # "03-0494" lub "0494"/"494"
+RE_NAZWA_PZT = re.compile(r"^\d+-\d+$")                # nazwa layoutu PZT, np. "244-1" / "2-3"
 
 
 # ============================================================ geometria (stdlib)
@@ -673,6 +674,10 @@ def zapisz_arkusze(wejscie_sciezka, wyjscie_sciezka, arkusze, wzorzec_sciezka=No
     secs = dict(secs_list)
     kolejnosc = [n for n, _ in secs_list]
 
+    # regeneracja: usuń istniejące layouty PZT (gdy wejście już było wynikiem PZT) - bez tego
+    # ponowne uruchomienie DUBLOWAŁO layouty o tych samych nazwach ('244-1' itd.)
+    _usun_layouty_pzt(secs, log=log)
+
     # --- wzorzec: layout "a" + jego block record + encje papieru + rzutnia modelu ---
     zrodlo = secs if wzorzec_sciezka is None else dict(split_sections(read_tags(wzorzec_sciezka)))
     lay_wzor, br_wzor = _znajdz_wzorzec_layout(zrodlo)
@@ -831,6 +836,88 @@ def _write_tags(path, tags):
         out.append(f"{c:>3}\n{v}\n")
     with open(path, "w", encoding="utf-8", newline="\r\n") as f:
         f.write("".join(out))
+
+
+def _nazwa_layoutu(d):
+    """Nazwa layoutu z tagów LAYOUT (ostatni kod 1)."""
+    nazwy = [v for c, v in d if c == 1]
+    return nazwy[-1].strip() if nazwy else ""
+
+
+def _usun_layouty_pzt(secs, log=print):
+    """Usuwa z pliku ISTNIEJĄCE layouty PZT (nazwa '<nr>-<n>', np. '244-1') wraz z ich
+    block record, blokiem papieru i wpisem w słowniku ACAD_LAYOUT.
+
+    Dzięki temu ponowne uruchomienie PZT na pliku, który już ma arkusze PZT (np. z poprzedniego
+    uruchomienia), REGENERUJE je zamiast dublować. Layouty inne niż PZT (Model, wzorzec 'a',
+    arkusze przewieszeń itp.) zostają nietknięte. Zwraca liczbę usuniętych layoutów."""
+    objs = split_entities(secs.get("OBJECTS", []))
+    # handle layoutów PZT i ich block_record (330), + nazwy do czyszczenia słownika
+    lay_handle, br_handle, nazwy_pzt = set(), set(), set()
+    for t, d in objs:
+        if t == "LAYOUT" and RE_NAZWA_PZT.match(_nazwa_layoutu(d)):
+            h = get(d, 5)
+            if h:
+                lay_handle.add(h)
+            br330 = [v for c, v in d if c == 330]
+            if br330:
+                br_handle.add(br330[-1])
+            nazwy_pzt.add(_nazwa_layoutu(d))
+    if not lay_handle:
+        return 0
+
+    # OBJECTS: wyrzuć te LAYOUT-y i wyczyść pary (3,nazwa)(350,handle) w słownikach ACAD_LAYOUT
+    nowe_objs = []
+    for t, d in objs:
+        if t == "LAYOUT" and get(d, 5) in lay_handle:
+            continue
+        if t == "DICTIONARY":
+            nd, i = [], 0
+            while i < len(d):
+                c, v = d[i]
+                if c == 3 and i + 1 < len(d) and d[i + 1][0] == 350 and d[i + 1][1] in lay_handle:
+                    i += 2
+                    continue
+                nd.append((c, v))
+                i += 1
+            d = nd
+        nowe_objs.append((t, d))
+    secs["OBJECTS"] = _join(nowe_objs)
+
+    # TABLES: usuń BLOCK_RECORD-y usuwanych layoutów i popraw licznik 70 tabeli
+    tabs = split_entities(secs.get("TABLES", []))
+    nowe_tabs, cur = [], None
+    for t, d in tabs:
+        if t == "TABLE":
+            cur = get(d, 2)
+            if cur == "BLOCK_RECORD":
+                usun = sum(1 for tt, dd in tabs if tt == "BLOCK_RECORD" and get(dd, 5) in br_handle)
+                stare = sum(1 for tt, dd in tabs if tt == "BLOCK_RECORD")
+                d = [(c, (f"{stare - usun:>6}" if c == 70 else v)) for c, v in d]
+        if t == "BLOCK_RECORD" and get(d, 5) in br_handle:
+            continue
+        nowe_tabs.append((t, d))
+    secs["TABLES"] = _join(nowe_tabs)
+
+    # BLOCKS: usuń całe BLOCK...ENDBLK, których właściciel (330) to usuwany block_record
+    blks = split_entities(secs.get("BLOCKS", []))
+    nowe_blks, pomijaj = [], False
+    for t, d in blks:
+        if t == "BLOCK":
+            pomijaj = _owner(d) in br_handle or get(d, 330) in br_handle
+            if pomijaj:
+                continue
+        if t == "ENDBLK" and pomijaj:
+            pomijaj = False
+            continue
+        if pomijaj:
+            continue
+        nowe_blks.append((t, d))
+    secs["BLOCKS"] = _join(nowe_blks)
+
+    log(f"Zastępuję istniejące arkusze PZT: usunięto {len(lay_handle)} layoutów "
+        f"({', '.join(sorted(nazwy_pzt))}).")
+    return len(lay_handle)
 
 
 def _znajdz_wzorzec_layout(secs):
