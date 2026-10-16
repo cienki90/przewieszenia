@@ -271,7 +271,7 @@ def _krok_pzt(dxf: str, wyjscie: str, opcje: Opcje) -> WynikKroku:
     Wzorzec layoutu „a” jest w pliku wejściowym albo w osobnym pliku (opcje.pzt_wzorzec)."""
     def uruchom():
         return mod_pzt.przetworz(dxf, wyjscie, wzorzec=opcje.pzt_wzorzec,
-                                 zaklad=opcje.pzt_zaklad, log=print)
+                                 adresy=opcje.adresy, zaklad=opcje.pzt_zaklad, log=print)
     (wynik, raport) = _przechwyc(uruchom)
     plik = wynik[0] if isinstance(wynik, tuple) else wyjscie
     ok = os.path.exists(plik)

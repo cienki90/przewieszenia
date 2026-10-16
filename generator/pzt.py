@@ -411,7 +411,8 @@ def wczytaj(sciezka, wzorzec_sciezka=None):
             if "STACJA" in txt.upper():
                 m = RE_STACJA.search(txt)
                 if m:
-                    stacje.append((_norm_nr(m.group(1)), grot))
+                    # zachowaj PEŁNE oznaczenie (np. '05-0244') - potrzebne do tabelki
+                    stacje.append((m.group(1).strip(), grot))
 
     W, H, zak = _wczytaj_wzorzec(sciezka if wzorzec_sciezka is None else wzorzec_sciezka)
     return Wejscie(trasy, poligony, stacje, (W, H), zak)
@@ -561,24 +562,16 @@ def _numer_poligonu(poly, stacje, oznaczenia, ostrzezenia):
     return None
 
 
-def _miejscowosci_arkusza(ark, slupy_miejsc):
-    """Miejscowości słupów leżących w oknie arkusza (po kolejności)."""
-    out = []
-    for (x, y, miejsc) in slupy_miejsc:
-        if miejsc and miejsc not in out and ark.x0 <= x <= ark.x0 + ark.szer and ark.y0 <= y <= ark.y0 + ark.wys:
-            out.append(miejsc)
-    return out
-
-
-def zaplanuj(we: Wejscie, slupy_miejsc=None, tylko=None, zaklad=ZAKLAD, log=print):
+def zaplanuj(we: Wejscie, miejscowosci_stacji=None, tylko=None, zaklad=ZAKLAD, log=print):
     """Zwraca listę arkuszy (Arkusz) dla wszystkich stacji oraz listę ostrzeżeń.
 
-    slupy_miejsc - [(x, y, miejscowosc)] do opisu miejscowości na arkuszach (opcjonalnie).
-    tylko        - zbiór znormalizowanych numerów stacji do wygenerowania (None = wszystkie)."""
+    miejscowosci_stacji - {znormalizowany_nr_stacji: [miejscowości...]} do wpisania w tabelce
+                          (po zasięgu stacji trafo); każdy arkusz danej stacji dostaje tę samą listę.
+    tylko               - zbiór znormalizowanych numerów stacji do wygenerowania (None = wszystkie)."""
     ostrzezenia = []
     oznaczenia = {_norm_nr(nr): nr for nr, _ in we.stacje}      # 494 -> 03-0494
     W, H = we.wzor_okno
-    slupy_miejsc = slupy_miejsc or []
+    miejscowosci_stacji = miejscowosci_stacji or {}
 
     # numer stacji dla każdego poligonu + uchwyty poligonów (do warstw stacji)
     poligony = []
@@ -604,13 +597,15 @@ def zaplanuj(we: Wejscie, slupy_miejsc=None, tylko=None, zaklad=ZAKLAD, log=prin
         if not linie:
             ostrzezenia.append(f"Stacja {oznaczenia.get(nr, nr)}: brak trasy !tele w zakresie - pominięto.")
             continue
+        miejsc = list(miejscowosci_stacji.get(nr, []))
         narozniki = rozmiesc(linie, W, H, we.wzor_zakazane, zaklad=zaklad)
         for i, (x0, y0) in enumerate(narozniki, 1):
             a = Arkusz(x0, y0, W, H, stacja=oznaczenia.get(nr, nr), nr_stacji=nr,
                        nazwa=f"{nr}-{i}", nr_rys=f"{PREFIKS_RYS}{i}")
-            a.miejscowosci = _miejscowosci_arkusza(a, slupy_miejsc)
+            a.miejscowosci = miejsc
             arkusze.append(a)
-        log(f"   stacja {oznaczenia.get(nr, nr):<10} arkuszy: {len(narozniki)}")
+        opis_m = (" - " + ", ".join(miejsc)) if miejsc else ""
+        log(f"   stacja {oznaczenia.get(nr, nr):<10} arkuszy: {len(narozniki)}{opis_m}")
     return arkusze, ostrzezenia, poligony_stacji
 
 
@@ -654,7 +649,9 @@ def _tekst_tabelki(encje_tagi, podmianki):
                 if c in (1, 3):
                     for wzor, nowa in podmianki:
                         if wzor.search(v):
-                            v = wzor.sub(nowa, v)
+                            # nowa=None -> wzorzec sam wie, czym podmienić (np. miejscowość,
+                            # z zachowaniem frazy/formatowania); inaczej zwykłe regex.sub
+                            v = wzor.sub(v) if nowa is None else wzor.sub(nowa, v)
                 nd.append((c, v))
             out.append((t, nd))
         else:
@@ -1050,14 +1047,48 @@ def _obrysy_modelu(arkusze, nh, model_owner="1F"):
 
 
 def _podmianki_tabelki(ark):
-    """Reguły podmiany pól tabelki: numer rysunku (2.x), numer stacji, miejscowości."""
+    """Reguły podmiany pól tabelki: numer rysunku (2.x), numer stacji, miejscowość.
+
+    Każda reguła to (funkcja_dopasowania, nowa_wartość) - działa na treści MTEXT/TEXT.
+    Podmiany trafiają zarówno w PLACEHOLDER wzorca (np. '03-xx', 'w miejscowości ___'),
+    jak i w KONKRETNĄ wartość pozostawioną we wzorcu (np. '05-0614', nazwę miejscowości),
+    więc arkusze różnych stacji dostają własny numer i miejscowość, a nie wartość z wzorca."""
     reguly = []
-    # numer rysunku: wzorzec zawiera "2.x" lub "2." + cyfra
-    reguly.append((re.compile(r"2\.(x+|\d+)"), ark.nr_rys))
-    # numer stacji: "03-xx"/"xx-xxxx" -> oznaczenie
+    # numer rysunku: "2.x" / "2." + cyfra -> np. "2.3"
+    reguly.append((re.compile(r"2\.(?:x+|\d+)"), ark.nr_rys))
+    # numer stacji: placeholder (03-xx) ORAZ realny numer (05-0614) -> oznaczenie stacji arkusza
     if ark.stacja:
-        reguly.append((re.compile(r"\d{2,3}-x+|\bxx-xxxx\b", re.I), ark.stacja))
+        reguly.append((re.compile(r"\b\d{2,3}-(?:x+|\d{3,4})\b", re.I), ark.stacja))
+    # miejscowość: fraza "w miejscowości <...>" -> "w miejscowości <miejscowości arkusza>"
+    # (działa też, gdy po frazie jest już wpisana nazwa z wzorca - zostaje zastąpiona)
+    if ark.miejscowosci:
+        nazwa = ", ".join(ark.miejscowosci)
+        reguly.append((_PodmianaMiejscowosci(nazwa), None))
     return reguly
+
+
+# fraza w tabelce, po której stoi nazwa miejscowości (bez znaczenia wielkości liter)
+FRAZA_MIEJSCOWOSCI = "w miejscowości"
+_RE_MIEJSCOWOSC = re.compile(
+    r"(?P<fraza>w\s+miejscowości\s+)(?P<nazwa>[^{}\\;]*)", re.IGNORECASE)
+
+
+class _PodmianaMiejscowosci:
+    """Zamienia nazwę po frazie 'w miejscowości ...' na podaną, zachowując formatowanie MTEXT.
+
+    Udaje interfejs skompilowanego wyrażenia (search/sub), bo _tekst_tabelki tak go używa."""
+
+    def __init__(self, nazwa: str):
+        self.nazwa = nazwa
+
+    def search(self, s):
+        return _RE_MIEJSCOWOSC.search(s or "")
+
+    def sub(self, s):
+        def repl(m):
+            # zachowaj pojedynczą spację po frazie; podmień tylko samą nazwę
+            return m.group("fraza") + self.nazwa
+        return _RE_MIEJSCOWOSC.sub(repl, s or "")
 
 
 def _join(ents):
@@ -1068,24 +1099,96 @@ def _join(ents):
     return tags
 
 
+# ============================================================ miejscowości wg zasięgu stacji
+def miejscowosci_wg_stacji(dxf_path, adresy="uug,osm", cache_dir=None, log=print):
+    """Zwraca {znormalizowany_nr_stacji: [miejscowości...]} ustalone z GEOKODOWANIA SŁUPÓW
+    leżących w zasięgu danej stacji trafo.
+
+    Przynależność słup->stacja bierzemy z zestawienia (obszary !trafo_<nr> + drzewo sieci) -
+    to samo źródło, które decyduje o numerze stacji na arkuszu. Dla każdej stacji geokodujemy
+    jej słupy (grupując je przestrzennie w siatkę, żeby ograniczyć liczbę zapytań) i zwracamy
+    listę miejscowości tej stacji, posortowaną malejąco wg liczby słupów. Dzięki temu w tabelce
+    arkuszy PZT jest ta sama miejscowość, jaką obejmują słupy w zasięgu stacji.
+
+    Przy wyłączonym/niedostępnym geokodowaniu (adresy='brak' albo brak internetu) zwraca
+    pusty słownik - wtedy tabelka zachowuje nazwę z wzorca (zmieniany jest tylko numer stacji).
+    """
+    if (adresy or "").strip().lower() in ("", "brak", "nie", "0"):
+        return {}
+    try:
+        from . import orientacje as _ori
+        from . import zestawienie as _zest
+    except ImportError:
+        import orientacje as _ori
+        import zestawienie as _zest
+
+    # 1) słupy przypisane do stacji (po zasięgu !trafo + drzewie sieci)
+    try:
+        mapa = _zest.mapa_stacji_slupow(dxf_path)
+    except Exception as ex:  # noqa: BLE001 - geokodowanie to dodatek, nie przerywaj PZT
+        log(f"Uwaga: nie udało się ustalić słupów stacji z zestawienia ({ex}); "
+            "miejscowości w tabelce zostaną z wzorca.")
+        return {}
+    slupy_stacji = {}
+    for x, y, _nr, st in mapa:
+        slupy_stacji.setdefault(_norm_nr(st), []).append((x, y))
+    if not slupy_stacji:
+        return {}
+
+    # 2) geokoder (ta sama infrastruktura co „Rysunki stałe” - spójne nazwy, cache, rate-limit)
+    from pathlib import Path
+    if cache_dir is None:
+        cache_dir = _ori.default_cache_dir(_ori.program_dir())
+    try:
+        geokoder = _ori.PlaceResolver(Path(cache_dir), verify=False, log=log)
+    except Exception as ex:  # noqa: BLE001
+        log(f"Uwaga: nie udało się uruchomić geokodera ({ex}); miejscowości z wzorca.")
+        return {}
+
+    # 3) dla każdej stacji: grupuj słupy w siatkę i geokoduj jeden punkt na komórkę
+    komorka = _ori.GESTOSC_MIEJSC
+    wynik = {}
+    for nr, pts in slupy_stacji.items():
+        liczby = {}
+        grupy = {}
+        for (x, y) in pts:
+            grupy.setdefault((round(x / komorka), round(y / komorka)), []).append((x, y))
+        for lista in grupy.values():
+            x, y = lista[0]
+            try:
+                zone = _ori.pl2000_zone_from_easting(x)
+                lat, lon = _ori.pl2000_to_wgs84(x, y, zone)
+                r = geokoder.resolve(lat, lon, x, y, zone)
+            except Exception:  # noqa: BLE001 - pojedyncza grupa nie wywraca całości
+                continue
+            nazwa = (r.get("miejscowosc") or "").strip()
+            if nazwa:
+                liczby[nazwa] = liczby.get(nazwa, 0) + len(lista)
+        if liczby:
+            wynik[nr] = [n for n, _c in sorted(liczby.items(), key=lambda kv: (-kv[1], kv[0]))]
+    return wynik
+
+
 # ============================================================ program główny
-def _slupy_miejscowosci(dxf_path):
-    """[(x, y, miejscowość)] słupów - z geokodowania (jak w rysunkach stałych).
-
-    Zwraca pustą listę, gdy brak danych/geokodowania; miejscowości służą tylko do
-    opisu w tabelce arkusza (opcjonalne)."""
-    return []   # miejscowości uzupełniane są w pipeline (gdy włączone geokodowanie)
 
 
-def przetworz(dxf, wyjscie=None, wzorzec=None, tylko=None, slupy_miejsc=None, zaklad=ZAKLAD, log=print):
-    """Tworzy arkusze PZT z pliku DXF. Zwraca (ścieżka_wyniku, liczba_arkuszy, ostrzeżenia)."""
+def przetworz(dxf, wyjscie=None, wzorzec=None, tylko=None, miejscowosci_stacji=None,
+              adresy="uug,osm", cache_dir=None, zaklad=ZAKLAD, log=print):
+    """Tworzy arkusze PZT z pliku DXF. Zwraca (ścieżka_wyniku, liczba_arkuszy, ostrzeżenia).
+
+    Miejscowość w tabelce każdego arkusza ustalana jest z GEOKODOWANIA SŁUPÓW w zasięgu danej
+    stacji trafo (patrz miejscowosci_wg_stacji). Można też podać gotową mapę w `miejscowosci_stacji`
+    ({nr: [miejscowości]}); `adresy='brak'` wyłącza geokodowanie - wtedy nazwa zostaje z wzorca."""
     we = wczytaj(dxf, wzorzec)
     if not we.poligony:
         raise ValueError(f"W pliku nie ma poligonów zasięgu stacji na warstwie {WARSTWA_ZAKRES}.")
     if not we.trasy:
         raise ValueError(f"W pliku nie ma trasy na warstwie {WARSTWA_TRASA}.")
     norm_tylko = {_norm_nr(s) for s in tylko} if tylko else None
-    arkusze, ostrzezenia, poligony_stacji = zaplanuj(we, slupy_miejsc=slupy_miejsc or [],
+    if miejscowosci_stacji is None:
+        log("Ustalanie miejscowości stacji z geokodowania słupów w zasięgu...")
+        miejscowosci_stacji = miejscowosci_wg_stacji(dxf, adresy=adresy, cache_dir=cache_dir, log=log)
+    arkusze, ostrzezenia, poligony_stacji = zaplanuj(we, miejscowosci_stacji=miejscowosci_stacji,
                                                      tylko=norm_tylko, zaklad=zaklad, log=log)
     if not arkusze:
         raise ValueError("Nie powstał żaden arkusz (brak trasy w zakresach stacji?).")
@@ -1114,11 +1217,14 @@ def main(argv=None):
     ap.add_argument("--wzorzec", default=None, help="osobny plik DXF z layoutem-wzorcem „a”")
     ap.add_argument("--stacje", default=None, help="tylko wybrane stacje, po przecinku (np. 494,541)")
     ap.add_argument("--zaklad", type=float, default=ZAKLAD, help="wspólny odcinek trasy sąsiednich arkuszy [m]")
+    ap.add_argument("--adresy", default="uug,osm",
+                    help="źródła nazw miejscowości do tabelki: uug,osm lub 'brak' (bez internetu)")
     a = ap.parse_args(argv)
     zaklad = max(0.0, min(500.0, a.zaklad))
     tylko = [s.strip() for s in a.stacje.replace(";", ",").split(",")] if a.stacje else None
     try:
-        wy, n, _ = przetworz(a.dxf, a.wyjscie, a.wzorzec, tylko, zaklad=zaklad, log=print)
+        wy, n, _ = przetworz(a.dxf, a.wyjscie, a.wzorzec, tylko, adresy=a.adresy,
+                             zaklad=zaklad, log=print)
         print(f"Gotowe: {n} arkuszy -> {wy}")
         return 0
     except Exception as ex:  # noqa: BLE001
