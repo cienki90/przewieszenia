@@ -91,6 +91,8 @@ class Aplikacja:
         # opcje arkuszy PZT
         self.pzt_wzorzec = tk.StringVar()                  # plik z layoutem-wzorcem "a" (puste = plan)
         self.pzt_zaklad = tk.StringVar(value="50")
+        # Warunki Techniczne (WT) - źródło miejscowości słupów (wspólne dla PZT/orientacji/opisów)
+        self.wt_plik = tk.StringVar()                      # plik WT (.xls/.xlsx); puste = geokodowanie
         # opcje opisów technicznych (.docx)
         self.opisy_szablon = tk.StringVar()                # szablon .docx (puste = dołączony)
         self.opisy_zestawienie = tk.StringVar()            # xlsx (puste = z Rysunków stałych)
@@ -222,6 +224,12 @@ class Aplikacja:
         self._pole_pliku(f, "Plik ze wzorcem „a”:", self.pzt_wzorzec,
                          "Wybierz plik DXF z layoutem-wzorcem „a”")
         ttk.Label(f, text="(puste = wzorzec „a” z pliku planu powyżej)", foreground="#777").pack(anchor="w", padx=10)
+        self._pole_pliku(f, "Warunki techniczne (.xls):", self.wt_plik,
+                         "Wybierz plik Warunków Technicznych (.xls/.xlsx)", typy=XLSX_TYPY)
+        ttk.Label(f, text="(opcjonalnie — miejscowości słupów wg zasięgu stacji trafo z WT, zamiast "
+                          "geokodowania; współrzędne PUWG2000 lub WGS84. To samo źródło zasila też "
+                          "Rysunki stałe i Opisy)",
+                  foreground="#777", wraplength=760, justify="left").pack(anchor="w", padx=10)
         box = ttk.LabelFrame(f, text="Opcje")
         box.pack(fill="x", padx=10, pady=6)
         r = ttk.Frame(box)
@@ -391,6 +399,7 @@ class Aplikacja:
             orient_plan_slupow=(self.orient_plan_slupow.get().strip() or None),
             pzt_wzorzec=(self.pzt_wzorzec.get().strip() or None),
             pzt_zaklad=_float(self.pzt_zaklad.get(), 50.0),
+            wt_plik=(self.wt_plik.get().strip() or None),
             opisy_szablon=(self.opisy_szablon.get().strip() or None),
             opisy_zestawienie=(self.opisy_zestawienie.get().strip() or None),
             opisy_obliczenia=(self.opisy_obliczenia.get().strip() or None),

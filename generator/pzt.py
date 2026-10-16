@@ -1172,13 +1172,41 @@ def miejscowosci_wg_stacji(dxf_path, adresy="uug,osm", cache_dir=None, log=print
 # ============================================================ program główny
 
 
+def _ustal_miejscowosci(dxf, wt_plik, adresy, cache_dir, log):
+    """Mapa {nr_stacji: [miejscowości]} wg zasięgu stacji - z WT (gdy podany) lub geokodowania.
+
+    Gdy podano plik WT: miejscowości z WT; dla stacji bez dopasowania WT „krzyczymy” w logu
+    (jak uzgodniono) i próbujemy uzupełnić je geokodowaniem, jeśli internet jest włączony."""
+    if wt_plik:
+        try:
+            from . import wt as _wt
+        except ImportError:
+            import wt as _wt
+        log(f"Ustalanie miejscowości stacji z Warunków Technicznych: {wt_plik}")
+        mapa, ostrz = _wt.miejscowosci_stacji_z_wt(dxf, wt_plik, log=log)
+        for o in ostrz:
+            log("UWAGA: " + o)
+        # uzupełnij stacje bez trafienia WT geokodowaniem (gdy internet włączony)
+        if ostrz and (adresy or "").strip().lower() not in ("", "brak", "nie", "0"):
+            log("Uzupełniam brakujące miejscowości geokodowaniem słupów...")
+            geo = miejscowosci_wg_stacji(dxf, adresy=adresy, cache_dir=cache_dir, log=log)
+            for nr, miejsc in geo.items():
+                mapa.setdefault(nr, miejsc)
+        return mapa
+    log("Ustalanie miejscowości stacji z geokodowania słupów w zasięgu...")
+    return miejscowosci_wg_stacji(dxf, adresy=adresy, cache_dir=cache_dir, log=log)
+
+
 def przetworz(dxf, wyjscie=None, wzorzec=None, tylko=None, miejscowosci_stacji=None,
-              adresy="uug,osm", cache_dir=None, zaklad=ZAKLAD, log=print):
+              adresy="uug,osm", cache_dir=None, wt_plik=None, zaklad=ZAKLAD, log=print):
     """Tworzy arkusze PZT z pliku DXF. Zwraca (ścieżka_wyniku, liczba_arkuszy, ostrzeżenia).
 
-    Miejscowość w tabelce każdego arkusza ustalana jest z GEOKODOWANIA SŁUPÓW w zasięgu danej
-    stacji trafo (patrz miejscowosci_wg_stacji). Można też podać gotową mapę w `miejscowosci_stacji`
-    ({nr: [miejscowości]}); `adresy='brak'` wyłącza geokodowanie - wtedy nazwa zostaje z wzorca."""
+    Miejscowość w tabelce każdego arkusza ustalana jest wg zasięgu stacji trafo:
+      * gdy podano `wt_plik` - z pliku Warunków Technicznych (słupy WT dopasowane do
+        wierzchołków !tele w zasięgu !trafo; patrz wt.miejscowosci_stacji_z_wt),
+      * inaczej - z GEOKODOWANIA słupów stacji (miejscowosci_wg_stacji).
+    Można też podać gotową mapę w `miejscowosci_stacji` ({nr: [miejscowości]});
+    `adresy='brak'` wyłącza geokodowanie - wtedy nazwa zostaje z wzorca."""
     we = wczytaj(dxf, wzorzec)
     if not we.poligony:
         raise ValueError(f"W pliku nie ma poligonów zasięgu stacji na warstwie {WARSTWA_ZAKRES}.")
@@ -1186,8 +1214,7 @@ def przetworz(dxf, wyjscie=None, wzorzec=None, tylko=None, miejscowosci_stacji=N
         raise ValueError(f"W pliku nie ma trasy na warstwie {WARSTWA_TRASA}.")
     norm_tylko = {_norm_nr(s) for s in tylko} if tylko else None
     if miejscowosci_stacji is None:
-        log("Ustalanie miejscowości stacji z geokodowania słupów w zasięgu...")
-        miejscowosci_stacji = miejscowosci_wg_stacji(dxf, adresy=adresy, cache_dir=cache_dir, log=log)
+        miejscowosci_stacji = _ustal_miejscowosci(dxf, wt_plik, adresy, cache_dir, log)
     arkusze, ostrzezenia, poligony_stacji = zaplanuj(we, miejscowosci_stacji=miejscowosci_stacji,
                                                      tylko=norm_tylko, zaklad=zaklad, log=log)
     if not arkusze:
@@ -1219,12 +1246,15 @@ def main(argv=None):
     ap.add_argument("--zaklad", type=float, default=ZAKLAD, help="wspólny odcinek trasy sąsiednich arkuszy [m]")
     ap.add_argument("--adresy", default="uug,osm",
                     help="źródła nazw miejscowości do tabelki: uug,osm lub 'brak' (bez internetu)")
+    ap.add_argument("--wt", default=None,
+                    help="plik Warunków Technicznych (.xls/.xlsx) - miejscowości słupów wg zasięgu stacji "
+                         "(zamiast geokodowania; współrzędne PUWG2000 lub WGS84)")
     a = ap.parse_args(argv)
     zaklad = max(0.0, min(500.0, a.zaklad))
     tylko = [s.strip() for s in a.stacje.replace(";", ",").split(",")] if a.stacje else None
     try:
         wy, n, _ = przetworz(a.dxf, a.wyjscie, a.wzorzec, tylko, adresy=a.adresy,
-                             zaklad=zaklad, log=print)
+                             wt_plik=a.wt, zaklad=zaklad, log=print)
         print(f"Gotowe: {n} arkuszy -> {wy}")
         return 0
     except Exception as ex:  # noqa: BLE001

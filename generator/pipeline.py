@@ -59,6 +59,8 @@ class Opcje:
     # arkusze PZT
     pzt_wzorzec: str | None = None               # plik z layoutem-wzorcem "a" (None = plan wejściowy)
     pzt_zaklad: float = 50.0                     # wspólny odcinek trasy sąsiednich arkuszy [m]
+    # Warunki Techniczne (WT) - źródło miejscowości słupów wg zasięgu stacji (zamiast geokodowania)
+    wt_plik: str | None = None                   # plik WT (.xls/.xlsx); None = geokodowanie
     # opisy techniczne (.docx)
     opisy_szablon: str | None = None             # szablon .docx (None = dołączony szablon_opisu.docx)
     opisy_zestawienie: str | None = None         # xlsx z danymi (None = zestawienie z kroku orientacje)
@@ -243,6 +245,34 @@ def _krok_obliczenia(zestawienie_plik: str, wyjscie: str, opcje: Opcje) -> Wynik
                       blad=None if ok else "Nie udało się wykonać obliczeń.")
 
 
+def _nazwy_csv_z_wt(plan_slupow: str, wt_plik: str, wyjscie_dir: str, log=print):
+    """Buduje CSV 'numer;miejscowość' z Warunków Technicznych (dla kroku orientacje).
+
+    Miejscowości ustalane wg zasięgu stacji (słupy WT dopasowane do wierzchołków !tele w !trafo).
+    Zwraca ścieżkę CSV albo None, gdy nie udało się nic ustalić."""
+    try:
+        from . import wt as mod_wt
+    except ImportError:
+        import wt as mod_wt
+    try:
+        mapa, ostrz = mod_wt.miejscowosci_stacji_z_wt(plan_slupow, wt_plik, log=log)
+    except Exception as ex:  # noqa: BLE001 - WT jest dodatkiem; przy błędzie zostaje geokodowanie
+        log(f"UWAGA: nie udało się odczytać miejscowości z WT ({ex}) - użyję geokodowania.")
+        return None
+    for o in ostrz:
+        log("UWAGA: " + o)
+    if not mapa:
+        return None
+    import csv as _csv
+    sciezka = os.path.join(wyjscie_dir, "_nazwy_wt.csv")
+    with open(sciezka, "w", encoding="utf-8-sig", newline="") as f:
+        w = _csv.writer(f, delimiter=";", quoting=_csv.QUOTE_MINIMAL)
+        w.writerow(["numer", "miejscowosc"])
+        for nr, miejsc in sorted(mapa.items()):
+            w.writerow([nr, ", ".join(miejsc)])
+    return sciezka
+
+
 def _krok_orientacje(szablon: str, wyjscie_dir: str, opcje: Opcje, plan_slupow=None) -> WynikKroku:
     """Rysunki stałe (orientacje): dla każdej stacji trafo z szablonu - osobny plan DXF + zestawienie.
 
@@ -255,6 +285,12 @@ def _krok_orientacje(szablon: str, wyjscie_dir: str, opcje: Opcje, plan_slupow=N
         argv.append("--bez-podkladu")
     if plan_slupow:
         argv += ["--plan-slupow", plan_slupow]
+    # miejscowości z Warunków Technicznych (WT) - nadrzędne źródło nazw, spójne z PZT/opisami
+    nazwy_csv = None
+    if opcje.wt_plik and plan_slupow:
+        nazwy_csv = _nazwy_csv_z_wt(plan_slupow, opcje.wt_plik, wyjscie_dir, log=opcje.log)
+        if nazwy_csv:
+            argv += ["--nazwy", nazwy_csv]
     kod, raport = _przechwyc(mod_orientacje.main, argv)
     # sukces: powstało zestawienie_stacji.xlsx albo przynajmniej jeden plik .dxf
     zest = os.path.join(wyjscie_dir, "zestawienie_stacji.xlsx")
@@ -271,7 +307,8 @@ def _krok_pzt(dxf: str, wyjscie: str, opcje: Opcje) -> WynikKroku:
     Wzorzec layoutu „a” jest w pliku wejściowym albo w osobnym pliku (opcje.pzt_wzorzec)."""
     def uruchom():
         return mod_pzt.przetworz(dxf, wyjscie, wzorzec=opcje.pzt_wzorzec,
-                                 adresy=opcje.adresy, zaklad=opcje.pzt_zaklad, log=print)
+                                 adresy=opcje.adresy, wt_plik=opcje.wt_plik,
+                                 zaklad=opcje.pzt_zaklad, log=print)
     (wynik, raport) = _przechwyc(uruchom)
     plik = wynik[0] if isinstance(wynik, tuple) else wyjscie
     ok = os.path.exists(plik)
@@ -348,6 +385,9 @@ def main(argv=None):
                     help="plik DXF z layoutem-wzorcem „a” dla arkuszy PZT (domyślnie plan wejściowy)")
     ap.add_argument("--pzt-zaklad", type=float, default=50.0,
                     help="arkusze PZT: wspólny odcinek trasy sąsiednich arkuszy [m] (domyślnie 50)")
+    ap.add_argument("--wt", default=None,
+                    help="plik Warunków Technicznych (.xls/.xlsx) - miejscowości słupów wg zasięgu "
+                         "stacji trafo (zamiast geokodowania; współrzędne PUWG2000 lub WGS84)")
     ap.add_argument("--opisy-szablon", default=None,
                     help="szablon .docx dla opisów technicznych (domyślnie dołączony szablon_opisu.docx)")
     ap.add_argument("--opisy-zestawienie", default=None,
@@ -367,7 +407,7 @@ def main(argv=None):
                   obrot_od=a.obrot_od, zostaw_puste_arkusze=a.zostaw_puste_arkusze,
                   seed=a.seed, kabel=a.kabel, orient_podklad=not a.bez_podkladu,
                   orient_szablon=a.szablon_orientacji, orient_plan_slupow=a.plan_slupow,
-                  pzt_wzorzec=a.pzt_wzorzec, pzt_zaklad=a.pzt_zaklad,
+                  pzt_wzorzec=a.pzt_wzorzec, pzt_zaklad=a.pzt_zaklad, wt_plik=a.wt,
                   opisy_szablon=a.opisy_szablon, opisy_zestawienie=a.opisy_zestawienie,
                   opisy_wt=a.opisy_wt, opisy_obliczenia=a.opisy_obliczenia, log=print)
     wynik = uruchom(opcje)
