@@ -79,9 +79,17 @@ z repozytorium `mm` oraz „rysunki stałe” z repo `Orientacje-arkusze`) w jed
 Wymaga **Pythona 3.9+** ze standardowym `tkinter`; biblioteka Pillow jest potrzebna tylko do
 podkładu mapowego w rysunkach stałych.
 
-**Okno ma osobną zakładkę dla każdego modułu** — „Wszystko (łańcuch)”, „Przewieszenia”,
-„Zestawienie”, „Obliczenia”, „Rysunki stałe” — każda z własnym wyborem pliku i opcjami.
-Na dole okna wspólny katalog zapisu, pasek postępu i dziennik przebiegu.
+**Okno ma osobną zakładkę dla każdego modułu** — „Wszystko (łańcuch)”, „Numeracja słupów”,
+„Przewieszenia”, „Zestawienie”, „Obliczenia”, „Rysunki stałe”, „Arkusze PZT”, „Opisy techniczne”
+— każda z własnym wyborem pliku i opcjami. Na dole okna wspólny katalog zapisu, pasek postępu
+i dziennik przebiegu.
+
+> **Numeracja słupów** (z repo gałęzi `numeracja-slupow`): automatycznie numeruje słupy nN.
+> W planie zaznacz ręcznie numery „1” i „2” dwóch pierwszych słupów każdego obwodu (warstwa
+> `_numery`) oraz opis „obw. nr X” (grot na pierwszym przęśle); program numeruje resztę
+> (magistrala „na wprost”, odgałęzienia `x.1, x.2…` od lewej) i tworzy `… - ponumerowane.dxf`
+> z numerami na warstwach `_numery_<stacja>_<obwod>` oraz obrysami kontrolnymi. Wymaga biblioteki
+> **ezdxf** (w `.exe` wbudowana).
 
 ## Program dla Windows (.exe)
 
@@ -196,6 +204,7 @@ generator_cli.py        – start wiersza poleceń
 generator/
   pipeline.py           – łańcuch: DXF -> przewieszenia + zestawienie + obliczenia
   gui.py                – interfejs okienkowy z zakładkami (osobna zakładka na moduł + „Wszystko”)
+  numeruj_slupy/        – automatyczna numeracja słupów nN (podpakiet; z gałęzi numeracja-slupow, wymaga ezdxf)
   przewieszenia.py      – generator rysunków przewieszeń
   kontrola.py           – kopia planu z numerami przewieszeń (kontrola powiązania)
   plan.py, baza.py, rysunek.py, zapis.py, dxfio.py, geokod.py – obsługa przewieszeń

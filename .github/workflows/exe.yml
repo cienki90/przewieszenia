@@ -19,7 +19,7 @@ jobs:
           python-version: "3.12"
 
       - name: Instalacja zależności
-        run: python -m pip install --upgrade pip pyinstaller pillow python-docx openpyxl
+        run: python -m pip install --upgrade pip pyinstaller pillow python-docx openpyxl ezdxf
 
       - name: Test wiersza poleceń (cały łańcuch, bez internetu)
         shell: bash
@@ -30,6 +30,8 @@ jobs:
           test -s "_test/Obliczenia - zestawienie przewieszenia plan.xlsx"
           python generator_cli.py "szablon.dxf" -o _test_orient --tylko orientacje --bez-podkladu
           test -s "_test_orient/rysunki stałe/zestawienie_stacji.xlsx"
+          python generator_cli.py "pw.dxf" -o _test_num --tylko numeracja
+          test -s "_test_num/pw - ponumerowane.dxf"
 
       - name: Budowa exe
         run: >
@@ -43,6 +45,8 @@ jobs:
           --hidden-import PIL._tkinter_finder
           --hidden-import docx
           --hidden-import openpyxl
+          --hidden-import ezdxf
+          --collect-submodules ezdxf
           generator_gui.py
 
       - name: Publikacja (Releases)

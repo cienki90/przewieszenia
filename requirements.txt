@@ -1,7 +1,9 @@
 # Rdzeń programu działa na samym Pythonie 3.10+ (biblioteka standardowa + tkinter).
 # Zależności zewnętrzne są OPCJONALNE i dotyczą wybranych modułów:
 #  - Pillow                – krok "Rysunki stałe" (orientacje): podkład mapowy z internetu,
-#  - python-docx, openpyxl – krok "Opisy techniczne": generowanie opisów .docx z zestawienia.
+#  - python-docx, openpyxl – krok "Opisy techniczne": generowanie opisów .docx z zestawienia,
+#  - ezdxf                 – krok "Numeracja słupów": zapis ponumerowanego rysunku DXF.
 Pillow>=9.0
 python-docx>=1.1
 openpyxl>=3.1
+ezdxf>=1.1

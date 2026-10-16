@@ -33,9 +33,11 @@ from . import orientacje as mod_orientacje
 from . import przewieszenia as mod_przewieszenia
 from . import pzt as mod_pzt
 from . import zestawienie as mod_zestawienie
+from .numeruj_slupy import przetworz as _numeruj_slupy
 
-# nazwy kroków (kolejność ma znaczenie)
-KROKI = ("przewieszenia", "zestawienie", "obliczenia", "orientacje", "pzt", "opisy")
+# nazwy kroków (kolejność ma znaczenie) - „numeracja” jako pierwszy (projektant najpierw
+# numeruje słupy w planie, potem robi resztę; krok tworzy osobny plik „… - ponumerowane.dxf”)
+KROKI = ("numeracja", "przewieszenia", "zestawienie", "obliczenia", "orientacje", "pzt", "opisy")
 
 
 # ---------------------------------------------------------------------------
@@ -103,6 +105,7 @@ def domyslne_wyjscia(plan: str, katalog: str | None = None) -> dict:
     kat = katalog or os.path.dirname(os.path.abspath(plan))
     baza = _bazowa_nazwa(plan)
     return {
+        "numeracja": os.path.join(kat, f"{baza} - ponumerowane.dxf"),
         "przewieszenia": os.path.join(kat, f"{baza} - przewieszenia.dxf"),
         "zestawienie": os.path.join(kat, f"zestawienie {baza}.xlsx"),
         "obliczenia": os.path.join(kat, f"Obliczenia - zestawienie {baza}.xlsx"),
@@ -152,7 +155,9 @@ def uruchom(opcje: Opcje) -> Wynik:
         tymczasowy = zestawienie_tymczasowe and krok == "zestawienie"
         log(f"\n=== {krok.upper()} ===")
         try:
-            if krok == "przewieszenia":
+            if krok == "numeracja":
+                r = _krok_numeracja(plan, wyj["numeracja"])
+            elif krok == "przewieszenia":
                 r = _krok_przewieszenia(plan, wyj["przewieszenia"], opcje)
             elif krok == "zestawienie":
                 r = _krok_zestawienie(plan, wyj["zestawienie"], tymczasowy, katalog)
@@ -203,6 +208,28 @@ def uruchom(opcje: Opcje) -> Wynik:
             pass
 
     return wynik
+
+
+# ---------------------------------------------------------------------------
+def _krok_numeracja(plan: str, wyjscie: str) -> WynikKroku:
+    """Numeracja słupów nN: z planu z zaznaczonymi słupami „1” i „2” każdego obwodu
+    tworzy „… - ponumerowane.dxf” z numerami i obrysami kontrolnymi (wymaga ezdxf)."""
+    def uruchom():
+        return _numeruj_slupy(plan, wyjscie)   # zwraca (ścieżka_wyniku, raport_tekstowy)
+    try:
+        (wynik, wydruk) = _przechwyc(uruchom)
+    except ImportError:
+        return WynikKroku("numeracja", ok=False,
+                          raport="Moduł numeracji słupów wymaga biblioteki ezdxf "
+                                 "(zainstaluj: pip install ezdxf).",
+                          blad="Brak biblioteki ezdxf.")
+    plik = wynik[0] if isinstance(wynik, tuple) else (wynik if isinstance(wynik, str) else wyjscie)
+    raport_mod = wynik[1] if isinstance(wynik, tuple) and len(wynik) > 1 else ""
+    tekst = (raport_mod + ("\n" if raport_mod and wydruk else "") + (wydruk or "")).strip()
+    ok = bool(plik) and os.path.exists(plik)
+    return WynikKroku("numeracja", ok=ok, wyjscie=plik if ok else None, raport=tekst,
+                      blad=None if ok else "Nie udało się ponumerować słupów "
+                                           "(czy w planie są markery „1” i „2” oraz opisy „obw. nr”?).")
 
 
 # ---------------------------------------------------------------------------

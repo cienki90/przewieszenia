@@ -29,6 +29,9 @@ from . import pipeline
 TYTUL = "Generator projektów nN — przewieszenia · zestawienie · obliczenia · rysunki stałe"
 
 OPIS_KROKOW = {
+    "numeracja":     ("Numeracja słupów",
+                      "Automatyczna numeracja słupów nN — z planu z zaznaczonymi słupami „1” i „2” "
+                      "każdego obwodu tworzy „… - ponumerowane.dxf” (wymaga biblioteki ezdxf)."),
     "przewieszenia": ("Przewieszenia (rysunki zwisów)",
                       "Rysunki profili zwisów przęseł linii nN ze światłowodem — plik DXF."),
     "zestawienie":   ("Zestawienie słupów",
@@ -72,8 +75,9 @@ class Aplikacja:
 
         # zakładka "Wszystko"
         self.all_plan = tk.StringVar()
-        # orientacje/PZT/opisy domyślnie wyłączone - wymagają osobnego szablonu/wzorca/WT
-        self.all_kroki = {k: tk.BooleanVar(value=(k not in ("orientacje", "pzt", "opisy")))
+        # numeracja/orientacje/PZT/opisy domyślnie wyłączone - wymagają osobnego przygotowania
+        # planu / szablonu / wzorca / WT / biblioteki ezdxf
+        self.all_kroki = {k: tk.BooleanVar(value=(k not in ("numeracja", "orientacje", "pzt", "opisy")))
                           for k in pipeline.KROKI}
 
         # per-moduł: plik wejściowy
@@ -112,6 +116,7 @@ class Aplikacja:
         self.nb.grid(row=0, column=0, sticky="nwe", padx=8, pady=(8, 4))
 
         self._zakladka_wszystko()
+        self._zakladka_numeracja()
         self._zakladka_przewieszenia()
         self._zakladka_zestawienie()
         self._zakladka_obliczenia()
@@ -155,6 +160,16 @@ class Aplikacja:
                           "go osobno. „Rysunki stałe” używają szablonu z zakładki obok (lub dołączonego).",
                   foreground="#777", wraplength=760, justify="left").pack(anchor="w", padx=10, pady=4)
         self._przycisk_generuj(f, "Generuj zaznaczone", self._start_wszystko)
+
+    def _zakladka_numeracja(self):
+        f = ttk.Frame(self.nb)
+        self.nb.add(f, text="Numeracja słupów")
+        self._naglowek(f, "Automatyczna numeracja słupów nN. W planie zaznacz ręcznie numery „1” i „2” "
+                          "dwóch pierwszych słupów każdego obwodu (warstwa _numery) oraz opis „obw. nr X” "
+                          "(grot na pierwszym przęśle). Program ponumeruje resztę i utworzy "
+                          "„… - ponumerowane.dxf” z numerami i obrysami kontrolnymi. Wymaga biblioteki ezdxf.")
+        self._pole_pliku(f, "Plik planu DXF:", self.we["numeracja"], "Wybierz plik planu DXF")
+        self._przycisk_generuj(f, "Ponumeruj słupy", lambda: self._start_modul("numeracja"))
 
     def _zakladka_przewieszenia(self):
         f = ttk.Frame(self.nb)
