@@ -46,10 +46,12 @@ OPIS_KROKOW = {
 }
 
 DXF_TYPY = [("Rysunek DXF", "*.dxf"), ("Wszystkie pliki", "*.*")]
+DOCX_TYPY = [("Dokument Word", "*.docx"), ("Wszystkie pliki", "*.*")]
+XLSX_TYPY = [("Skoroszyt Excel", "*.xlsx *.xls"), ("Wszystkie pliki", "*.*")]
 
 
-def _wybierz_plik(parent, var, tytul):
-    p = filedialog.askopenfilename(parent=parent, title=tytul, filetypes=DXF_TYPY)
+def _wybierz_plik(parent, var, tytul, typy=DXF_TYPY):
+    p = filedialog.askopenfilename(parent=parent, title=tytul, filetypes=typy)
     if p:
         var.set(os.path.normpath(p))
 
@@ -92,6 +94,7 @@ class Aplikacja:
         # opcje opisów technicznych (.docx)
         self.opisy_szablon = tk.StringVar()                # szablon .docx (puste = dołączony)
         self.opisy_zestawienie = tk.StringVar()            # xlsx (puste = z Rysunków stałych)
+        self.opisy_obliczenia = tk.StringVar()             # xlsx obliczeń (puste = bez tabeli nośności)
         self.opisy_wt = tk.StringVar()                     # numer WT (ręcznie)
 
         self._przyciski = []                               # przyciski "Generuj" do blokowania
@@ -120,12 +123,13 @@ class Aplikacja:
         ttk.Label(ramka, text=tekst, foreground="#555", wraplength=760,
                   justify="left").pack(anchor="w", padx=10, pady=(8, 6))
 
-    def _pole_pliku(self, ramka, etykieta, var, tytul):
+    def _pole_pliku(self, ramka, etykieta, var, tytul, typy=DXF_TYPY):
         f = ttk.Frame(ramka)
         f.pack(fill="x", padx=10, pady=4)
         ttk.Label(f, text=etykieta, width=22).pack(side="left")
         ttk.Entry(f, textvariable=var).pack(side="left", fill="x", expand=True, padx=4)
-        ttk.Button(f, text="Wybierz…", command=lambda: _wybierz_plik(self.root, var, tytul)).pack(side="left")
+        ttk.Button(f, text="Wybierz…",
+                   command=lambda: _wybierz_plik(self.root, var, tytul, typy)).pack(side="left")
 
     def _przycisk_generuj(self, ramka, tekst, komenda):
         b = ttk.Button(ramka, text="▶  " + tekst, command=komenda)
@@ -233,11 +237,17 @@ class Aplikacja:
                           "Dane (nr stacji + miejscowość) bierzemy z zestawienia — można podpiąć wprost "
                           "plik „zestawienie_stacji.xlsx” z Rysunków stałych. Numer warunków (WT) wpisz ręcznie.")
         self._pole_pliku(f, "Zestawienie (.xlsx):", self.opisy_zestawienie,
-                         "Wybierz zestawienie (np. z Rysunków stałych)")
+                         "Wybierz zestawienie (np. z Rysunków stałych)", typy=XLSX_TYPY)
         ttk.Label(f, text="(puste = zestawienie_stacji.xlsx z zakładki „Rysunki stałe” po jej uruchomieniu)",
                   foreground="#777").pack(anchor="w", padx=10)
-        self._pole_pliku(f, "Szablon opisu (.docx):", self.opisy_szablon, "Wybierz szablon .docx")
+        self._pole_pliku(f, "Szablon opisu (.docx):", self.opisy_szablon,
+                         "Wybierz szablon .docx", typy=DOCX_TYPY)
         ttk.Label(f, text="(puste = dołączony szablon_opisu.docx)", foreground="#777").pack(anchor="w", padx=10)
+        self._pole_pliku(f, "Obliczenia (.xlsx):", self.opisy_obliczenia,
+                         "Wybierz plik obliczeń nośności (.xlsx)", typy=XLSX_TYPY)
+        ttk.Label(f, text="(opcjonalnie — do każdego opisu dołączana jest tabela „Zestawienie zbiorcze słupów” "
+                          "z pasującego arkusza obliczeń; puste = bez tabeli nośności)",
+                  foreground="#777", wraplength=760, justify="left").pack(anchor="w", padx=10)
         box = ttk.LabelFrame(f, text="Dane wspólne")
         box.pack(fill="x", padx=10, pady=6)
         r = ttk.Frame(box)
@@ -253,6 +263,10 @@ class Aplikacja:
         if not zest or not os.path.isfile(zest):
             messagebox.showwarning(TYTUL, "Wskaż plik zestawienia (.xlsx) — np. „zestawienie_stacji.xlsx” "
                                           "z Rysunków stałych.", parent=self.root)
+            return
+        obl = self.opisy_obliczenia.get().strip()
+        if obl and not os.path.isfile(obl):
+            messagebox.showwarning(TYTUL, "Wskazany plik obliczeń (.xlsx) nie istnieje.", parent=self.root)
             return
         if not self.opisy_wt.get().strip():
             if not messagebox.askyesno(TYTUL, "Nie podano numeru warunków (WT). Opisy powstaną z pustym WT. "
@@ -379,6 +393,7 @@ class Aplikacja:
             pzt_zaklad=_float(self.pzt_zaklad.get(), 50.0),
             opisy_szablon=(self.opisy_szablon.get().strip() or None),
             opisy_zestawienie=(self.opisy_zestawienie.get().strip() or None),
+            opisy_obliczenia=(self.opisy_obliczenia.get().strip() or None),
             opisy_wt=self.opisy_wt.get().strip(),
             log=lambda t="": self._kolejka.put(("log", t)),
         )

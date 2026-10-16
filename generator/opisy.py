@@ -24,22 +24,38 @@ Użycie:
 """
 
 import argparse
+import copy
 import os
 import sys
 
-try:
-    import openpyxl
-except ImportError:
-    sys.exit("Brak biblioteki openpyxl. Zainstaluj: pip install openpyxl")
+# Biblioteki openpyxl / python-docx są OPCJONALNE i potrzebne tylko dla modułu
+# „Opisy techniczne”. Importujemy je LENIWIE (patrz _wymagaj_bibliotek), żeby sam
+# import tego modułu nie wywracał całego programu, gdy bibliotek brak - pozostałe
+# kroki łańcucha (przewieszenia/zestawienie/obliczenia) działają bez nich.
+openpyxl = None
+docx = None
+OxmlElement = None
+qn = None
 
-try:
-    import docx
-    from docx.oxml import OxmlElement
-    from docx.oxml.ns import qn
-except ImportError:
-    sys.exit("Brak biblioteki python-docx. Zainstaluj: pip install python-docx")
 
-import copy
+def _wymagaj_bibliotek():
+    """Ładuje openpyxl i python-docx. Zgłasza ImportError z czytelnym komunikatem,
+    gdy którejś brak - łapie to pipeline i pomija jedynie krok „opisy”."""
+    global openpyxl, docx, OxmlElement, qn
+    if openpyxl is None:
+        try:
+            import openpyxl as _openpyxl
+        except ImportError as ex:
+            raise ImportError("Brak biblioteki openpyxl. Zainstaluj: pip install openpyxl") from ex
+        openpyxl = _openpyxl
+    if docx is None:
+        try:
+            import docx as _docx
+            from docx.oxml import OxmlElement as _OxmlElement
+            from docx.oxml.ns import qn as _qn
+        except ImportError as ex:
+            raise ImportError("Brak biblioteki python-docx. Zainstaluj: pip install python-docx") from ex
+        docx, OxmlElement, qn = _docx, _OxmlElement, _qn
 
 
 # ---------------------------------------------------------------------------
@@ -436,6 +452,8 @@ def generuj(szablon, zestawienie, out=".", arkusz="Arkusz1",
     if log is None:
         log = print
 
+    _wymagaj_bibliotek()
+
     if not os.path.isfile(szablon):
         raise FileNotFoundError(f"Nie znaleziono szablonu: {szablon}")
     if not os.path.isfile(zestawienie):
@@ -546,6 +564,7 @@ def main():
     args = ap.parse_args()
 
     try:
+        _wymagaj_bibliotek()
         generuj(args.szablon, args.zestawienie, out=args.out,
                 arkusz=args.arkusz, obliczenia=args.obliczenia, wt=args.wt)
     except Exception as e:
