@@ -85,8 +85,9 @@ podkładu mapowego w rysunkach stałych.
 „PPW”, „Zakładki” — każda z własnym wyborem pliku i opcjami. Na dole okna wspólny katalog zapisu,
 pasek postępu i dziennik przebiegu.
 
-> **Zakładki** (strony-przekładki): dla każdej stacji trafo tworzy osobną stronę z trzema
-> wyśrodkowanymi liniami — **numer stacji** (`ST <nr>`), **miejscowość** i **numer warunków (WT)**.
+> **Zakładki** (strony-przekładki): dla każdej stacji trafo tworzy osobną stronę w rozmiarze
+> **Com-10 (104,7 × 241,3 mm)**, z trzema liniami przy górze strony (wyśrodkowanymi poziomo,
+> pogrubioną czcionką 12 pt) — **numer stacji** (`ST <nr>`), **miejscowość** i **numer warunków (WT)**.
 > Dane pochodzą z pliku zestawienia — zwykle z **„zestawienie_stacji.xlsx” z „Rysunków stałych”**
 > (rozpoznawanie kolumn jest wspólne z modułem „Opisy”, więc działa też z formatem „domtel”
 > `Plik/trafo/miejscowosc/wt`). Numer WT — jeden wspólny — wpisuje się ręcznie, gdy zestawienie

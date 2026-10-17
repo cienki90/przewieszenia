@@ -75,28 +75,48 @@ def przygotuj_strony(zestawienie: str, arkusz: str = "Arkusz1", wt: str = ""):
 
 
 # ---------------------------------------------------------------------------
+# Rozmiar strony zakładki (koperta/przekładka Com-10): 104.7 x 241.3 mm.
+# Tekst jest wyrównany do GÓRY strony, wyśrodkowany poziomo, czcionką pogrubioną 12 pt.
+# ---------------------------------------------------------------------------
+_COM10_W_MM = 104.7
+_COM10_H_MM = 241.3
+_MARGINES_GORA_MM = 10.0          # tekst zaczyna się ~1 cm od górnej krawędzi
+_ROZMIAR_PT = 12                  # pogrubiona czcionka 12 pt
+
+
+# ---------------------------------------------------------------------------
 # Wynik: DOCX
 # ---------------------------------------------------------------------------
-def _zapisz_docx(strony, wyjscie: str, rozmiar_pt: int = 36):
-    """Jeden .docx: każda stacja na osobnej stronie, 3 wyśrodkowane linie."""
+def _zapisz_docx(strony, wyjscie: str, rozmiar_pt: int = _ROZMIAR_PT):
+    """Jeden .docx: każda stacja na osobnej stronie (Com-10), 3 wyśrodkowane linie
+    pogrubioną czcionką, wyrównane do góry strony."""
     try:
         import docx
         from docx.enum.text import WD_ALIGN_PARAGRAPH
-        from docx.shared import Pt
+        from docx.shared import Mm, Pt
     except ImportError as ex:
         raise ImportError("Format DOCX wymaga biblioteki python-docx "
                           "(pip install python-docx)") from ex
 
     doc = docx.Document()
+    sek = doc.sections[0]
+    # rozmiar strony Com-10 (104.7 x 241.3 mm) + wąskie marginesy, tekst przy górze
+    sek.page_width = Mm(_COM10_W_MM)
+    sek.page_height = Mm(_COM10_H_MM)
+    sek.top_margin = Mm(_MARGINES_GORA_MM)
+    sek.bottom_margin = Mm(5)
+    sek.left_margin = Mm(5)
+    sek.right_margin = Mm(5)
+
     for i, (stacja, miejscowosc, wt) in enumerate(strony):
         if i > 0:
             doc.add_page_break()
-        # pionowe wyśrodkowanie: trochę pustej przestrzeni u góry strony
-        for _ in range(6):
-            doc.add_paragraph()
         for tekst in (stacja, miejscowosc, wt):
             p = doc.add_paragraph()
             p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            pf = p.paragraph_format
+            pf.space_before = Pt(0)
+            pf.space_after = Pt(0)
             run = p.add_run(tekst)
             run.bold = True
             run.font.size = Pt(rozmiar_pt)
@@ -114,7 +134,12 @@ def _zapisz_docx(strony, wyjscie: str, rozmiar_pt: int = 36):
 # Dlatego budujemy WŁASNE kodowanie (Encoding z tablicą /Differences): każdemu
 # polskiemu znakowi przypisujemy nazwę glifu Adobe (aogonek, eogonek, lslash, sacute,
 # zdotaccent, …). Font Helvetica ma te glify - trzeba je tylko „podpiąć” pod kody bajtów.
-_A4_W, _A4_H = 595.28, 841.89  # punkty (1/72")
+#
+# Strona zakładki ma rozmiar Com-10 (104.7 x 241.3 mm), tekst wyrównany do GÓRY.
+_MM_PT = 72.0 / 25.4                        # mm -> punkty PDF
+_STR_W = _COM10_W_MM * _MM_PT               # szerokość strony [pt]
+_STR_H = _COM10_H_MM * _MM_PT               # wysokość strony [pt]
+_GORA_PT = _MARGINES_GORA_MM * _MM_PT       # margines górny [pt]
 
 # polski znak -> nazwa glifu Adobe (dla tablicy /Differences)
 _GLIFY_PL = {
@@ -161,15 +186,15 @@ def _szerokosc_helvetica_bold(tekst: str, rozmiar: float) -> float:
     return len(tekst) * 0.56 * rozmiar
 
 
-def _strumien_strony(stacja: str, miejscowosc: str, wt: str, rozmiar: float = 30.0) -> bytes:
-    """Strumień rysujący 3 wyśrodkowane linie na środku strony A4."""
+def _strumien_strony(stacja: str, miejscowosc: str, wt: str, rozmiar: float = _ROZMIAR_PT) -> bytes:
+    """Strumień rysujący 3 wyśrodkowane linie przy GÓRZE strony Com-10."""
     linie = [stacja, miejscowosc, wt]
-    interlinia = rozmiar * 1.8
-    y0 = _A4_H / 2 + interlinia      # środek pionowy (pierwsza linia nieco wyżej środka)
+    interlinia = rozmiar * 1.2                       # ciasna interlinia (jak we wzorcu)
+    y0 = _STR_H - _GORA_PT - rozmiar                 # pierwsza linia tuż pod górnym marginesem
     polecenia = bytearray(b"BT\n")
     for i, tekst in enumerate(linie):
         szer = _szerokosc_helvetica_bold(tekst, rozmiar)
-        x = (_A4_W - szer) / 2
+        x = (_STR_W - szer) / 2
         y = y0 - i * interlinia
         polecenia += b"/F1 %d Tf\n" % int(rozmiar)
         polecenia += b"1 0 0 1 %.2f %.2f Tm\n" % (x, y)
@@ -178,8 +203,8 @@ def _strumien_strony(stacja: str, miejscowosc: str, wt: str, rozmiar: float = 30
     return bytes(polecenia)
 
 
-def _zapisz_pdf(strony, wyjscie: str, rozmiar_pt: float = 30.0):
-    """Jeden .pdf: każda stacja na osobnej stronie A4 (czysty Python)."""
+def _zapisz_pdf(strony, wyjscie: str, rozmiar_pt: float = _ROZMIAR_PT):
+    """Jeden .pdf: każda stacja na osobnej stronie Com-10 (czysty Python)."""
     if not strony:
         raise ValueError("Brak danych do zapisania w PDF.")
 
@@ -206,7 +231,7 @@ def _zapisz_pdf(strony, wyjscie: str, rozmiar_pt: float = 30.0):
         strona = (b"<< /Type /Page /Parent 2 0 R "
                   b"/MediaBox [0 0 %.2f %.2f] "
                   b"/Resources << /Font << /F1 4 0 R >> >> "
-                  b"/Contents %d 0 R >>" % (_A4_W, _A4_H, obj_tresc))
+                  b"/Contents %d 0 R >>" % (_STR_W, _STR_H, obj_tresc))
         obiekty.append(strona)
         obiekty.append(b"<< /Length %d >>\nstream\n%s\nendstream" % (len(tresc), tresc))
 
