@@ -93,7 +93,9 @@ pasek postępu i dziennik przebiegu.
 > `Plik/trafo/miejscowosc/wt`). Numer WT — jeden wspólny — wpisuje się ręcznie, gdy zestawienie
 > go nie zawiera. **Format wyniku jest przełączany:** `.docx` (edytowalny w Wordzie, wymaga
 > `python-docx`) albo `.pdf` (gotowy do druku, generowany na czystym Pythonie — bez dodatkowych
-> bibliotek; polskie znaki osadzane przez własne kodowanie `/Differences` czcionki Helvetica).
+> bibliotek). PDF ma **osadzoną czcionkę TrueType** (DejaVu Sans Bold, w `generator/fonty/`),
+> więc polskie znaki (ą ć ę ł ń ś ź ż …) wyświetlają się poprawnie w każdym czytniku —
+> także w Adobe Acrobat Reader.
 > CLI: `--tylko zakladki --zakladki-zestawienie zestawienie_stacji.xlsx --zakladki-format pdf
 > --zakladki-wt 71/RE-5/KŚ/2026`.
 
@@ -244,6 +246,8 @@ generator/
   opisy.py              – opisy techniczne .docx z szablonu Word + zestawienia (z repo generator_opisow)
   ppw.py                – PPW: zbiorczy opis techniczny .docx dla całego projektu (znaczniki + tabela zbiorcza)
   zakladki.py           – Zakładki: strony-przekładki (nr stacji / miejscowość / WT) w .docx albo .pdf (z repo zakladki)
+  _ttf.py               – minimalny czytnik TrueType (bez bibliotek) do osadzania czcionki w PDF zakładek
+  fonty/                – dołączona czcionka DejaVu Sans Bold (osadzana w PDF; polskie znaki w Acrobat)
   obliczenia2word.py    – (opcjonalnie) tabela nośności słupów dołączana do opisu .docx
   zasoby.py             – odnajdywanie plików bazy/arkuszy/szablonu (kod źródłowy lub .exe)
 ```

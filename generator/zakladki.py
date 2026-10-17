@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import struct
 import sys
 
 try:  # część pakietu (python -m generator.zakladki / okno)
@@ -127,13 +128,15 @@ def _zapisz_docx(strony, wyjscie: str, rozmiar_pt: int = _ROZMIAR_PT):
 # ---------------------------------------------------------------------------
 # Wynik: PDF (czysty Python - bez bibliotek zewnętrznych)
 # ---------------------------------------------------------------------------
-# Minimalny generator PDF: strony A4, tekst czcionką bazową Helvetica-Bold.
+# PDF z OSADZONĄ czcionką TrueType (DejaVu Sans Bold). Osadzenie prawdziwej czcionki
+# daje poprawne polskie znaki (ą ć ę ł ń ś ź ż …) w KAŻDYM czytniku - także w Adobe
+# Acrobat Reader (który bywa rygorystyczny wobec glifów bazowych czcionek z /Differences
+# i potrafił „zjadać” sąsiednie znaki, np. ukośnik po Ś).
 #
-# WAŻNE o polskich znakach: standardowe WinAnsiEncoding (cp1252) NIE zawiera
-# większości polskich diakrytyków (ą ć ę ł ń ś ź ż …) - zostałyby zamienione na „?”.
-# Dlatego budujemy WŁASNE kodowanie (Encoding z tablicą /Differences): każdemu
-# polskiemu znakowi przypisujemy nazwę glifu Adobe (aogonek, eogonek, lslash, sacute,
-# zdotaccent, …). Font Helvetica ma te glify - trzeba je tylko „podpiąć” pod kody bajtów.
+# Składamy czcionkę złożoną Type0 / CIDFontType2 z kodowaniem Identity-H:
+#   * każdy znak zapisujemy jako 2-bajtowy numer glifu (GID) czcionki,
+#   * tablica /W podaje szerokości glifów, a /ToUnicode zapewnia kopiowanie/wyszukiwanie,
+#   * cały plik .ttf jest osadzony (FontFile2) - plik jest samowystarczalny.
 #
 # Strona zakładki ma rozmiar Com-10 (104.7 x 241.3 mm), tekst wyrównany do GÓRY.
 _MM_PT = 72.0 / 25.4                        # mm -> punkty PDF
@@ -141,129 +144,145 @@ _STR_W = _COM10_W_MM * _MM_PT               # szerokość strony [pt]
 _STR_H = _COM10_H_MM * _MM_PT               # wysokość strony [pt]
 _GORA_PT = _MARGINES_GORA_MM * _MM_PT       # margines górny [pt]
 
-# polski znak -> nazwa glifu Adobe (dla tablicy /Differences)
-_GLIFY_PL = {
-    "ą": "aogonek", "ć": "cacute", "ę": "eogonek", "ł": "lslash", "ń": "nacute",
-    "ó": "oacute", "ś": "sacute", "ź": "zacute", "ż": "zdotaccent",
-    "Ą": "Aogonek", "Ć": "Cacute", "Ę": "Eogonek", "Ł": "Lslash", "Ń": "Nacute",
-    "Ó": "Oacute", "Ś": "Sacute", "Ź": "Zacute", "Ż": "Zdotaccent",
-}
-# polskim znakom przydzielamy wolne kody bajtów 0x80..0x91 (poza zakresem ASCII)
-_KOD_PL = {ch: 0x80 + i for i, ch in enumerate(_GLIFY_PL)}
+
+def _czcionka_ttf_sciezka():
+    """Ścieżka do dołączonej czcionki (DejaVu Sans Bold) - obok tego modułu lub w zasobach."""
+    import os as _os
+    tu = _os.path.dirname(_os.path.abspath(__file__))
+    kandydaci = [_os.path.join(tu, "fonty", "DejaVuSans-Bold.ttf")]
+    meipass = getattr(sys, "_MEIPASS", None)  # zasoby wbudowane w .exe (PyInstaller)
+    if meipass:
+        kandydaci.append(_os.path.join(meipass, "fonty", "DejaVuSans-Bold.ttf"))
+        kandydaci.append(_os.path.join(meipass, "DejaVuSans-Bold.ttf"))
+    for p in kandydaci:
+        if _os.path.exists(p):
+            return p
+    raise FileNotFoundError("Brak dołączonej czcionki DejaVuSans-Bold.ttf "
+                            "(oczekiwana w generator/fonty/).")
 
 
-def _roznice_encoding() -> bytes:
-    """Tablica /Differences: kod bajtu -> nazwa glifu (dla polskich znaków)."""
-    czesci = []
-    for ch, kod in sorted(_KOD_PL.items(), key=lambda kv: kv[1]):
-        czesci.append(b"%d /%s" % (kod, _GLIFY_PL[ch].encode("ascii")))
-    return b" ".join(czesci)
-
-
-def _escape_pdf(s: str) -> bytes:
-    """Treść tekstu PDF: ASCII + polskie znaki wg własnego kodowania + ucieczki ( ) \\."""
+def _tekst_identity(ttf, s: str) -> bytes:
+    """Zamienia tekst na 2-bajtowe numery glifów (GID) dla kodowania Identity-H."""
     out = bytearray()
     for ch in s:
-        if ch in _KOD_PL:                      # polski znak -> własny kod bajtu (z /Differences)
-            kod = _KOD_PL[ch]
-        else:
-            try:
-                b = ch.encode("latin-1")       # ASCII i część znaków łacińskich
-                kod = b[0]
-            except UnicodeEncodeError:
-                kod = ord("?")                 # znak nieobsługiwany - zastąp (bardzo rzadkie)
-        if kod in (0x28, 0x29, 0x5C):          # '(' ')' '\'
-            out.append(0x5C)
-        out.append(kod)
+        g = ttf.gid(ch) or ttf.gid("?")
+        out += struct.pack(">H", g & 0xFFFF)
     return bytes(out)
 
 
-# Szerokości glifów Helvetica-Bold (AFM, w 1/1000 em) - realne metryki czcionki bazowej.
-# Dzięki nim centrujemy dokładnie i - co ważne - rysujemy tekst operatorem TJ z JAWNYM
-# przesuwaniem po każdym znaku, więc akcent nad polskim glifem (np. Ś) nie „zachodzi” na
-# następny znak w czytnikach, które źle liczą advance akcentowanych glifów z /Differences.
-_SZER_HB = {
-    " ": 278, "!": 333, '"': 474, "#": 556, "$": 556, "%": 889, "&": 722, "'": 238,
-    "(": 333, ")": 333, "*": 389, "+": 584, ",": 278, "-": 333, ".": 278, "/": 278,
-    "0": 556, "1": 556, "2": 556, "3": 556, "4": 556, "5": 556, "6": 556, "7": 556,
-    "8": 556, "9": 556, ":": 333, ";": 333, "<": 584, "=": 584, ">": 584, "?": 611,
-    "@": 975, "A": 722, "B": 722, "C": 722, "D": 722, "E": 667, "F": 611, "G": 778,
-    "H": 722, "I": 278, "J": 556, "K": 722, "L": 611, "M": 833, "N": 722, "O": 778,
-    "P": 667, "Q": 778, "R": 722, "S": 667, "T": 611, "U": 722, "V": 667, "W": 944,
-    "X": 667, "Y": 667, "Z": 611, "[": 333, "\\": 278, "]": 333, "^": 584, "_": 556,
-    "`": 333, "a": 556, "b": 611, "c": 556, "d": 611, "e": 556, "f": 333, "g": 611,
-    "h": 611, "i": 278, "j": 278, "k": 556, "l": 278, "m": 889, "n": 611, "o": 611,
-    "p": 611, "q": 611, "r": 389, "s": 556, "t": 333, "u": 611, "v": 556, "w": 778,
-    "x": 556, "y": 556, "z": 500, "{": 389, "|": 280, "}": 389, "~": 584,
-}
-# polskie znaki - szerokość jak odpowiadającej im litery bazowej (akcent nie zmienia advance)
-_SZER_PL = {
-    "ą": 556, "ć": 556, "ę": 556, "ł": 278, "ń": 611, "ó": 611, "ś": 556, "ź": 556, "ż": 500,
-    "Ą": 722, "Ć": 722, "Ę": 667, "Ł": 611, "Ń": 722, "Ó": 778, "Ś": 667, "Ź": 611, "Ż": 611,
-}
+def _hex_identity(ttf, s: str) -> bytes:
+    """Łańcuch glifów jako ciąg szesnastkowy PDF <...> (bezpieczny dla dowolnych bajtów)."""
+    return b"<" + _tekst_identity(ttf, s).hex().encode("ascii") + b">"
 
 
-def _szer_glifu(ch: str) -> int:
-    """Szerokość glifu Helvetica-Bold w 1/1000 em (domyślnie 'o', gdy znak nieznany)."""
-    if ch in _SZER_PL:
-        return _SZER_PL[ch]
-    return _SZER_HB.get(ch, 611)
+def _szerokosc_tekstu(ttf, s: str, rozmiar: float) -> float:
+    """Szerokość tekstu [pt] z realnych metryk osadzonej czcionki (do wyśrodkowania)."""
+    return sum(ttf.advance_1000(ch) for ch in s) / 1000.0 * rozmiar
 
 
-def _szerokosc_helvetica_bold(tekst: str, rozmiar: float) -> float:
-    """Szerokość tekstu Helvetica-Bold [pt] wg realnych metryk AFM (do wyśrodkowania)."""
-    return sum(_szer_glifu(c) for c in tekst) / 1000.0 * rozmiar
-
-
-def _strumien_strony(stacja: str, miejscowosc: str, wt: str, rozmiar: float = _ROZMIAR_PT) -> bytes:
-    """Strumień rysujący 3 wyśrodkowane linie przy GÓRZE strony Com-10.
-
-    Tekst rysujemy operatorem Tj (jedna linia = jeden napis), a wyśrodkowanie liczymy
-    z realnych szerokości glifów Helvetica-Bold (AFM). Zachowujemy spójny advance
-    czcionki, więc tekst pozostaje kopiowalny i wyszukiwalny."""
+def _strumien_strony(ttf, stacja: str, miejscowosc: str, wt: str,
+                     rozmiar: float = _ROZMIAR_PT) -> bytes:
+    """Strumień rysujący 3 wyśrodkowane linie przy GÓRZE strony Com-10 (Identity-H)."""
     linie = [stacja, miejscowosc, wt]
     interlinia = rozmiar * 1.2                       # ciasna interlinia (jak we wzorcu)
     y0 = _STR_H - _GORA_PT - rozmiar                 # pierwsza linia tuż pod górnym marginesem
     polecenia = bytearray(b"BT\n")
     for i, tekst in enumerate(linie):
-        szer = _szerokosc_helvetica_bold(tekst, rozmiar)
+        szer = _szerokosc_tekstu(ttf, tekst, rozmiar)
         x = (_STR_W - szer) / 2
         y = y0 - i * interlinia
         polecenia += b"/F1 %d Tf\n" % int(rozmiar)
         polecenia += b"1 0 0 1 %.2f %.2f Tm\n" % (x, y)
-        polecenia += b"(" + _escape_pdf(tekst) + b") Tj\n"
+        polecenia += _hex_identity(ttf, tekst) + b" Tj\n"
     polecenia += b"ET\n"
     return bytes(polecenia)
 
 
+def _tablica_W(ttf, znaki) -> bytes:
+    """Tablica /W (szerokości glifów) dla użytych znaków: [gid [w] gid [w] ...]."""
+    pary = {}
+    for ch in znaki:
+        g = ttf.gid(ch)
+        if g:
+            pary[g] = ttf.advance_1000(ch)
+    czesci = [b"%d [%d]" % (g, w) for g, w in sorted(pary.items())]
+    return b" ".join(czesci)
+
+
+def _tourn_cmap(ttf, znaki) -> bytes:
+    """CMap /ToUnicode: GID -> Unicode (kopiowanie i wyszukiwanie tekstu w czytniku)."""
+    pary = {}
+    for ch in znaki:
+        g = ttf.gid(ch)
+        if g:
+            pary[g] = ord(ch)
+    linie = [b"<%04X> <%04X>" % (g, u) for g, u in sorted(pary.items())]
+    body = (b"/CIDInit /ProcSet findresource begin\n12 dict begin\nbegincmap\n"
+            b"/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def\n"
+            b"/CMapName /Adobe-Identity-UCS def\n/CMapType 2 def\n"
+            b"1 begincodespacerange <0000> <FFFF> endcodespacerange\n"
+            + b"%d beginbfchar\n" % len(linie) + b"\n".join(linie)
+            + b"\nendbfchar\nendcmap CMapName currentdict /CMap defineresource pop\nend\nend")
+    return body
+
+
 def _zapisz_pdf(strony, wyjscie: str, rozmiar_pt: float = _ROZMIAR_PT):
-    """Jeden .pdf: każda stacja na osobnej stronie Com-10 (czysty Python)."""
+    """Jeden .pdf z OSADZONĄ czcionką TrueType: każda stacja na osobnej stronie Com-10."""
     if not strony:
         raise ValueError("Brak danych do zapisania w PDF.")
 
-    obiekty = []                         # treść każdego obiektu (bez numeru i nagłówka 'n 0 obj')
-    n_stron = len(strony)
-    # stałe obiekty: 1 katalog, 2 drzewo stron, 3 kodowanie, 4 czcionka.
-    # strony i ich treści dalej: 5,6 (strona 1), 7,8 (strona 2), ...
-    kids_num = [5 + 2 * i for i in range(n_stron)]
+    with open(_czcionka_ttf_sciezka(), "rb") as f:
+        ttf_bytes = f.read()
+    try:
+        from . import _ttf as _ttfmod
+    except ImportError:
+        import _ttf as _ttfmod
+    ttf = _ttfmod.TTF(ttf_bytes)
 
-    obiekty.append(b"<< /Type /Catalog /Pages 2 0 R >>")                 # 1
+    # zbiór wszystkich użytych znaków (do /W i /ToUnicode)
+    znaki = set()
+    for stacja, miejscowosc, wt in strony:
+        znaki.update(stacja + miejscowosc + wt)
+
+    s = 1000.0 / ttf.unitsPerEm
+    bbox = [round(v * s) for v in ttf.bbox]
+
+    # numeracja obiektów:
+    # 1 katalog, 2 drzewo stron, 3 Type0, 4 CIDFont, 5 FontDescriptor, 6 FontFile2,
+    # 7 ToUnicode; strony i treści: 8,9 (strona 1), 10,11 (strona 2), ...
+    n_stron = len(strony)
+    kids_num = [8 + 2 * i for i in range(n_stron)]
+    obiekty = []
+
+    obiekty.append(b"<< /Type /Catalog /Pages 2 0 R >>")                              # 1
     kids = b" ".join(b"%d 0 R" % k for k in kids_num)
-    obiekty.append(b"<< /Type /Pages /Count %d /Kids [%s] >>" % (n_stron, kids))  # 2
-    # 3: kodowanie bazujące na WinAnsi + /Differences z polskimi glifami
-    obiekty.append(b"<< /Type /Encoding /BaseEncoding /WinAnsiEncoding "
-                   b"/Differences [%s] >>" % _roznice_encoding())        # 3
-    # 4: czcionka Helvetica-Bold korzystająca z własnego kodowania (obiekt 3)
-    obiekty.append(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold "
-                   b"/Encoding 3 0 R >>")                                # 4
+    obiekty.append(b"<< /Type /Pages /Count %d /Kids [%s] >>" % (n_stron, kids))      # 2
+    # 3: czcionka złożona Type0 (Identity-H) odwołująca się do CIDFont (4) i ToUnicode (7)
+    obiekty.append(b"<< /Type /Font /Subtype /Type0 /BaseFont /DejaVuSans-Bold "
+                   b"/Encoding /Identity-H /DescendantFonts [4 0 R] /ToUnicode 7 0 R >>")  # 3
+    # 4: CIDFontType2 z tablicą szerokości /W i mapą CID->GID /Identity
+    obiekty.append(b"<< /Type /Font /Subtype /CIDFontType2 /BaseFont /DejaVuSans-Bold "
+                   b"/CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> "
+                   b"/FontDescriptor 5 0 R /CIDToGIDMap /Identity /DW 500 /W [%s] >>"
+                   % _tablica_W(ttf, znaki))                                           # 4
+    # 5: opis czcionki (symbolic, bbox z pliku .ttf) odwołujący się do FontFile2 (6)
+    obiekty.append(b"<< /Type /FontDescriptor /FontName /DejaVuSans-Bold /Flags 4 "
+                   b"/FontBBox [%d %d %d %d] /ItalicAngle 0 /Ascent %d /Descent %d "
+                   b"/CapHeight %d /StemV 140 /FontFile2 6 0 R >>"
+                   % (bbox[0], bbox[1], bbox[2], bbox[3], bbox[3], bbox[1], bbox[3]))  # 5
+    # 6: osadzony plik czcionki (cały .ttf)
+    obiekty.append(b"<< /Length %d /Length1 %d >>\nstream\n" % (len(ttf_bytes), len(ttf_bytes))
+                   + ttf_bytes + b"\nendstream")                                       # 6
+    # 7: ToUnicode CMap
+    tu = _tourn_cmap(ttf, znaki)
+    obiekty.append(b"<< /Length %d >>\nstream\n" % len(tu) + tu + b"\nendstream")      # 7
 
     for i, (stacja, miejscowosc, wt) in enumerate(strony):
-        tresc = _strumien_strony(stacja, miejscowosc, wt, rozmiar_pt)
-        obj_strona = kids_num[i]
-        obj_tresc = obj_strona + 1
+        tresc = _strumien_strony(ttf, stacja, miejscowosc, wt, rozmiar_pt)
+        obj_tresc = kids_num[i] + 1
         strona = (b"<< /Type /Page /Parent 2 0 R "
                   b"/MediaBox [0 0 %.2f %.2f] "
-                  b"/Resources << /Font << /F1 4 0 R >> >> "
+                  b"/Resources << /Font << /F1 3 0 R >> >> "
                   b"/Contents %d 0 R >>" % (_STR_W, _STR_H, obj_tresc))
         obiekty.append(strona)
         obiekty.append(b"<< /Length %d >>\nstream\n%s\nendstream" % (len(tresc), tresc))

@@ -36,6 +36,8 @@ jobs:
           test -s "_test_ppw/PPW.docx"
           python generator_cli.py dummy --ppw-renumeruj "pw_final2 - ponumerowane - PZT.dxf"
           test -s "pw_final2 - ponumerowane - PZT - powykonawczy.dxf"
+          python generator_cli.py "szablon.dxf" -o _test_zak --tylko zakladki --zakladki-zestawienie "_test_orient/rysunki stałe/zestawienie_stacji.xlsx" --zakladki-format pdf --zakladki-wt "WT/1"
+          test -s "_test_zak/zakladki.pdf"
 
       - name: Budowa exe
         run: >
@@ -47,6 +49,7 @@ jobs:
           --add-data "szablon_opisu.docx;."
           --add-data "PPW miński szablon.docx;."
           --add-data "wzorce;wzorce"
+          --add-data "generator/fonty;fonty"
           --hidden-import PIL._tkinter_finder
           --hidden-import docx
           --hidden-import openpyxl
