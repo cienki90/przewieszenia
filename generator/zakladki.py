@@ -178,16 +178,49 @@ def _escape_pdf(s: str) -> bytes:
     return bytes(out)
 
 
-def _szerokosc_helvetica_bold(tekst: str, rozmiar: float) -> float:
-    """Przybliżona szerokość tekstu Helvetica-Bold (do wyśrodkowania w poziomie).
+# Szerokości glifów Helvetica-Bold (AFM, w 1/1000 em) - realne metryki czcionki bazowej.
+# Dzięki nim centrujemy dokładnie i - co ważne - rysujemy tekst operatorem TJ z JAWNYM
+# przesuwaniem po każdym znaku, więc akcent nad polskim glifem (np. Ś) nie „zachodzi” na
+# następny znak w czytnikach, które źle liczą advance akcentowanych glifów z /Differences.
+_SZER_HB = {
+    " ": 278, "!": 333, '"': 474, "#": 556, "$": 556, "%": 889, "&": 722, "'": 238,
+    "(": 333, ")": 333, "*": 389, "+": 584, ",": 278, "-": 333, ".": 278, "/": 278,
+    "0": 556, "1": 556, "2": 556, "3": 556, "4": 556, "5": 556, "6": 556, "7": 556,
+    "8": 556, "9": 556, ":": 333, ";": 333, "<": 584, "=": 584, ">": 584, "?": 611,
+    "@": 975, "A": 722, "B": 722, "C": 722, "D": 722, "E": 667, "F": 611, "G": 778,
+    "H": 722, "I": 278, "J": 556, "K": 722, "L": 611, "M": 833, "N": 722, "O": 778,
+    "P": 667, "Q": 778, "R": 722, "S": 667, "T": 611, "U": 722, "V": 667, "W": 944,
+    "X": 667, "Y": 667, "Z": 611, "[": 333, "\\": 278, "]": 333, "^": 584, "_": 556,
+    "`": 333, "a": 556, "b": 611, "c": 556, "d": 611, "e": 556, "f": 333, "g": 611,
+    "h": 611, "i": 278, "j": 278, "k": 556, "l": 278, "m": 889, "n": 611, "o": 611,
+    "p": 611, "q": 611, "r": 389, "s": 556, "t": 333, "u": 611, "v": 556, "w": 778,
+    "x": 556, "y": 556, "z": 500, "{": 389, "|": 280, "}": 389, "~": 584,
+}
+# polskie znaki - szerokość jak odpowiadającej im litery bazowej (akcent nie zmienia advance)
+_SZER_PL = {
+    "ą": 556, "ć": 556, "ę": 556, "ł": 278, "ń": 611, "ó": 611, "ś": 556, "ź": 556, "ż": 500,
+    "Ą": 722, "Ć": 722, "Ę": 667, "Ł": 611, "Ń": 722, "Ó": 778, "Ś": 667, "Ź": 611, "Ż": 611,
+}
 
-    Używamy stałej średniej szerokości glifu (~0.56 em) - wystarczająco dokładnej
-    do wycentrowania krótkich napisów na stronie."""
-    return len(tekst) * 0.56 * rozmiar
+
+def _szer_glifu(ch: str) -> int:
+    """Szerokość glifu Helvetica-Bold w 1/1000 em (domyślnie 'o', gdy znak nieznany)."""
+    if ch in _SZER_PL:
+        return _SZER_PL[ch]
+    return _SZER_HB.get(ch, 611)
+
+
+def _szerokosc_helvetica_bold(tekst: str, rozmiar: float) -> float:
+    """Szerokość tekstu Helvetica-Bold [pt] wg realnych metryk AFM (do wyśrodkowania)."""
+    return sum(_szer_glifu(c) for c in tekst) / 1000.0 * rozmiar
 
 
 def _strumien_strony(stacja: str, miejscowosc: str, wt: str, rozmiar: float = _ROZMIAR_PT) -> bytes:
-    """Strumień rysujący 3 wyśrodkowane linie przy GÓRZE strony Com-10."""
+    """Strumień rysujący 3 wyśrodkowane linie przy GÓRZE strony Com-10.
+
+    Tekst rysujemy operatorem Tj (jedna linia = jeden napis), a wyśrodkowanie liczymy
+    z realnych szerokości glifów Helvetica-Bold (AFM). Zachowujemy spójny advance
+    czcionki, więc tekst pozostaje kopiowalny i wyszukiwalny."""
     linie = [stacja, miejscowosc, wt]
     interlinia = rozmiar * 1.2                       # ciasna interlinia (jak we wzorcu)
     y0 = _STR_H - _GORA_PT - rozmiar                 # pierwsza linia tuż pod górnym marginesem
