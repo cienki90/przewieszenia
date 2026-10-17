@@ -88,6 +88,7 @@ class Aplikacja:
         # opcje obliczeń
         self.obl_seed = tk.StringVar()
         self.obl_kabel = tk.StringVar(value=str(pipeline.mod_obliczenia.DOMYSLNY_KABEL))
+        self.obl_zestawienie = tk.StringVar()              # własny plik zestawienia (puste = z DXF)
         # opcje rysunków stałych
         self.orient_szablon = tk.StringVar()
         self.orient_plan_slupow = tk.StringVar()           # plan ze słupami (źródło miejscowości)
@@ -198,9 +199,14 @@ class Aplikacja:
     def _zakladka_obliczenia(self):
         f = ttk.Frame(self.nb)
         self.nb.add(f, text="Obliczenia")
-        self._naglowek(f, "Obliczenia nośności słupów. Jako wejście podaj plik DXF — zestawienie potrzebne do "
-                          "obliczeń powstanie automatycznie (w pliku tymczasowym).")
+        self._naglowek(f, "Obliczenia nośności słupów. Podaj plik DXF (zestawienie powstanie automatycznie) "
+                          "ALBO wskaż własny plik zestawienia (.xls/.xlsx) — wtedy plik DXF nie jest potrzebny.")
         self._pole_pliku(f, "Plik DXF:", self.we["obliczenia"], "Wybierz plik DXF")
+        self._pole_pliku(f, "Własne zestawienie (.xlsx):", self.obl_zestawienie,
+                         "Wybierz własny plik zestawienia (.xls/.xlsx)", typy=XLSX_TYPY)
+        ttk.Label(f, text="(opcjonalnie — gdy podasz własne zestawienie, obliczenia liczą się z niego, "
+                          "a pole „Plik DXF” jest ignorowane)",
+                  foreground="#777", wraplength=760, justify="left").pack(anchor="w", padx=10)
         box = ttk.LabelFrame(f, text="Opcje")
         box.pack(fill="x", padx=10, pady=6)
         r = ttk.Frame(box)
@@ -209,7 +215,7 @@ class Aplikacja:
         ttk.Entry(r, textvariable=self.obl_kabel, width=5).pack(side="left", padx=6)
         ttk.Label(r, text="Ziarno losowania (powtarzalne kąty):").pack(side="left", padx=(16, 0))
         ttk.Entry(r, textvariable=self.obl_seed, width=8).pack(side="left", padx=6)
-        self._przycisk_generuj(f, "Wykonaj obliczenia", lambda: self._start_modul("obliczenia"))
+        self._przycisk_generuj(f, "Wykonaj obliczenia", self._start_obliczenia)
 
     def _zakladka_orientacje(self):
         f = ttk.Frame(self.nb)
@@ -388,6 +394,22 @@ class Aplikacja:
                 return
         self._uruchom(wejscie, (krok,), orient_szablon=orient_szablon)
 
+    # ---- uruchomienie: Obliczenia (plik DXF albo własne zestawienie) ----
+    def _start_obliczenia(self):
+        zest = self.obl_zestawienie.get().strip()
+        dxf = self.we["obliczenia"].get().strip()
+        if zest:
+            if not os.path.isfile(zest):
+                messagebox.showwarning(TYTUL, "Wskazane zestawienie (.xlsx) nie istnieje.", parent=self.root)
+                return
+            # własne zestawienie: plik DXF nie jest potrzebny (pipeline użyje zestawienia jako bazy)
+            self._uruchom(dxf or zest, ("obliczenia",))
+            return
+        if not dxf or not os.path.isfile(dxf):
+            messagebox.showwarning(TYTUL, "Wskaż plik DXF albo własne zestawienie (.xlsx).", parent=self.root)
+            return
+        self._uruchom(dxf, ("obliczenia",))
+
     def _uruchom(self, plik, kroki, orient_szablon=None):
         if self.pracuje:
             return
@@ -409,6 +431,7 @@ class Aplikacja:
             obrot_od=_float(self.pw_obrot.get(), 50.0),
             seed=_int_or_none(self.obl_seed.get()),
             kabel=_int(self.obl_kabel.get(), pipeline.mod_obliczenia.DOMYSLNY_KABEL),
+            obliczenia_zestawienie=(self.obl_zestawienie.get().strip() or None),
             orient_podklad=self.orient_podklad.get(),
             orient_szablon=orient_szablon or (self.orient_szablon.get().strip() or None),
             orient_plan_slupow=(self.orient_plan_slupow.get().strip() or None),

@@ -54,6 +54,7 @@ class Opcje:
     # obliczenia
     seed: int | None = None
     kabel: int = mod_obliczenia.DOMYSLNY_KABEL
+    obliczenia_zestawienie: str | None = None    # własny plik zestawienia (.xls/.xlsx) - pomija budowanie z DXF
     # orientacje (rysunki stałe)
     orient_podklad: bool = True                  # pobierać podkład mapowy (wymaga internetu + Pillow)
     orient_szablon: str | None = None            # szablon rysunków stałych (gdy inny niż plan; None = dołączony)
@@ -128,17 +129,35 @@ def uruchom(opcje: Opcje) -> Wynik:
     """Wykonuje wybrane kroki łańcucha i zwraca zbiorczy wynik."""
     log = opcje.log or (lambda *_: None)
     plan = opcje.plan
+    kroki = [k for k in KROKI if k in opcje.kroki]          # zachowaj właściwą kolejność
+    # wyjątek: same obliczenia z własnym plikiem zestawienia nie wymagają planu DXF -
+    # nazwy wyników i katalog bierzemy wtedy z pliku zestawienia
+    tylko_obliczenia_z_zest = (set(kroki) <= {"obliczenia"} and bool(opcje.obliczenia_zestawienie))
     if not os.path.isfile(plan):
-        raise FileNotFoundError(f"Nie znaleziono pliku planu DXF: {plan}")
+        if tylko_obliczenia_z_zest and os.path.isfile(opcje.obliczenia_zestawienie):
+            plan = opcje.obliczenia_zestawienie
+        else:
+            raise FileNotFoundError(f"Nie znaleziono pliku planu DXF: {plan}")
     katalog = opcje.katalog or os.path.dirname(os.path.abspath(plan))
     os.makedirs(katalog, exist_ok=True)
     wyj = domyslne_wyjscia(plan, katalog)
-    kroki = [k for k in KROKI if k in opcje.kroki]          # zachowaj właściwą kolejność
+    # gdy „planem” jest plik zestawienia (obliczenia z własnego zestawienia), nie dubluj słowa
+    # „zestawienie” w nazwie wyniku obliczeń: "zestawienie X.xlsx" -> "Obliczenia - zestawienie X.xlsx"
+    if tylko_obliczenia_z_zest:
+        baza = _bazowa_nazwa(plan)
+        rdzen = baza[len("zestawienie"):].strip() if baza.lower().startswith("zestawienie") else baza
+        wyj["obliczenia"] = os.path.join(katalog, f"Obliczenia - zestawienie {rdzen}.xlsx")
 
-    # obliczenia wymagają zestawienia - zbuduj je nawet gdy użytkownik go nie zaznaczył
+    # obliczenia wymagają zestawienia. Priorytet: własny plik wskazany przez użytkownika;
+    # w przeciwnym razie zbuduj zestawienie (osobny krok albo tymczasowo z planu DXF).
     zestawienie_plik = None
     zestawienie_tymczasowe = False
-    if "obliczenia" in kroki and "zestawienie" not in kroki:
+    if "obliczenia" in kroki and opcje.obliczenia_zestawienie:
+        if not os.path.isfile(opcje.obliczenia_zestawienie):
+            raise FileNotFoundError(
+                f"Nie znaleziono pliku zestawienia dla obliczeń: {opcje.obliczenia_zestawienie}")
+        zestawienie_plik = opcje.obliczenia_zestawienie    # użyj wprost, nie buduj z DXF
+    elif "obliczenia" in kroki and "zestawienie" not in kroki:
         kroki.insert(kroki.index("obliczenia"), "zestawienie")
         zestawienie_tymczasowe = True
 
@@ -401,6 +420,8 @@ def main(argv=None):
                     help="ziarno losowania kątów słupów narożnych (powtarzalne obliczenia)")
     ap.add_argument("--kabel", type=int, default=mod_obliczenia.DOMYSLNY_KABEL,
                     help="domyślny rodzaj kabla w obliczeniach (1-11)")
+    ap.add_argument("--obliczenia-zestawienie", default=None,
+                    help="własny plik zestawienia (.xls/.xlsx) do obliczeń - zamiast budowania z planu DXF")
     ap.add_argument("--bez-podkladu", action="store_true",
                     help="rysunki stałe (orientacje) bez pobierania podkładu mapowego z internetu")
     ap.add_argument("--szablon-orientacji", default=None,
@@ -432,7 +453,8 @@ def main(argv=None):
 
     opcje = Opcje(plan=a.plan, katalog=a.katalog, kroki=wybrane, adresy=a.adresy,
                   obrot_od=a.obrot_od, zostaw_puste_arkusze=a.zostaw_puste_arkusze,
-                  seed=a.seed, kabel=a.kabel, orient_podklad=not a.bez_podkladu,
+                  seed=a.seed, kabel=a.kabel, obliczenia_zestawienie=a.obliczenia_zestawienie,
+                  orient_podklad=not a.bez_podkladu,
                   orient_szablon=a.szablon_orientacji, orient_plan_slupow=a.plan_slupow,
                   pzt_wzorzec=a.pzt_wzorzec, pzt_zaklad=a.pzt_zaklad, wt_plik=a.wt,
                   opisy_szablon=a.opisy_szablon, opisy_zestawienie=a.opisy_zestawienie,
