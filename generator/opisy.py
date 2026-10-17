@@ -560,12 +560,15 @@ def main():
     ap.add_argument("--wt", default="",
                     help="numer warunków technicznych (WT) wstawiany, gdy zestawienie nie ma kolumny „wt” "
                          "(np. zestawienie z Orientacji); jeden wspólny numer dla całości")
-    ap.add_argument("--out", default=".", help="Katalog wyjściowy")
+    ap.add_argument("--out", default=None,
+                    help="Katalog wyjściowy (domyślnie folder szablonu opisu)")
     args = ap.parse_args()
 
     try:
         _wymagaj_bibliotek()
-        generuj(args.szablon, args.zestawienie, out=args.out,
+        # domyślnie zapisuj opisy w folderze szablonu
+        out = args.out or os.path.dirname(os.path.abspath(args.szablon))
+        generuj(args.szablon, args.zestawienie, out=out,
                 arkusz=args.arkusz, obliczenia=args.obliczenia, wt=args.wt)
     except Exception as e:
         sys.exit(str(e))

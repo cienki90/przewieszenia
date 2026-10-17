@@ -271,7 +271,9 @@ class Aplikacja:
                   foreground="#777").pack(anchor="w", padx=10)
         self._pole_pliku(f, "Szablon opisu (.docx):", self.opisy_szablon,
                          "Wybierz szablon .docx", typy=DOCX_TYPY)
-        ttk.Label(f, text="(puste = dołączony szablon_opisu.docx)", foreground="#777").pack(anchor="w", padx=10)
+        ttk.Label(f, text="(puste = dołączony szablon_opisu.docx; gdy wskażesz własny szablon, "
+                          "opisy zapisywane są w JEGO folderze)",
+                  foreground="#777", wraplength=760, justify="left").pack(anchor="w", padx=10)
         self._pole_pliku(f, "Obliczenia (.xlsx):", self.opisy_obliczenia,
                          "Wybierz plik obliczeń nośności (.xlsx)", typy=XLSX_TYPY)
         ttk.Label(f, text="(opcjonalnie — do każdego opisu dołączana jest tabela „Zestawienie zbiorcze słupów” "

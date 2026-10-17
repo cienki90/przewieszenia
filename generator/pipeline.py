@@ -377,6 +377,10 @@ def _krok_opisy(opcje: Opcje, wyjscie_dir: str, orient_zest) -> WynikKroku:
         return WynikKroku("opisy", ok=False,
                           blad="Brak zestawienia - wskaż plik .xlsx albo włącz krok „rysunki stałe” "
                                "(użyte zostanie jego zestawienie_stacji.xlsx).")
+    # domyślnie zapisuj opisy w FOLDERZE WSKAZANEGO szablonu (gdy użytkownik podał własny szablon);
+    # dla szablonu dołączonego (z zasobów/.exe) zostaje podfolder „opisy” w katalogu wyników
+    if opcje.opisy_szablon and os.path.isfile(opcje.opisy_szablon):
+        wyjscie_dir = os.path.dirname(os.path.abspath(opcje.opisy_szablon))
     os.makedirs(wyjscie_dir, exist_ok=True)
 
     def uruchom():
