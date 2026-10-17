@@ -50,6 +50,10 @@ OPIS_KROKOW = {
                       "JEDEN zbiorczy opis techniczny .docx dla całego projektu (wszystkie stacje) — "
                       "z szablonu Word, z tabelą „Zestawienie zbiorcze słupów” z modułu „Zestawienie” "
                       "i miejscowościami z „Rysunków stałych”. Numer WT wpisywany ręcznie."),
+    "zakladki":      ("Zakładki (przekładki)",
+                      "Dla każdej stacji trafo osobna strona-przekładka (nr stacji / miejscowość / WT) — "
+                      "z zestawienia (zwykle „zestawienie_stacji.xlsx” z „Rysunków stałych”). "
+                      "Format do wyboru: .docx albo .pdf. Numer WT wpisywany ręcznie."),
 }
 
 DXF_TYPY = [("Rysunek DXF", "*.dxf"), ("Wszystkie pliki", "*.*")]
@@ -81,8 +85,9 @@ class Aplikacja:
         self.all_plan = tk.StringVar()
         # numeracja/orientacje/PZT/opisy domyślnie wyłączone - wymagają osobnego przygotowania
         # planu / szablonu / wzorca / WT / biblioteki ezdxf
-        self.all_kroki = {k: tk.BooleanVar(value=(k not in ("numeracja", "orientacje", "pzt", "opisy", "ppw")))
-                          for k in pipeline.KROKI}
+        self.all_kroki = {k: tk.BooleanVar(
+            value=(k not in ("numeracja", "orientacje", "pzt", "opisy", "ppw", "zakladki")))
+            for k in pipeline.KROKI}
 
         # per-moduł: plik wejściowy
         self.we = {k: tk.StringVar() for k in pipeline.KROKI}
@@ -113,6 +118,10 @@ class Aplikacja:
         self.ppw_zestawienie_stacji = tk.StringVar()       # xlsx z Rysunków stałych (miejscowości)
         self.ppw_wt = tk.StringVar()                       # numer WT (ręcznie)
         self.ppw_renumer_dxf = tk.StringVar()              # DXF do renumeracji numerów rysunku
+        # opcje zakładek (strony-przekładki: nr stacji / miejscowość / WT)
+        self.zakladki_zestawienie = tk.StringVar()         # xlsx (puste = z Rysunków stałych)
+        self.zakladki_format = tk.StringVar(value="docx")  # przełącznik formatu: docx / pdf
+        self.zakladki_wt = tk.StringVar()                  # numer WT (ręcznie)
 
         self._przyciski = []                               # przyciski "Generuj" do blokowania
         self._buduj()
@@ -134,6 +143,7 @@ class Aplikacja:
         self._zakladka_orientacje()
         self._zakladka_opisy()
         self._zakladka_ppw()
+        self._zakladka_zakladki()
         self._zakladka_przewieszenia()
 
         self._dol(root)
@@ -379,6 +389,49 @@ class Aplikacja:
                 return
         self._uruchom(zest, ("ppw",))
 
+    def _zakladka_zakladki(self):
+        f = ttk.Frame(self.nb)
+        self.nb.add(f, text="Zakładki")
+        self._naglowek(f, "Dla każdej stacji trafo powstaje osobna strona-przekładka (zakładka) z trzema "
+                          "wyśrodkowanymi liniami: numer stacji, miejscowość i numer warunków (WT). "
+                          "Dane bierzemy z zestawienia — można podpiąć wprost „zestawienie_stacji.xlsx” "
+                          "z „Rysunków stałych”. Numer WT wpisz ręcznie, gdy zestawienie go nie zawiera.")
+        self._pole_pliku(f, "Zestawienie (.xlsx):", self.zakladki_zestawienie,
+                         "Wybierz zestawienie (np. z Rysunków stałych)", typy=XLSX_TYPY)
+        ttk.Label(f, text="(puste = zestawienie_stacji.xlsx z zakładki „Rysunki stałe” po jej uruchomieniu)",
+                  foreground="#777").pack(anchor="w", padx=10)
+        box = ttk.LabelFrame(f, text="Opcje")
+        box.pack(fill="x", padx=10, pady=6)
+        rf = ttk.Frame(box)
+        rf.pack(fill="x", padx=8, pady=6)
+        ttk.Label(rf, text="Format wyniku:").pack(side="left")
+        ttk.Radiobutton(rf, text="Word (.docx)", variable=self.zakladki_format,
+                        value="docx").pack(side="left", padx=(8, 0))
+        ttk.Radiobutton(rf, text="PDF (.pdf)", variable=self.zakladki_format,
+                        value="pdf").pack(side="left", padx=(8, 0))
+        ttk.Label(box, text="(.docx — edytowalny w Wordzie, wymaga biblioteki python-docx; "
+                            ".pdf — gotowy do druku, bez dodatkowych bibliotek)",
+                  foreground="#777", wraplength=760, justify="left").pack(anchor="w", padx=8, pady=(0, 6))
+        rw = ttk.Frame(box)
+        rw.pack(fill="x", padx=8, pady=(0, 8))
+        ttk.Label(rw, text="Numer warunków (WT):").pack(side="left")
+        ttk.Entry(rw, textvariable=self.zakladki_wt, width=28).pack(side="left", padx=6)
+        ttk.Label(box, text="(jeden wspólny numer dla wszystkich zakładek — np. 71/RE-5/KŚ/2026)",
+                  foreground="#777").pack(anchor="w", padx=8, pady=(0, 6))
+        self._przycisk_generuj(f, "Utwórz zakładki", self._start_zakladki)
+
+    def _start_zakladki(self):
+        zest = self.zakladki_zestawienie.get().strip()
+        if not zest or not os.path.isfile(zest):
+            messagebox.showwarning(TYTUL, "Wskaż plik zestawienia (.xlsx) — np. „zestawienie_stacji.xlsx” "
+                                          "z Rysunków stałych.", parent=self.root)
+            return
+        if not self.zakladki_wt.get().strip():
+            if not messagebox.askyesno(TYTUL, "Nie podano numeru warunków (WT). Zakładki powstaną z pustym WT. "
+                                              "Kontynuować?", parent=self.root):
+                return
+        self._uruchom(zest, ("zakladki",))
+
     # ---------------------------------------------------------------- dół okna
     def _dol(self, root):
         dol = ttk.Frame(root)
@@ -523,6 +576,9 @@ class Aplikacja:
             ppw_zestawienie_stacji=(self.ppw_zestawienie_stacji.get().strip() or None),
             ppw_wt=self.ppw_wt.get().strip(),
             ppw_renumer_dxf=(self.ppw_renumer_dxf.get().strip() or None),
+            zakladki_zestawienie=(self.zakladki_zestawienie.get().strip() or None),
+            zakladki_format=(self.zakladki_format.get().strip() or "docx"),
+            zakladki_wt=self.zakladki_wt.get().strip(),
             log=lambda t="": self._kolejka.put(("log", t)),
         )
         threading.Thread(target=self._praca, args=(opcje,), daemon=True).start()

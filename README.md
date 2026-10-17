@@ -11,6 +11,7 @@ z projektowanym światłowodem:
 | **Rysunki stałe** | osobny plan orientacyjny DXF dla każdej stacji trafo + zestawienie | `rysunki stałe/<nr>.dxf`, `rysunki stałe/zestawienie_stacji.xlsx` |
 | **Arkusze PZT** | komplet arkuszy A3 1:1000 dla każdej stacji (minimalna liczba, zakład 50 m) | `<plan> - PZT.dxf` |
 | **Opisy techniczne** | osobny opis techniczny `.docx` dla każdej stacji (z szablonu Word) | `opisy/<nr>.docx` |
+| **Zakładki** | strony-przekładki (nr stacji / miejscowość / WT) dla każdej stacji | `zakladki.docx` lub `zakladki.pdf` |
 
 > **Opisy techniczne** (z repo `generator_opisow`): dla każdej stacji z zestawienia tworzy opis
 > `.docx` z szablonu Word (kontrolki `trafo`, `miejscowosc`, `wt`). Zestawienie można **podpiąć
@@ -81,8 +82,19 @@ podkładu mapowego w rysunkach stałych.
 
 **Okno ma osobną zakładkę dla każdego modułu** — „Wszystko (łańcuch)”, „Numeracja słupów”,
 „Przewieszenia”, „Zestawienie”, „Obliczenia”, „Rysunki stałe”, „Arkusze PZT”, „Opisy techniczne”,
-„PPW” — każda z własnym wyborem pliku i opcjami. Na dole okna wspólny katalog zapisu, pasek
-postępu i dziennik przebiegu.
+„PPW”, „Zakładki” — każda z własnym wyborem pliku i opcjami. Na dole okna wspólny katalog zapisu,
+pasek postępu i dziennik przebiegu.
+
+> **Zakładki** (strony-przekładki): dla każdej stacji trafo tworzy osobną stronę z trzema
+> wyśrodkowanymi liniami — **numer stacji** (`ST <nr>`), **miejscowość** i **numer warunków (WT)**.
+> Dane pochodzą z pliku zestawienia — zwykle z **„zestawienie_stacji.xlsx” z „Rysunków stałych”**
+> (rozpoznawanie kolumn jest wspólne z modułem „Opisy”, więc działa też z formatem „domtel”
+> `Plik/trafo/miejscowosc/wt`). Numer WT — jeden wspólny — wpisuje się ręcznie, gdy zestawienie
+> go nie zawiera. **Format wyniku jest przełączany:** `.docx` (edytowalny w Wordzie, wymaga
+> `python-docx`) albo `.pdf` (gotowy do druku, generowany na czystym Pythonie — bez dodatkowych
+> bibliotek; polskie znaki osadzane przez własne kodowanie `/Differences` czcionki Helvetica).
+> CLI: `--tylko zakladki --zakladki-zestawienie zestawienie_stacji.xlsx --zakladki-format pdf
+> --zakladki-wt 71/RE-5/KŚ/2026`.
 
 > **PPW** (zbiorczy opis techniczny): tworzy JEDEN dokument `.docx` dla całego projektu
 > (wszystkie stacje trafo naraz) z szablonu Word (domyślnie „PPW miński szablon.docx”).
@@ -230,6 +242,7 @@ generator/
   pzt.py                – arkusze PZT A3 1:1000 per stacja (z repo ARKUSZE_PZT; rozkład jak generator_wt/arkusze.py)
   opisy.py              – opisy techniczne .docx z szablonu Word + zestawienia (z repo generator_opisow)
   ppw.py                – PPW: zbiorczy opis techniczny .docx dla całego projektu (znaczniki + tabela zbiorcza)
+  zakladki.py           – Zakładki: strony-przekładki (nr stacji / miejscowość / WT) w .docx albo .pdf (z repo zakladki)
   obliczenia2word.py    – (opcjonalnie) tabela nośności słupów dołączana do opisu .docx
   zasoby.py             – odnajdywanie plików bazy/arkuszy/szablonu (kod źródłowy lub .exe)
 ```

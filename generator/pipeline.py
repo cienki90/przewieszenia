@@ -34,12 +34,13 @@ from . import przewieszenia as mod_przewieszenia
 from . import pzt as mod_pzt
 from . import zestawienie as mod_zestawienie
 from . import ppw as mod_ppw
+from . import zakladki as mod_zakladki
 from .numeruj_slupy import przetworz as _numeruj_slupy
 
 # nazwy kroków (kolejność ma znaczenie) - „numeracja” jako pierwszy (projektant najpierw
 # numeruje słupy w planie, potem robi resztę; krok tworzy osobny plik „… - ponumerowane.dxf”)
 KROKI = ("numeracja", "przewieszenia", "zestawienie", "obliczenia", "orientacje", "pzt", "opisy",
-         "ppw", "ppw_renumer")
+         "ppw", "zakladki", "ppw_renumer")
 # „ppw_renumer” to osobna AKCJA (renumeracja DXF), nie część domyślnego łańcucha „Wszystko”
 KROKI_DOMYSLNE = tuple(k for k in KROKI if k != "ppw_renumer")
 
@@ -79,6 +80,10 @@ class Opcje:
     ppw_zestawienie_stacji: str | None = None    # xlsx z „Rysunków stałych” (miejscowości)
     ppw_wt: str = ""                             # numer warunków (WT) - ręcznie
     ppw_renumer_dxf: str | None = None           # DXF do renumeracji numerów rysunku (krok „ppw_renumer”)
+    # ZAKŁADKI - komplet stron-przekładek (nr stacji / miejscowość / WT) dla całego projektu
+    zakladki_zestawienie: str | None = None      # xlsx z „Rysunków stałych” (None = z kroku „orientacje”)
+    zakladki_format: str = "docx"                # format wyniku: „docx” albo „pdf” (przełącznik)
+    zakladki_wt: str = ""                        # numer warunków (WT) - wspólny, wpisywany ręcznie
     log: object = print                          # funkcja logowania (podmieniana w GUI)
 
 
@@ -124,6 +129,7 @@ def domyslne_wyjscia(plan: str, katalog: str | None = None) -> dict:
         "pzt": os.path.join(kat, f"{baza} - PZT.dxf"),       # kopia planu z arkuszami PZT
         "opisy": os.path.join(kat, "opisy"),                 # podfolder z opisami .docx
         "ppw": os.path.join(kat, "PPW.docx"),                # zbiorczy opis techniczny .docx
+        "zakladki": os.path.join(kat, "zakladki.docx"),      # strony-przekładki (docx/pdf wg formatu)
         "ppw_renumer": os.path.join(kat, f"{baza} - powykonawczy.dxf"),  # renumeracja rysunków DXF
     }
 
@@ -147,6 +153,8 @@ def uruchom(opcje: Opcje) -> Wynik:
     tylko_obliczenia_z_zest = (set(kroki) <= {"obliczenia"} and bool(opcje.obliczenia_zestawienie))
     # PPW z własnym zestawieniem też nie wymaga planu DXF (bazę/katalog bierzemy z zestawienia)
     tylko_ppw_z_zest = (set(kroki) <= {"ppw"} and bool(opcje.ppw_zestawienie))
+    # ZAKŁADKI z własnym zestawieniem również nie wymagają planu DXF (bazę/katalog z zestawienia)
+    tylko_zakladki_z_zest = (set(kroki) <= {"zakladki"} and bool(opcje.zakladki_zestawienie))
     # renumeracja rysunków działa na własnym pliku DXF (ppw_renumer_dxf), nie na planie
     tylko_renumer = (set(kroki) <= {"ppw_renumer"} and bool(opcje.ppw_renumer_dxf))
     if not os.path.isfile(plan):
@@ -154,6 +162,8 @@ def uruchom(opcje: Opcje) -> Wynik:
             plan = opcje.obliczenia_zestawienie
         elif tylko_ppw_z_zest and os.path.isfile(opcje.ppw_zestawienie):
             plan = opcje.ppw_zestawienie
+        elif tylko_zakladki_z_zest and os.path.isfile(opcje.zakladki_zestawienie):
+            plan = opcje.zakladki_zestawienie
         elif tylko_renumer and os.path.isfile(opcje.ppw_renumer_dxf):
             plan = opcje.ppw_renumer_dxf
         else:
@@ -197,6 +207,12 @@ def uruchom(opcje: Opcje) -> Wynik:
         if not opcje.ppw_zestawienie_stacji and "orientacje" not in kroki:
             kroki.insert(kroki.index("ppw"), "orientacje")
 
+    # ZAKŁADKI biorą dane z „zestawienie_stacji.xlsx” (moduł „Rysunki stałe”) - gdy użytkownik
+    # nie wskazał własnego zestawienia i nie zaznaczył orientacji, dołóż krok „orientacje”
+    if ("zakladki" in kroki and "orientacje" not in kroki
+            and not opcje.zakladki_zestawienie):
+        kroki.insert(kroki.index("zakladki"), "orientacje")
+
     wynik = Wynik()
 
     for krok in kroki:
@@ -233,6 +249,8 @@ def uruchom(opcje: Opcje) -> Wynik:
                 r = _krok_opisy(opcje, wyj["opisy"], orient_zest)
             elif krok == "ppw":
                 r = _krok_ppw(opcje, wyj["ppw"], zestawienie_plik, orient_zest)
+            elif krok == "zakladki":
+                r = _krok_zakladki(opcje, wyj["zakladki"], orient_zest)
             elif krok == "ppw_renumer":
                 r = _krok_ppw_renumer(opcje, plan, wyj["ppw_renumer"])
             else:
@@ -466,6 +484,36 @@ def _krok_ppw(opcje: Opcje, wyjscie: str, zestawienie_plik, orient_zest) -> Wyni
                       blad=None if ok else "Nie utworzono pliku PPW .docx.")
 
 
+def _krok_zakladki(opcje: Opcje, wyjscie: str, orient_zest) -> WynikKroku:
+    """ZAKŁADKI: dla każdej stacji z zestawienia osobna strona (nr stacji / miejscowość / WT).
+
+    Zestawienie: wskazane przez użytkownika albo „zestawienie_stacji.xlsx” z kroku „orientacje”.
+    Format wyniku (przełącznik): „docx” (python-docx) albo „pdf” (czysty Python)."""
+    zestawienie = opcje.zakladki_zestawienie or orient_zest
+    if not zestawienie:
+        return WynikKroku("zakladki", ok=False,
+                          blad="Brak zestawienia - wskaż plik .xlsx (np. „zestawienie_stacji.xlsx” "
+                               "z Rysunków stałych) albo włącz krok „rysunki stałe”.")
+    fmt = (opcje.zakladki_format or "docx").strip().lower()
+    # dopasuj rozszerzenie pliku wynikowego do wybranego formatu
+    rdzen = os.path.splitext(wyjscie)[0]
+    wyjscie = rdzen + "." + ("pdf" if fmt == "pdf" else "docx")
+
+    def uruchom():
+        return mod_zakladki.generuj(zestawienie, wyjscie, format=fmt,
+                                    wt=opcje.zakladki_wt, log=print)
+    try:
+        (plik, raport) = _przechwyc(uruchom)
+    except ImportError:
+        return WynikKroku("zakladki", ok=False,
+                          raport="Format DOCX wymaga biblioteki python-docx "
+                                 "(pip install python-docx) albo wybierz format PDF.",
+                          blad="Brak biblioteki python-docx (format DOCX).")
+    ok = bool(plik) and os.path.exists(plik)
+    return WynikKroku("zakladki", ok=ok, wyjscie=plik if ok else None, raport=raport,
+                      blad=None if ok else "Nie udało się utworzyć zakładek.")
+
+
 def _krok_ppw_renumer(opcje: Opcje, plan: str, wyjscie: str) -> WynikKroku:
     """Renumeracja numerów rysunku w tabelkach arkuszy DXF (STACJA-ARKUSZ) + „Projekt
     wykonawczy”->„Projekt powykonawczy”. Działa na pliku opcje.ppw_renumer_dxf (lub planie)."""
@@ -541,6 +589,12 @@ def main(argv=None):
     ap.add_argument("--ppw-zestawienie-stacji", default=None,
                     help="„zestawienie_stacji.xlsx” z Rysunków stałych - miejscowości do PPW")
     ap.add_argument("--ppw-wt", default="", help="numer warunków technicznych (WT) do PPW - ręcznie")
+    ap.add_argument("--zakladki-zestawienie", default=None,
+                    help="plik .xlsx z danymi do zakładek (domyślnie zestawienie_stacji.xlsx z rysunków stałych)")
+    ap.add_argument("--zakladki-format", choices=("docx", "pdf"), default="docx",
+                    help="format wyniku zakładek: docx (domyślnie) albo pdf")
+    ap.add_argument("--zakladki-wt", default="",
+                    help="numer warunków technicznych (WT) do zakładek - jeden wspólny, wpisywany ręcznie")
     ap.add_argument("--ppw-renumeruj", default=None, metavar="DXF",
                     help="renumeracja numerów rysunku w tabelkach arkuszy DXF (STACJA-ARKUSZ) + "
                          "„Projekt wykonawczy”->„Projekt powykonawczy”; podaj plik DXF (np. PZT)")
@@ -564,6 +618,8 @@ def main(argv=None):
                   opisy_wt=a.opisy_wt, opisy_obliczenia=a.opisy_obliczenia,
                   ppw_szablon=a.ppw_szablon, ppw_zestawienie=a.ppw_zestawienie,
                   ppw_zestawienie_stacji=a.ppw_zestawienie_stacji, ppw_wt=a.ppw_wt,
+                  zakladki_zestawienie=a.zakladki_zestawienie, zakladki_format=a.zakladki_format,
+                  zakladki_wt=a.zakladki_wt,
                   ppw_renumer_dxf=a.ppw_renumeruj, log=print)
     wynik = uruchom(opcje)
 
