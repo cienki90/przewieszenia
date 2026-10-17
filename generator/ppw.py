@@ -139,6 +139,11 @@ def _norm_nr(s):
     return str(int(cyfry)) if cyfry else s.lower()
 
 
+def _norm_miejsc(s):
+    """Klucz porównania nazw miejscowości (odporny na wielkość liter, polskie znaki i spacje)."""
+    return re.sub(r"\s+", " ", _ascii(s)).strip()
+
+
 # ---------------------------------------------------------------------------
 # Podmiana znaczników *...* w dokumencie (zwykły tekst, znacznik rozbity na runy)
 # ---------------------------------------------------------------------------
@@ -304,15 +309,25 @@ def generuj(szablon, zestawienie, zestawienie_stacji=None, wt="", wyjscie=None, 
     elif zestawienie_stacji:
         log(f"Uwaga: nie znaleziono pliku miejscowości: {zestawienie_stacji} - pominięto nazwy.")
 
-    # miejscowości: najpierw wg stacji z zestawienia (kolejność i bez powtórzeń), potem reszta z pliku nazw
-    miejsc = []
+    # miejscowości: najpierw wg stacji z zestawienia (zachowana kolejność), potem reszta z pliku
+    # nazw. Deduplikacja ODPORNA na wielkość liter i spacje; komórki z kilkoma nazwami po
+    # przecinku są rozbijane, żeby nie powtarzać tej samej miejscowości.
+    miejsc, _widziane = [], set()
+
+    def _dodaj(wartosc):
+        for nazwa in str(wartosc or "").split(","):
+            nazwa = nazwa.strip()
+            if not nazwa:
+                continue
+            klucz = _norm_miejsc(nazwa)
+            if klucz and klucz not in _widziane:
+                _widziane.add(klucz)
+                miejsc.append(nazwa)
+
     for stacja, _il, _dl in stacje:
-        m = mapa_miejsc.get(_norm_nr(stacja))
-        if m and m not in miejsc:
-            miejsc.append(m)
+        _dodaj(mapa_miejsc.get(_norm_nr(stacja)))
     for m in kolejnosc_miejsc:
-        if m not in miejsc:
-            miejsc.append(m)
+        _dodaj(m)
 
     numery_stacji = [str(s).strip() for s, _il, _dl in stacje]
 
