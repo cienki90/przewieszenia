@@ -112,6 +112,7 @@ class Aplikacja:
         self.ppw_zestawienie = tk.StringVar()              # xlsx z modułu „zestawienie”
         self.ppw_zestawienie_stacji = tk.StringVar()       # xlsx z Rysunków stałych (miejscowości)
         self.ppw_wt = tk.StringVar()                       # numer WT (ręcznie)
+        self.ppw_renumer_dxf = tk.StringVar()              # DXF do renumeracji numerów rysunku
 
         self._przyciski = []                               # przyciski "Generuj" do blokowania
         self._buduj()
@@ -164,6 +165,8 @@ class Aplikacja:
         box = ttk.LabelFrame(f, text="Co wygenerować")
         box.pack(fill="x", padx=10, pady=6)
         for k in pipeline.KROKI:
+            if k not in OPIS_KROKOW:           # kroki-akcje (np. ppw_renumer) nie są w „Wszystko”
+                continue
             tytul, opis = OPIS_KROKOW[k]
             ttk.Checkbutton(box, text=tytul, variable=self.all_kroki[k]).pack(anchor="w", padx=8, pady=(6, 0))
             ttk.Label(box, text=opis, foreground="#777").pack(anchor="w", padx=30, pady=(0, 2))
@@ -341,6 +344,25 @@ class Aplikacja:
         ttk.Entry(r, textvariable=self.ppw_wt, width=28).pack(side="left", padx=6)
         self._przycisk_generuj(f, "Utwórz PPW .docx", self._start_ppw)
 
+        # --- renumeracja numerów rysunku w tabelkach arkuszy (DXF, osobna akcja) ---
+        ren = ttk.LabelFrame(f, text="Renumeracja numerów rysunku (DXF)")
+        ren.pack(fill="x", padx=10, pady=(10, 6))
+        ttk.Label(ren, text="Dla arkuszy STACJA-ARKUSZ (np. 112-1) nadaje numery rysunku w tabelkach "
+                            "(112→1, wiele arkuszy → 1.1, 1.2; jeden → bez kropki) i zamienia „Projekt "
+                            "wykonawczy” → „Projekt powykonawczy”. Tworzy „… - powykonawczy.dxf”.",
+                  foreground="#555", wraplength=740, justify="left").pack(anchor="w", padx=8, pady=(6, 2))
+        self._pole_pliku(ren, "Plik DXF (PZT/arkusze):", self.ppw_renumer_dxf,
+                         "Wybierz plik DXF z arkuszami STACJA-ARKUSZ")
+        self._przycisk_generuj(ren, "Renumeruj rysunki (DXF)", self._start_renumer)
+
+    def _start_renumer(self):
+        dxf = self.ppw_renumer_dxf.get().strip()
+        if not dxf or not os.path.isfile(dxf):
+            messagebox.showwarning(TYTUL, "Wskaż plik DXF z arkuszami STACJA-ARKUSZ (np. plik PZT).",
+                                   parent=self.root)
+            return
+        self._uruchom(dxf, ("ppw_renumer",))
+
     def _start_ppw(self):
         zest = self.ppw_zestawienie.get().strip()
         if not zest or not os.path.isfile(zest):
@@ -418,7 +440,7 @@ class Aplikacja:
         if not plan or not os.path.isfile(plan):
             messagebox.showwarning(TYTUL, "Wskaż istniejący plik planu DXF.", parent=self.root)
             return
-        kroki = tuple(k for k in pipeline.KROKI if self.all_kroki[k].get())
+        kroki = tuple(k for k in pipeline.KROKI if k in OPIS_KROKOW and self.all_kroki[k].get())
         if not kroki:
             messagebox.showwarning(TYTUL, "Zaznacz przynajmniej jedną rzecz do wygenerowania.", parent=self.root)
             return
@@ -500,6 +522,7 @@ class Aplikacja:
             ppw_zestawienie=(self.ppw_zestawienie.get().strip() or None),
             ppw_zestawienie_stacji=(self.ppw_zestawienie_stacji.get().strip() or None),
             ppw_wt=self.ppw_wt.get().strip(),
+            ppw_renumer_dxf=(self.ppw_renumer_dxf.get().strip() or None),
             log=lambda t="": self._kolejka.put(("log", t)),
         )
         threading.Thread(target=self._praca, args=(opcje,), daemon=True).start()

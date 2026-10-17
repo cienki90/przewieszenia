@@ -18,11 +18,20 @@ W szablonie podstawiane są znaczniki tekstowe:
   *wwww*  -> numer WT.
 
 Wymaga bibliotek python-docx i openpyxl (importowane leniwie - brak nie wywraca całego programu).
+
+Dodatkowo moduł zawiera RENUMERACJĘ numerów rysunku w tabelkach arkuszy DXF
+(odpowiednik polecenia PPW z PPW_RENUMER.lsp dla GstarCAD) - patrz renumeruj_rysunki().
+Ta część działa na czystym Pythonie (tagi DXF), bez bibliotek zewnętrznych.
 """
 from __future__ import annotations
 
 import os
 import re
+
+try:
+    from . import dxfio as _dxf
+except ImportError:  # bezpośrednie uruchomienie
+    import dxfio as _dxf
 
 # openpyxl / python-docx - opcjonalne, ładowane leniwie (jak w module opisy)
 openpyxl = None
@@ -293,6 +302,207 @@ def generuj(szablon, zestawienie, zestawienie_stacji=None, wt="", wyjscie=None, 
     return wyjscie
 
 
+# ===========================================================================
+# RENUMERACJA numerów rysunku w tabelkach arkuszy DXF (odpowiednik PPW_RENUMER.lsp)
+# ===========================================================================
+# Dla arkuszy (layoutów) o nazwie STACJA-ARKUSZ (np. 112-1) wylicza nowy numer rysunku:
+#   * stacje numerowane kolejno rosnąco po numerze stacji: 112->1, 115->2, 181->3, ...
+#   * arkusze w ramach stacji: <nr>.<podnr> (1.1, 1.2, ...); stacja z JEDNYM arkuszem -> bez kropki.
+# Numer wpisywany do tabelki (MTEXT numeru). Dodatkowo „Projekt wykonawczy” -> „Projekt powykonawczy”.
+# Nazwy zakładek (layoutów) NIE są zmieniane. Wynik to nowy plik (nieniszcząco).
+
+RE_LAYOUT_SA = re.compile(r"^\s*(\d+)\s*-\s*(\d+)\s*$")   # "112-1" -> (stacja, arkusz)
+WYS_NUMERU = 2.0                                          # wysokość MTEXT numeru rysunku [j.]
+TOL_WYS = 0.05                                            # tolerancja wysokości
+STYL_PREFEROWANY = "LEGENDA"                              # styl preferowany (nie wymagany)
+
+
+def _is_num_rysunku(txt: str) -> bool:
+    """Czy treść wygląda na numer rysunku: 'N' lub 'N.N' (same cyfry, maks. jedna kropka)."""
+    s = (txt or "").strip()
+    return bool(s) and re.fullmatch(r"\d+(?:\.\d+)?", s) is not None
+
+
+def _mapa_numerow(nazwy_layoutow):
+    """Buduje {nazwa_layoutu: nowy_numer_rysunku} wg reguły PPW (jak w LISP build-map).
+
+    nazwy_layoutow - iterowalne nazw; brane są tylko pasujące do STACJA-ARKUSZ."""
+    arkusze = []                       # (nazwa, stacja_int, arkusz_int)
+    for nm in nazwy_layoutow:
+        m = RE_LAYOUT_SA.match(nm or "")
+        if m:
+            arkusze.append((nm, int(m.group(1)), int(m.group(2))))
+    # sort po stacji, potem po numerze arkusza
+    arkusze.sort(key=lambda a: (a[1], a[2]))
+    # liczba arkuszy na stację + indeks stacji (kolejno od 1 wg rosnącego numeru stacji)
+    liczba = {}
+    for _nm, st, _ar in arkusze:
+        liczba[st] = liczba.get(st, 0) + 1
+    indeks_stacji = {st: i for i, st in enumerate(sorted(liczba), start=1)}
+    mapa = {}
+    order = {}
+    for nm, st, _ar in arkusze:
+        order[st] = order.get(st, 0) + 1
+        n = indeks_stacji[st]
+        mapa[nm] = str(n) if liczba[st] == 1 else f"{n}.{order[st]}"
+    return mapa
+
+
+def _nazwy_layoutow(secs):
+    """Zwraca listę (nazwa_layoutu, handle_block_record) z sekcji OBJECTS."""
+    out = []
+    for t, d in _dxf.split_entities(secs.get("OBJECTS", [])):
+        if t == "LAYOUT":
+            nazwy = [v for c, v in d if c == 1]
+            br = [v for c, v in d if c == 330]
+            if nazwy and br:
+                out.append((nazwy[-1], br[-1].upper()))
+    return out
+
+
+def _mapa_br_na_blok(secs):
+    """{handle_block_record (UPPER): nazwa_bloku} z tabeli BLOCK_RECORD."""
+    out = {}
+    for t, d in _dxf.split_entities(secs.get("TABLES", [])):
+        if t == "BLOCK_RECORD":
+            h = _dxf.get(d, 5)
+            if h:
+                out[h.upper()] = _dxf.get(d, 2) or ""
+    return out
+
+
+def _ustaw_numer_w_encjach(ents, nalezy, nowy):
+    """Podmienia treść (kod 1) pierwszego MTEXT będącego numerem rysunku (wys. ~2.0, treść N/N.N)
+    wśród encji, dla których predykat `nalezy(indeks)` jest prawdziwy. Preferuje styl LEGENDA,
+    ale go nie wymaga. Zwraca True, gdy podmieniono."""
+    for wymagaj_stylu in (True, False):
+        for i, (t, d) in enumerate(ents):
+            if t != "MTEXT" or not nalezy(i):
+                continue
+            h = _dxf.getf(d, 40)
+            txt = _dxf.mtext_plain(_dxf.get(d, 1, "") or "")
+            sty = (_dxf.get(d, 7) or "").strip().upper()
+            if h is None or abs(h - WYS_NUMERU) > TOL_WYS:
+                continue
+            if not _is_num_rysunku(txt):
+                continue
+            if wymagaj_stylu and sty != STYL_PREFEROWANY:
+                continue
+            ents[i] = (t, [(c, (nowy if c == 1 else v)) for c, v in d])
+            return True
+    return False
+
+
+def _zamien_powykonawczy(secs):
+    """W całym rysunku zamienia 'Projekt wykonawczy'->'Projekt powykonawczy'
+    (fallback 'wykonawczy'->'powykonawczy'), w TEXT i MTEXT. Zwraca liczbę zmian."""
+    zmian = 0
+    for sekcja in ("ENTITIES", "BLOCKS"):
+        ents = _dxf.split_entities(secs.get(sekcja, []))
+        zmieniono = False
+        for i, (t, d) in enumerate(ents):
+            if t not in ("TEXT", "MTEXT"):
+                continue
+            d2 = []
+            lok = False
+            for c, v in d:
+                if c == 1 and v and "wykonawczy" in v.lower() and "powykonawczy" not in v.lower():
+                    nowy = re.sub(r"(?i)projekt\s+wykonawczy", "Projekt powykonawczy", v)
+                    if nowy == v:
+                        nowy = re.sub(r"(?i)wykonawczy", "powykonawczy", v)
+                    if nowy != v:
+                        v = nowy
+                        lok = True
+                d2.append((c, v))
+            if lok:
+                ents[i] = (t, d2)
+                zmian += 1
+                zmieniono = True
+        if zmieniono:
+            secs[sekcja] = _dxf.join_entities(ents)
+    return zmian
+
+
+def renumeruj_rysunki(dxf, wyjscie=None, log=None):
+    """Renumeruje numery rysunku w tabelkach arkuszy STACJA-ARKUSZ i zamienia
+    „Projekt wykonawczy” -> „Projekt powykonawczy”. Tworzy NOWY plik DXF (oryginał nietknięty).
+
+    Zwraca (ścieżka_wyniku, liczba_ustawionych_numerow, liczba_zamian_tekstu)."""
+    log = log or print
+    if not os.path.isfile(dxf):
+        raise FileNotFoundError(f"Nie znaleziono pliku DXF: {dxf}")
+    secs_list = _dxf.split_sections(_dxf.read_tags(dxf))
+    secs = dict(secs_list)
+    kolejnosc = [n for n, _ in secs_list]
+
+    layouty = _nazwy_layoutow(secs)
+    mapa = _mapa_numerow(nm for nm, _br in layouty)
+    if not mapa:
+        raise ValueError("Nie znaleziono arkuszy w formacie STACJA-ARKUSZ (np. „112-1”).")
+
+    log("--- Mapowanie (arkusz -> numer rysunku) ---")
+    for nm in sorted(mapa, key=_klucz_sa):
+        log(f"  {nm}  ->  {mapa[nm]}")
+
+    # podmiana numeru w tabelce każdego arkusza. Encje papieru arkusza są:
+    #  * w BLOCKS - w bloku *Paper_SpaceN (zwykłe arkusze), albo
+    #  * w ENTITIES - gdy to AKTYWNY arkusz (owner 330 = handle jego block record).
+    br2blk = _mapa_br_na_blok(secs)
+    ents_blocks = _dxf.split_entities(secs.get("BLOCKS", []))
+    ents_model = _dxf.split_entities(secs.get("ENTITIES", []))
+
+    # indeksy encji BLOCKS wg aktualnego bloku (do predykatu „należy do bloku”)
+    blok_encji = [None] * len(ents_blocks)
+    cur = None
+    for i, (t, d) in enumerate(ents_blocks):
+        if t == "BLOCK":
+            cur = _dxf.get(d, 2) or ""
+        blok_encji[i] = cur
+
+    ustawione, braki = 0, []
+    for nazwa, br in layouty:
+        if nazwa not in mapa:
+            continue
+        blok = br2blk.get(br, "")
+        nowy = mapa[nazwa]
+        # 1) spróbuj w BLOCKS (po nazwie bloku papieru)
+        if _ustaw_numer_w_encjach(ents_blocks, lambda i, b=blok: blok_encji[i] == b, nowy):
+            ustawione += 1
+            continue
+        # 2) aktywny arkusz: encje w ENTITIES z ownerem (330) = handle block record layoutu
+        if _ustaw_numer_w_encjach(ents_model, lambda i, h=br: (_dxf.get(ents_model[i][1], 330) or "").upper() == h, nowy):
+            ustawione += 1
+            continue
+        braki.append(nazwa)
+    secs["BLOCKS"] = _dxf.join_entities(ents_blocks)
+    secs["ENTITIES"] = _dxf.join_entities(ents_model)
+
+    # „Projekt wykonawczy” -> „Projekt powykonawczy” (po podmianie numerów, bo też rusza BLOCKS)
+    zmian_txt = _zamien_powykonawczy(secs)
+
+    if not wyjscie:
+        baza, _ext = os.path.splitext(dxf)
+        wyjscie = baza + " - powykonawczy.dxf"
+    tags = []
+    for name in kolejnosc:
+        tags += [(0, "SECTION"), (2, name)] + secs[name] + [(0, "ENDSEC")]
+    tags.append((0, "EOF"))
+    _dxf.write_tags(wyjscie, tags)
+
+    log(f"Numerów rysunku ustawionych: {ustawione}/{len(mapa)}")
+    if braki:
+        log("UWAGA - nie znaleziono pola numeru na arkuszach: " + ", ".join(braki))
+    log(f"Tekstów „wykonawczy”->„powykonawczy”: {zmian_txt}")
+    log(f"-> {os.path.basename(wyjscie)}")
+    return wyjscie, ustawione, zmian_txt
+
+
+def _klucz_sa(nazwa):
+    """Klucz sortowania nazwy STACJA-ARKUSZ po (stacja, arkusz)."""
+    m = RE_LAYOUT_SA.match(nazwa or "")
+    return (int(m.group(1)), int(m.group(2))) if m else (10**9, nazwa)
+
+
 # ---------------------------------------------------------------------------
 def main(argv=None):
     import argparse
@@ -302,13 +512,27 @@ def main(argv=None):
             s.reconfigure(encoding="utf-8", errors="replace")
         except Exception:  # noqa: BLE001
             pass
-    ap = argparse.ArgumentParser(description="PPW - zbiorczy opis techniczny .docx dla całego projektu.")
-    ap.add_argument("zestawienie", help="plik .xls/.xlsx z modułu „zestawienie”")
+    ap = argparse.ArgumentParser(description="PPW - zbiorczy opis techniczny .docx + renumeracja rysunków DXF.")
+    ap.add_argument("zestawienie", nargs="?", help="plik .xls/.xlsx z modułu „zestawienie” (tryb opisu zbiorczego)")
     ap.add_argument("--szablon", default=None, help="szablon .docx (domyślnie dołączony „PPW miński szablon.docx”)")
     ap.add_argument("--nazwy", default=None, help="„zestawienie_stacji.xlsx” z Rysunków stałych (miejscowości)")
     ap.add_argument("--wt", default="", help="numer warunków technicznych (WT)")
-    ap.add_argument("-o", "--wyjscie", default=None, help="plik wynikowy (domyślnie „PPW.docx” w folderze szablonu)")
+    ap.add_argument("-o", "--wyjscie", default=None, help="plik wynikowy")
+    ap.add_argument("--renumeruj", default=None, metavar="DXF",
+                    help="TRYB renumeracji: wskaż plik DXF - przenumeruj numery rysunku w tabelkach "
+                         "arkuszy STACJA-ARKUSZ i zamień „Projekt wykonawczy”->„Projekt powykonawczy”")
     a = ap.parse_args(argv)
+    import sys as _sys
+    # tryb renumeracji rysunków (DXF) - nie wymaga bibliotek ani szablonu
+    if a.renumeruj:
+        try:
+            renumeruj_rysunki(a.renumeruj, a.wyjscie)
+            return 0
+        except Exception as ex:  # noqa: BLE001
+            print(f"BŁĄD: {ex}", file=_sys.stderr)
+            return 1
+    if not a.zestawienie:
+        ap.error("podaj plik zestawienia (tryb opisu) albo --renumeruj DXF (tryb renumeracji).")
     try:
         _wymagaj_bibliotek()
         from . import zasoby
@@ -319,13 +543,13 @@ def main(argv=None):
             zasoby = None
     szablon = a.szablon or (zasoby.szablon_ppw_docx() if zasoby else None)
     if not szablon:
-        print("Brak szablonu PPW - wskaż --szablon.", file=__import__("sys").stderr)
+        print("Brak szablonu PPW - wskaż --szablon.", file=_sys.stderr)
         return 1
     try:
         generuj(szablon, a.zestawienie, zestawienie_stacji=a.nazwy, wt=a.wt, wyjscie=a.wyjscie)
         return 0
     except Exception as ex:  # noqa: BLE001
-        print(f"BŁĄD: {ex}", file=__import__("sys").stderr)
+        print(f"BŁĄD: {ex}", file=_sys.stderr)
         return 1
 
 

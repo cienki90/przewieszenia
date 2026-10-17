@@ -34,6 +34,8 @@ jobs:
           test -s "_test_num/pw - ponumerowane.dxf"
           python generator_cli.py "przewieszenia plan.dxf" -o _test_ppw --tylko ppw --bez-podkladu --adresy brak --ppw-wt "WT/1"
           test -s "_test_ppw/PPW.docx"
+          python generator_cli.py dummy --ppw-renumeruj "pw_final2 - ponumerowane - PZT.dxf"
+          test -s "pw_final2 - ponumerowane - PZT - powykonawczy.dxf"
 
       - name: Budowa exe
         run: >

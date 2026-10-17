@@ -91,6 +91,14 @@ postępu i dziennik przebiegu.
 > (Nr stacji / Ilość słupów / Długość / Numer arkusza + SUMA) wypełniana z pliku modułu
 > „Zestawienie”. Miejscowości pochodzą z „zestawienie_stacji.xlsx” (Rysunki stałe), numer WT
 > wpisuje się ręcznie, numery arkuszy nadawane są kolejno. Wymaga `python-docx` i `openpyxl`.
+>
+> Zakładka „PPW” ma też **renumerację numerów rysunku** (odpowiednik polecenia `PPW` z AutoLISP
+> `PPW_RENUMER.lsp`, przeniesiony na Pythona bez CAD-a): dla arkuszy o nazwach `STACJA-ARKUSZ`
+> (np. `112-1`) wpisuje do tabelki numer rysunku (stacje kolejno `1,2,3…`; wiele arkuszy →
+> `1.1, 1.2…`; jeden arkusz → bez kropki) i zamienia „Projekt wykonawczy” → „Projekt
+> powykonawczy”. Pole numeru rozpoznawane uniwersalnie (MTEXT wys. 2.0, treść `N`/`N.N`; styl
+> `LEGENDA` preferowany, ale niewymagany). Działa na czystym Pythonie (bez `ezdxf`), tworzy
+> nieniszcząco `… - powykonawczy.dxf`. CLI: `--ppw-renumeruj plik.dxf`.
 
 > **Numeracja słupów** (z repo gałęzi `numeracja-slupow`): automatycznie numeruje słupy nN.
 > W planie zaznacz ręcznie numery „1” i „2” dwóch pierwszych słupów każdego obwodu (warstwa

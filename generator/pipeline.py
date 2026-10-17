@@ -38,7 +38,10 @@ from .numeruj_slupy import przetworz as _numeruj_slupy
 
 # nazwy kroków (kolejność ma znaczenie) - „numeracja” jako pierwszy (projektant najpierw
 # numeruje słupy w planie, potem robi resztę; krok tworzy osobny plik „… - ponumerowane.dxf”)
-KROKI = ("numeracja", "przewieszenia", "zestawienie", "obliczenia", "orientacje", "pzt", "opisy", "ppw")
+KROKI = ("numeracja", "przewieszenia", "zestawienie", "obliczenia", "orientacje", "pzt", "opisy",
+         "ppw", "ppw_renumer")
+# „ppw_renumer” to osobna AKCJA (renumeracja DXF), nie część domyślnego łańcucha „Wszystko”
+KROKI_DOMYSLNE = tuple(k for k in KROKI if k != "ppw_renumer")
 
 
 # ---------------------------------------------------------------------------
@@ -75,6 +78,7 @@ class Opcje:
     ppw_zestawienie: str | None = None           # xlsx z modułu „zestawienie” (tabela + numery stacji)
     ppw_zestawienie_stacji: str | None = None    # xlsx z „Rysunków stałych” (miejscowości)
     ppw_wt: str = ""                             # numer warunków (WT) - ręcznie
+    ppw_renumer_dxf: str | None = None           # DXF do renumeracji numerów rysunku (krok „ppw_renumer”)
     log: object = print                          # funkcja logowania (podmieniana w GUI)
 
 
@@ -120,6 +124,7 @@ def domyslne_wyjscia(plan: str, katalog: str | None = None) -> dict:
         "pzt": os.path.join(kat, f"{baza} - PZT.dxf"),       # kopia planu z arkuszami PZT
         "opisy": os.path.join(kat, "opisy"),                 # podfolder z opisami .docx
         "ppw": os.path.join(kat, "PPW.docx"),                # zbiorczy opis techniczny .docx
+        "ppw_renumer": os.path.join(kat, f"{baza} - powykonawczy.dxf"),  # renumeracja rysunków DXF
     }
 
 
@@ -142,11 +147,15 @@ def uruchom(opcje: Opcje) -> Wynik:
     tylko_obliczenia_z_zest = (set(kroki) <= {"obliczenia"} and bool(opcje.obliczenia_zestawienie))
     # PPW z własnym zestawieniem też nie wymaga planu DXF (bazę/katalog bierzemy z zestawienia)
     tylko_ppw_z_zest = (set(kroki) <= {"ppw"} and bool(opcje.ppw_zestawienie))
+    # renumeracja rysunków działa na własnym pliku DXF (ppw_renumer_dxf), nie na planie
+    tylko_renumer = (set(kroki) <= {"ppw_renumer"} and bool(opcje.ppw_renumer_dxf))
     if not os.path.isfile(plan):
         if tylko_obliczenia_z_zest and os.path.isfile(opcje.obliczenia_zestawienie):
             plan = opcje.obliczenia_zestawienie
         elif tylko_ppw_z_zest and os.path.isfile(opcje.ppw_zestawienie):
             plan = opcje.ppw_zestawienie
+        elif tylko_renumer and os.path.isfile(opcje.ppw_renumer_dxf):
+            plan = opcje.ppw_renumer_dxf
         else:
             raise FileNotFoundError(f"Nie znaleziono pliku planu DXF: {plan}")
     katalog = opcje.katalog or os.path.dirname(os.path.abspath(plan))
@@ -224,6 +233,8 @@ def uruchom(opcje: Opcje) -> Wynik:
                 r = _krok_opisy(opcje, wyj["opisy"], orient_zest)
             elif krok == "ppw":
                 r = _krok_ppw(opcje, wyj["ppw"], zestawienie_plik, orient_zest)
+            elif krok == "ppw_renumer":
+                r = _krok_ppw_renumer(opcje, plan, wyj["ppw_renumer"])
             else:
                 continue
             if krok == "orientacje" and r.ok and r.wyjscie:
@@ -455,6 +466,25 @@ def _krok_ppw(opcje: Opcje, wyjscie: str, zestawienie_plik, orient_zest) -> Wyni
                       blad=None if ok else "Nie utworzono pliku PPW .docx.")
 
 
+def _krok_ppw_renumer(opcje: Opcje, plan: str, wyjscie: str) -> WynikKroku:
+    """Renumeracja numerów rysunku w tabelkach arkuszy DXF (STACJA-ARKUSZ) + „Projekt
+    wykonawczy”->„Projekt powykonawczy”. Działa na pliku opcje.ppw_renumer_dxf (lub planie)."""
+    dxf = opcje.ppw_renumer_dxf or plan
+    # nazwa wyniku obok pliku wejściowego: „<nazwa> - powykonawczy.dxf”
+    if opcje.ppw_renumer_dxf:
+        baza = _bazowa_nazwa(opcje.ppw_renumer_dxf)
+        wyjscie = os.path.join(os.path.dirname(wyjscie), f"{baza} - powykonawczy.dxf")
+
+    def uruchom():
+        return mod_ppw.renumeruj_rysunki(dxf, wyjscie, log=print)
+    (wynik, raport) = _przechwyc(uruchom)
+    plik = wynik[0] if isinstance(wynik, tuple) else wyjscie
+    ok = bool(plik) and os.path.exists(plik)
+    return WynikKroku("ppw_renumer", ok=ok, wyjscie=plik if ok else None, raport=raport,
+                      blad=None if ok else "Nie udało się przenumerować rysunków "
+                                           "(czy w pliku są arkusze STACJA-ARKUSZ, np. „112-1”?).")
+
+
 # ---------------------------------------------------------------------------
 def main(argv=None):
     for strumien in (sys.stdout, sys.stderr):  # polskie znaki w konsoli Windows
@@ -468,9 +498,9 @@ def main(argv=None):
     ap.add_argument("plan", help="plik DXF planu")
     ap.add_argument("-o", "--katalog", default=None,
                     help="katalog zapisu wyników (domyślnie obok planu)")
-    ap.add_argument("--tylko", default=",".join(KROKI),
+    ap.add_argument("--tylko", default=",".join(KROKI_DOMYSLNE),
                     help="które kroki wykonać, po przecinku: przewieszenia,zestawienie,obliczenia "
-                         f"(domyślnie wszystkie: {','.join(KROKI)})")
+                         f"(domyślnie: {','.join(KROKI_DOMYSLNE)})")
     ap.add_argument("--adresy", default="uug,osm",
                     help="źródła nazw miejscowości/ulic: uug,osm lub 'brak' (bez internetu)")
     ap.add_argument("--obrot-od", type=float, default=50.0,
@@ -511,9 +541,15 @@ def main(argv=None):
     ap.add_argument("--ppw-zestawienie-stacji", default=None,
                     help="„zestawienie_stacji.xlsx” z Rysunków stałych - miejscowości do PPW")
     ap.add_argument("--ppw-wt", default="", help="numer warunków technicznych (WT) do PPW - ręcznie")
+    ap.add_argument("--ppw-renumeruj", default=None, metavar="DXF",
+                    help="renumeracja numerów rysunku w tabelkach arkuszy DXF (STACJA-ARKUSZ) + "
+                         "„Projekt wykonawczy”->„Projekt powykonawczy”; podaj plik DXF (np. PZT)")
     a = ap.parse_args(argv)
 
     wybrane = tuple(k.strip().lower() for k in a.tylko.split(",") if k.strip())
+    # --ppw-renumeruj: tryb samej renumeracji DXF (nie wymaga planu ani innych kroków)
+    if a.ppw_renumeruj:
+        wybrane = ("ppw_renumer",)
     nieznane = [k for k in wybrane if k not in KROKI]
     if nieznane:
         ap.error(f"nieznane kroki: {', '.join(nieznane)} (dozwolone: {', '.join(KROKI)})")
@@ -527,7 +563,8 @@ def main(argv=None):
                   opisy_szablon=a.opisy_szablon, opisy_zestawienie=a.opisy_zestawienie,
                   opisy_wt=a.opisy_wt, opisy_obliczenia=a.opisy_obliczenia,
                   ppw_szablon=a.ppw_szablon, ppw_zestawienie=a.ppw_zestawienie,
-                  ppw_zestawienie_stacji=a.ppw_zestawienie_stacji, ppw_wt=a.ppw_wt, log=print)
+                  ppw_zestawienie_stacji=a.ppw_zestawienie_stacji, ppw_wt=a.ppw_wt,
+                  ppw_renumer_dxf=a.ppw_renumeruj, log=print)
     wynik = uruchom(opcje)
 
     print("\n" + "=" * 60)
