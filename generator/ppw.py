@@ -142,13 +142,50 @@ def _norm_nr(s):
 # ---------------------------------------------------------------------------
 # Podmiana znaczników *...* w dokumencie (zwykły tekst, znacznik rozbity na runy)
 # ---------------------------------------------------------------------------
+# rdzenie znaczników (między gwiazdkami) -> klucz w mapowaniu
+_RDZEN = {"mmmm": "*mmmm*", "xxxxx": "*xxxxx*", "wwww": "*wwww*"}
+# które wartości mają być pogrubione (jak numer WT w szablonie) - stacje i WT
+_POGRUBIONE = {"*xxxxx*", "*wwww*"}
+
+
 def _podmien_w_akapicie(par, mapowanie):
-    """Podmienia znaczniki *mmmm*/*xxxxx*/*wwww* w akapicie, nawet gdy są rozbite na kilka runów.
-    Zachowuje formatowanie: całość tekstu akapitu wrzucamy do pierwszego runu, resztę czyścimy."""
+    """Podmienia znaczniki *mmmm*/*xxxxx*/*wwww* w akapicie, zachowując formatowanie RUNU,
+    w którym leżał znacznik (znaczniki są w układzie '*' | 'rdzeń' | '*').
+
+    Dla *xxxxx*/*wwww* wymusza pogrubienie wartości - żeby numery stacji miały ten sam styl
+    co numer WT w tabelce. Gdy znacznik rozbity nietypowo - fallback: całość do pierwszego runu."""
     pelny = "".join(r.text for r in par.runs)
     if not any(z in pelny for z in mapowanie):
         return 0
     n = sum(pelny.count(z) for z in mapowanie)
+
+    # ścieżka główna: run, którego tekst == rdzeń znacznika (mmmm/xxxxx/wwww) - podmień w nim,
+    # a sąsiednie runy '*' wyczyść; zachowuje format wartości (Arial/bold z szablonu)
+    trafiono = False
+    for r in par.runs:
+        rdzen = r.text.strip()
+        if rdzen in _RDZEN and _RDZEN[rdzen] in mapowanie:
+            klucz = _RDZEN[rdzen]
+            r.text = mapowanie[klucz]
+            if klucz in _POGRUBIONE:
+                r.font.bold = True
+            trafiono = True
+    if trafiono:
+        # wyczyść osierocone gwiazdki '*' wokół podmienionych wartości
+        for r in par.runs:
+            if r.text.strip() == "*":
+                r.text = ""
+        # jeśli zostały jeszcze całe znaczniki (nietypowy podział) - dokończ w pierwszym runie
+        if any(z in "".join(x.text for x in par.runs) for z in mapowanie):
+            pelny2 = "".join(x.text for x in par.runs)
+            for z, w in mapowanie.items():
+                pelny2 = pelny2.replace(z, w)
+            par.runs[0].text = pelny2
+            for r in par.runs[1:]:
+                r.text = ""
+        return n
+
+    # fallback: znacznik rozbity inaczej niż '*'|rdzeń|'*' - scal do pierwszego runu
     for z, w in mapowanie.items():
         pelny = pelny.replace(z, w)
     if par.runs:
