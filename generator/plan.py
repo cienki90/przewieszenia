@@ -25,6 +25,15 @@ def _warstwa_trasy(nazwa: str) -> bool:
     return n == w or n.startswith(w)
 
 
+def _warstwa_numerow(nazwa: str) -> bool:
+    """Czy warstwa zawiera numery słupów - bez względu na wielkość liter:
+    stary format „_numery” (jedna warstwa) ORAZ nowy z modułu „Numeracja słupów”:
+    „_numery_<stacja>_<obwod>” (np. „_numery_05-0433_1”), czyli warstwy zaczynające się od „_numery”."""
+    n = (nazwa or "").strip().lower()
+    w = WARSTWA_NUMEROW.strip().lower()
+    return n == w or n.startswith(w + "_")
+
+
 @dataclass
 class Slup:
     idx: int
@@ -129,7 +138,7 @@ class Plan:
                 uniq.append((x, y, b))
         self.slupy = [Slup(i, x, y, b) for i, (x, y, b) in enumerate(uniq)]
         numery = [(get(d, 1).strip(), getf(d, 10), getf(d, 20)) for t, d in E
-                  if t == "TEXT" and get(d, 8) == WARSTWA_NUMEROW and (get(d, 1) or "").strip()]
+                  if t == "TEXT" and _warstwa_numerow(get(d, 8)) and (get(d, 1) or "").strip()]
         # znaczniki przewieszeń: okręgi oraz kreski (LINE / LWPOLYLINE) przecinające przęsło
         self.znaczniki = []
         for t, d in E:
