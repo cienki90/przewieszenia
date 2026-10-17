@@ -117,12 +117,12 @@ class Aplikacja:
 
         self._zakladka_wszystko()
         self._zakladka_numeracja()
-        self._zakladka_przewieszenia()
         self._zakladka_zestawienie()
         self._zakladka_obliczenia()
+        self._zakladka_pzt()
         self._zakladka_orientacje()
         self._zakladka_opisy()
-        self._zakladka_pzt()
+        self._zakladka_przewieszenia()
 
         self._dol(root)
 
