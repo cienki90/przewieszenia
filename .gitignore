@@ -1,0 +1,28 @@
+__pycache__/
+*.pyc
+
+# katalogi i pliki wynikowe / testowe
+_test/
+_test_orient/
+_out/
+_out2/
+build/
+dist/
+*.spec
+rysunki stałe/
+_gui.png
+.cache/
+generator/.cache/
+
+# pliki tworzone przy uruchomieniu na pliku przykładowym
+przewieszenia plan wynik.dxf
+*_opisy.csv
+*_adresy.json
+przewieszenia plan - przewieszenia.dxf
+przewieszenia plan - kontrola.dxf
+zestawienie przewieszenia plan.xlsx
+Obliczenia - zestawienie przewieszenia plan.xlsx
+pw - kontrola.dxf
+*- PZT.dxf
+_fix*.dxf
+opisy/
