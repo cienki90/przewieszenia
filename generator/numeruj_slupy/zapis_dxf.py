@@ -49,10 +49,39 @@ def _nazwa_warstwy(prefix, stacja, obwod):
     return '%s_%s_%s' % (prefix, st, obwod)
 
 
+def _kierunek_tele(model, p, tol=3.0):
+    """Jednostkowy kierunek NAJBLIŻSZEGO odcinka polilinii !tele do punktu p (albo None).
+
+    Numer ma leżeć RÓWNOLEGLE do linii !tele, przy której stoi słup - dlatego kąt bierzemy
+    wprost z odcinka trasy, a NIE z grafu połączeń (ten zawiera też wymiary biegnące w poprzek,
+    co ustawiało część numerów pod złym kątem, nawet prostopadle do linii)."""
+    best = None
+    for pts in getattr(model.rys, "sieci", []):
+        for a, b in zip(pts, pts[1:]):
+            dx, dy = b[0] - a[0], b[1] - a[1]
+            L2 = dx * dx + dy * dy
+            if L2 == 0:
+                continue
+            t = max(0.0, min(1.0, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / L2))
+            q = (a[0] + t * dx, a[1] + t * dy)
+            d = math.hypot(p[0] - q[0], p[1] - q[1])
+            if best is None or d < best[0]:
+                best = (d, (dx, dy), math.hypot(dx, dy))
+    if best is None or best[0] > tol:
+        return None
+    _d, (vx, vy), ln = best
+    return (vx / ln, vy / ln) if ln else None
+
+
 def _kierunek_przesla(model, i):
     """Jednostkowy wektor kierunku linii !tele przy słupie i (kierunek przęsła).
-    Bierzemy przęsło do najbliższego sąsiada w grafie - lokalny kierunek trasy."""
+
+    Priorytet: kierunek najbliższego odcinka !tele (numer równolegle do trasy). Dopiero
+    gdy słup nie leży na !tele - fallback na kierunek do najbliższego sąsiada w grafie."""
     p = model.slupy[i]['p']
+    kt = _kierunek_tele(model, p)
+    if kt is not None:
+        return kt
     sas = list(model.polaczenia[i])
     if not sas:
         return (1.0, 0.0)
