@@ -18,6 +18,7 @@ BAZA = "przewieszenia baza.dxf"
 ARKUSZE = "arkusze.dxf"
 SZABLON_ORIENTACJI = "szablon.dxf"       # szablon rysunków stałych (orientacje arkuszy)
 SZABLON_OPISU = "szablon_opisu.docx"     # szablon opisu technicznego (.docx) - moduł Opisy
+SZABLON_PPW = "PPW miński szablon.docx"  # szablon zbiorczego opisu PPW (.docx) - moduł PPW
 WZOR_TABELI_OBLICZEN = os.path.join("wzorce", "wzor_tabeli_obliczen.docx")  # wzorzec tabeli nośności
 
 
@@ -65,6 +66,10 @@ def szablon_orientacji_dxf():
 
 def szablon_opisu_docx():
     return sciezka_zasobu(SZABLON_OPISU)
+
+
+def szablon_ppw_docx():
+    return sciezka_zasobu(SZABLON_PPW)
 
 
 def wzor_tabeli_obliczen_docx():

@@ -80,9 +80,17 @@ Wymaga **Pythona 3.9+** ze standardowym `tkinter`; biblioteka Pillow jest potrze
 podkładu mapowego w rysunkach stałych.
 
 **Okno ma osobną zakładkę dla każdego modułu** — „Wszystko (łańcuch)”, „Numeracja słupów”,
-„Przewieszenia”, „Zestawienie”, „Obliczenia”, „Rysunki stałe”, „Arkusze PZT”, „Opisy techniczne”
-— każda z własnym wyborem pliku i opcjami. Na dole okna wspólny katalog zapisu, pasek postępu
-i dziennik przebiegu.
+„Przewieszenia”, „Zestawienie”, „Obliczenia”, „Rysunki stałe”, „Arkusze PZT”, „Opisy techniczne”,
+„PPW” — każda z własnym wyborem pliku i opcjami. Na dole okna wspólny katalog zapisu, pasek
+postępu i dziennik przebiegu.
+
+> **PPW** (zbiorczy opis techniczny): tworzy JEDEN dokument `.docx` dla całego projektu
+> (wszystkie stacje trafo naraz) z szablonu Word (domyślnie „PPW miński szablon.docx”).
+> Znaczniki tekstowe w szablonie — `*mmmm*` (miejscowości), `*xxxxx*` (numery stacji),
+> `*wwww*` (numer WT) — są podstawiane danymi, a tabela „Zestawienie zbiorcze słupów”
+> (Nr stacji / Ilość słupów / Długość / Numer arkusza + SUMA) wypełniana z pliku modułu
+> „Zestawienie”. Miejscowości pochodzą z „zestawienie_stacji.xlsx” (Rysunki stałe), numer WT
+> wpisuje się ręcznie, numery arkuszy nadawane są kolejno. Wymaga `python-docx` i `openpyxl`.
 
 > **Numeracja słupów** (z repo gałęzi `numeracja-slupow`): automatycznie numeruje słupy nN.
 > W planie zaznacz ręcznie numery „1” i „2” dwóch pierwszych słupów każdego obwodu (warstwa
@@ -213,6 +221,7 @@ generator/
   orientacje.py         – rysunki stałe: plan orientacyjny per stacja + podkład mapowy (z repo Orientacje-arkusze)
   pzt.py                – arkusze PZT A3 1:1000 per stacja (z repo ARKUSZE_PZT; rozkład jak generator_wt/arkusze.py)
   opisy.py              – opisy techniczne .docx z szablonu Word + zestawienia (z repo generator_opisow)
+  ppw.py                – PPW: zbiorczy opis techniczny .docx dla całego projektu (znaczniki + tabela zbiorcza)
   obliczenia2word.py    – (opcjonalnie) tabela nośności słupów dołączana do opisu .docx
   zasoby.py             – odnajdywanie plików bazy/arkuszy/szablonu (kod źródłowy lub .exe)
 ```

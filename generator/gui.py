@@ -46,6 +46,10 @@ OPIS_KROKOW = {
     "opisy":         ("Opisy techniczne (.docx)",
                       "Dla każdej stacji osobny opis techniczny .docx z szablonu Word — na podstawie "
                       "zestawienia (bezpośrednio z „Rysunków stałych”) + ręcznie podany numer WT."),
+    "ppw":           ("PPW (zbiorczy opis .docx)",
+                      "JEDEN zbiorczy opis techniczny .docx dla całego projektu (wszystkie stacje) — "
+                      "z szablonu Word, z tabelą „Zestawienie zbiorcze słupów” z modułu „Zestawienie” "
+                      "i miejscowościami z „Rysunków stałych”. Numer WT wpisywany ręcznie."),
 }
 
 DXF_TYPY = [("Rysunek DXF", "*.dxf"), ("Wszystkie pliki", "*.*")]
@@ -77,7 +81,7 @@ class Aplikacja:
         self.all_plan = tk.StringVar()
         # numeracja/orientacje/PZT/opisy domyślnie wyłączone - wymagają osobnego przygotowania
         # planu / szablonu / wzorca / WT / biblioteki ezdxf
-        self.all_kroki = {k: tk.BooleanVar(value=(k not in ("numeracja", "orientacje", "pzt", "opisy")))
+        self.all_kroki = {k: tk.BooleanVar(value=(k not in ("numeracja", "orientacje", "pzt", "opisy", "ppw")))
                           for k in pipeline.KROKI}
 
         # per-moduł: plik wejściowy
@@ -103,6 +107,11 @@ class Aplikacja:
         self.opisy_zestawienie = tk.StringVar()            # xlsx (puste = z Rysunków stałych)
         self.opisy_obliczenia = tk.StringVar()             # xlsx obliczeń (puste = bez tabeli nośności)
         self.opisy_wt = tk.StringVar()                     # numer WT (ręcznie)
+        # opcje PPW (zbiorczy opis .docx)
+        self.ppw_szablon = tk.StringVar()                  # szablon .docx (puste = dołączony)
+        self.ppw_zestawienie = tk.StringVar()              # xlsx z modułu „zestawienie”
+        self.ppw_zestawienie_stacji = tk.StringVar()       # xlsx z Rysunków stałych (miejscowości)
+        self.ppw_wt = tk.StringVar()                       # numer WT (ręcznie)
 
         self._przyciski = []                               # przyciski "Generuj" do blokowania
         self._buduj()
@@ -123,6 +132,7 @@ class Aplikacja:
         self._zakladka_pzt()
         self._zakladka_orientacje()
         self._zakladka_opisy()
+        self._zakladka_ppw()
         self._zakladka_przewieszenia()
 
         self._dol(root)
@@ -305,6 +315,48 @@ class Aplikacja:
                 return
         self._uruchom(zest, ("opisy",))
 
+    def _zakladka_ppw(self):
+        f = ttk.Frame(self.nb)
+        self.nb.add(f, text="PPW")
+        self._naglowek(f, "JEDEN zbiorczy opis techniczny .docx dla CAŁEGO projektu (wszystkie stacje w jednym "
+                          "pliku), z szablonu Word. Tabela „Zestawienie zbiorcze słupów” powstaje z pliku modułu "
+                          "„Zestawienie”, miejscowości z „Rysunków stałych”. Numer WT wpisz ręcznie.")
+        self._pole_pliku(f, "Zestawienie (.xlsx):", self.ppw_zestawienie,
+                         "Wybierz zestawienie z modułu „Zestawienie”", typy=XLSX_TYPY)
+        ttk.Label(f, text="(plik z modułu „Zestawienie”, arkusz „zestawienie”: stacja/ilość/długość)",
+                  foreground="#777").pack(anchor="w", padx=10)
+        self._pole_pliku(f, "Miejscowości (.xlsx):", self.ppw_zestawienie_stacji,
+                         "Wybierz „zestawienie_stacji.xlsx” z Rysunków stałych", typy=XLSX_TYPY)
+        ttk.Label(f, text="(„zestawienie_stacji.xlsx” z Rysunków stałych — źródło nazw miejscowości)",
+                  foreground="#777").pack(anchor="w", padx=10)
+        self._pole_pliku(f, "Szablon PPW (.docx):", self.ppw_szablon, "Wybierz szablon .docx", typy=DOCX_TYPY)
+        ttk.Label(f, text="(puste = dołączony „PPW miński szablon.docx”; gdy wskażesz własny, PPW.docx "
+                          "zapisze się w JEGO folderze)",
+                  foreground="#777", wraplength=760, justify="left").pack(anchor="w", padx=10)
+        box = ttk.LabelFrame(f, text="Dane wspólne")
+        box.pack(fill="x", padx=10, pady=6)
+        r = ttk.Frame(box)
+        r.pack(fill="x", padx=8, pady=8)
+        ttk.Label(r, text="Numer warunków (WT):").pack(side="left")
+        ttk.Entry(r, textvariable=self.ppw_wt, width=28).pack(side="left", padx=6)
+        self._przycisk_generuj(f, "Utwórz PPW .docx", self._start_ppw)
+
+    def _start_ppw(self):
+        zest = self.ppw_zestawienie.get().strip()
+        if not zest or not os.path.isfile(zest):
+            messagebox.showwarning(TYTUL, "Wskaż plik zestawienia (.xlsx) z modułu „Zestawienie”.",
+                                   parent=self.root)
+            return
+        zs = self.ppw_zestawienie_stacji.get().strip()
+        if zs and not os.path.isfile(zs):
+            messagebox.showwarning(TYTUL, "Wskazany plik miejscowości (.xlsx) nie istnieje.", parent=self.root)
+            return
+        if not self.ppw_wt.get().strip():
+            if not messagebox.askyesno(TYTUL, "Nie podano numeru warunków (WT). PPW powstanie z pustym WT. "
+                                              "Kontynuować?", parent=self.root):
+                return
+        self._uruchom(zest, ("ppw",))
+
     # ---------------------------------------------------------------- dół okna
     def _dol(self, root):
         dol = ttk.Frame(root)
@@ -444,6 +496,10 @@ class Aplikacja:
             opisy_zestawienie=(self.opisy_zestawienie.get().strip() or None),
             opisy_obliczenia=(self.opisy_obliczenia.get().strip() or None),
             opisy_wt=self.opisy_wt.get().strip(),
+            ppw_szablon=(self.ppw_szablon.get().strip() or None),
+            ppw_zestawienie=(self.ppw_zestawienie.get().strip() or None),
+            ppw_zestawienie_stacji=(self.ppw_zestawienie_stacji.get().strip() or None),
+            ppw_wt=self.ppw_wt.get().strip(),
             log=lambda t="": self._kolejka.put(("log", t)),
         )
         threading.Thread(target=self._praca, args=(opcje,), daemon=True).start()

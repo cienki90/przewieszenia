@@ -32,6 +32,8 @@ jobs:
           test -s "_test_orient/rysunki stałe/zestawienie_stacji.xlsx"
           python generator_cli.py "pw.dxf" -o _test_num --tylko numeracja
           test -s "_test_num/pw - ponumerowane.dxf"
+          python generator_cli.py "przewieszenia plan.dxf" -o _test_ppw --tylko ppw --bez-podkladu --adresy brak --ppw-wt "WT/1"
+          test -s "_test_ppw/PPW.docx"
 
       - name: Budowa exe
         run: >
@@ -41,6 +43,7 @@ jobs:
           --add-data "szablon.dxf;."
           --add-data "orientacja.png;."
           --add-data "szablon_opisu.docx;."
+          --add-data "PPW miński szablon.docx;."
           --add-data "wzorce;wzorce"
           --hidden-import PIL._tkinter_finder
           --hidden-import docx

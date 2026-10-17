@@ -33,11 +33,12 @@ from . import orientacje as mod_orientacje
 from . import przewieszenia as mod_przewieszenia
 from . import pzt as mod_pzt
 from . import zestawienie as mod_zestawienie
+from . import ppw as mod_ppw
 from .numeruj_slupy import przetworz as _numeruj_slupy
 
 # nazwy kroków (kolejność ma znaczenie) - „numeracja” jako pierwszy (projektant najpierw
 # numeruje słupy w planie, potem robi resztę; krok tworzy osobny plik „… - ponumerowane.dxf”)
-KROKI = ("numeracja", "przewieszenia", "zestawienie", "obliczenia", "orientacje", "pzt", "opisy")
+KROKI = ("numeracja", "przewieszenia", "zestawienie", "obliczenia", "orientacje", "pzt", "opisy", "ppw")
 
 
 # ---------------------------------------------------------------------------
@@ -69,6 +70,11 @@ class Opcje:
     opisy_zestawienie: str | None = None         # xlsx z danymi (None = zestawienie z kroku orientacje)
     opisy_wt: str = ""                           # numer warunków (WT) - wspólny, wpisywany ręcznie
     opisy_obliczenia: str | None = None          # opcjonalny xlsx obliczeń (tabela nośności)
+    # PPW - zbiorczy opis techniczny (.docx) dla całego projektu (wszystkie stacje w 1 pliku)
+    ppw_szablon: str | None = None               # szablon .docx (None = dołączony „PPW miński szablon.docx”)
+    ppw_zestawienie: str | None = None           # xlsx z modułu „zestawienie” (tabela + numery stacji)
+    ppw_zestawienie_stacji: str | None = None    # xlsx z „Rysunków stałych” (miejscowości)
+    ppw_wt: str = ""                             # numer warunków (WT) - ręcznie
     log: object = print                          # funkcja logowania (podmieniana w GUI)
 
 
@@ -113,6 +119,7 @@ def domyslne_wyjscia(plan: str, katalog: str | None = None) -> dict:
         "orientacje": os.path.join(kat, "rysunki stałe"),   # podfolder z planami stacji + zestawieniem
         "pzt": os.path.join(kat, f"{baza} - PZT.dxf"),       # kopia planu z arkuszami PZT
         "opisy": os.path.join(kat, "opisy"),                 # podfolder z opisami .docx
+        "ppw": os.path.join(kat, "PPW.docx"),                # zbiorczy opis techniczny .docx
     }
 
 
@@ -133,9 +140,13 @@ def uruchom(opcje: Opcje) -> Wynik:
     # wyjątek: same obliczenia z własnym plikiem zestawienia nie wymagają planu DXF -
     # nazwy wyników i katalog bierzemy wtedy z pliku zestawienia
     tylko_obliczenia_z_zest = (set(kroki) <= {"obliczenia"} and bool(opcje.obliczenia_zestawienie))
+    # PPW z własnym zestawieniem też nie wymaga planu DXF (bazę/katalog bierzemy z zestawienia)
+    tylko_ppw_z_zest = (set(kroki) <= {"ppw"} and bool(opcje.ppw_zestawienie))
     if not os.path.isfile(plan):
         if tylko_obliczenia_z_zest and os.path.isfile(opcje.obliczenia_zestawienie):
             plan = opcje.obliczenia_zestawienie
+        elif tylko_ppw_z_zest and os.path.isfile(opcje.ppw_zestawienie):
+            plan = opcje.ppw_zestawienie
         else:
             raise FileNotFoundError(f"Nie znaleziono pliku planu DXF: {plan}")
     katalog = opcje.katalog or os.path.dirname(os.path.abspath(plan))
@@ -167,6 +178,15 @@ def uruchom(opcje: Opcje) -> Wynik:
     if ("opisy" in kroki and "orientacje" not in kroki
             and not opcje.opisy_zestawienie):
         kroki.insert(kroki.index("opisy"), "orientacje")
+
+    # PPW (zbiorczy opis) korzysta z zestawienia (tabela) i z „orientacje” (miejscowości) -
+    # dołóż brakujące kroki, gdy użytkownik nie wskazał własnych plików
+    ppw_zest_budowane = None
+    if "ppw" in kroki:
+        if not opcje.ppw_zestawienie and "zestawienie" not in kroki:
+            kroki.insert(kroki.index("ppw"), "zestawienie")
+        if not opcje.ppw_zestawienie_stacji and "orientacje" not in kroki:
+            kroki.insert(kroki.index("ppw"), "orientacje")
 
     wynik = Wynik()
 
@@ -202,6 +222,8 @@ def uruchom(opcje: Opcje) -> Wynik:
                 r = _krok_pzt(plan, wyj["pzt"], opcje)
             elif krok == "opisy":
                 r = _krok_opisy(opcje, wyj["opisy"], orient_zest)
+            elif krok == "ppw":
+                r = _krok_ppw(opcje, wyj["ppw"], zestawienie_plik, orient_zest)
             else:
                 continue
             if krok == "orientacje" and r.ok and r.wyjscie:
@@ -399,6 +421,40 @@ def _krok_opisy(opcje: Opcje, wyjscie_dir: str, orient_zest) -> WynikKroku:
                       blad=None if ok else "Nie utworzono żadnego opisu .docx.")
 
 
+def _krok_ppw(opcje: Opcje, wyjscie: str, zestawienie_plik, orient_zest) -> WynikKroku:
+    """PPW: zbiorczy opis techniczny .docx dla całego projektu (wszystkie stacje w jednym pliku).
+
+    Zestawienie (tabela + numery stacji): wskazane przez użytkownika albo z kroku „zestawienie”.
+    Miejscowości: z „zestawienie_stacji.xlsx” (wskazane albo z kroku „orientacje”). WT - ręcznie."""
+    from . import zasoby
+    szablon = opcje.ppw_szablon or zasoby.szablon_ppw_docx()
+    zestawienie = opcje.ppw_zestawienie or zestawienie_plik
+    zest_stacji = opcje.ppw_zestawienie_stacji or orient_zest
+    # gdy szablon wskazany przez użytkownika -> wynik w jego folderze (jak w module Opisy)
+    if opcje.ppw_szablon and os.path.isfile(opcje.ppw_szablon):
+        wyjscie = os.path.join(os.path.dirname(os.path.abspath(opcje.ppw_szablon)), "PPW.docx")
+    if not szablon:
+        return WynikKroku("ppw", ok=False, blad="Brak szablonu PPW (.docx) - wskaż plik szablonu.")
+    if not zestawienie:
+        return WynikKroku("ppw", ok=False,
+                          blad="Brak zestawienia - wskaż plik .xlsx z modułu „Zestawienie” "
+                               "albo włącz krok „zestawienie”.")
+
+    def uruchom():
+        return mod_ppw.generuj(szablon, zestawienie, zestawienie_stacji=zest_stacji,
+                               wt=opcje.ppw_wt, wyjscie=wyjscie, log=print)
+    try:
+        (plik, raport) = _przechwyc(uruchom)
+    except ImportError:
+        return WynikKroku("ppw", ok=False,
+                          raport="Moduł PPW wymaga bibliotek python-docx i openpyxl "
+                                 "(zainstaluj: pip install python-docx openpyxl).",
+                          blad="Brak bibliotek python-docx / openpyxl.")
+    ok = bool(plik) and os.path.exists(plik)
+    return WynikKroku("ppw", ok=ok, wyjscie=plik if ok else None, raport=raport,
+                      blad=None if ok else "Nie utworzono pliku PPW .docx.")
+
+
 # ---------------------------------------------------------------------------
 def main(argv=None):
     for strumien in (sys.stdout, sys.stderr):  # polskie znaki w konsoli Windows
@@ -448,6 +504,13 @@ def main(argv=None):
                     help="numer warunków technicznych (WT) do opisów - jeden wspólny, wpisywany ręcznie")
     ap.add_argument("--opisy-obliczenia", default=None,
                     help="opcjonalny .xlsx z obliczeniami nośności - dołącza tabelę do opisów")
+    ap.add_argument("--ppw-szablon", default=None,
+                    help="szablon .docx dla PPW (zbiorczy opis; domyślnie dołączony „PPW miński szablon.docx”)")
+    ap.add_argument("--ppw-zestawienie", default=None,
+                    help="plik .xls/.xlsx z modułu „zestawienie” dla PPW (domyślnie z kroku „zestawienie”)")
+    ap.add_argument("--ppw-zestawienie-stacji", default=None,
+                    help="„zestawienie_stacji.xlsx” z Rysunków stałych - miejscowości do PPW")
+    ap.add_argument("--ppw-wt", default="", help="numer warunków technicznych (WT) do PPW - ręcznie")
     a = ap.parse_args(argv)
 
     wybrane = tuple(k.strip().lower() for k in a.tylko.split(",") if k.strip())
@@ -462,7 +525,9 @@ def main(argv=None):
                   orient_szablon=a.szablon_orientacji, orient_plan_slupow=a.plan_slupow,
                   pzt_wzorzec=a.pzt_wzorzec, pzt_zaklad=a.pzt_zaklad, wt_plik=a.wt,
                   opisy_szablon=a.opisy_szablon, opisy_zestawienie=a.opisy_zestawienie,
-                  opisy_wt=a.opisy_wt, opisy_obliczenia=a.opisy_obliczenia, log=print)
+                  opisy_wt=a.opisy_wt, opisy_obliczenia=a.opisy_obliczenia,
+                  ppw_szablon=a.ppw_szablon, ppw_zestawienie=a.ppw_zestawienie,
+                  ppw_zestawienie_stacji=a.ppw_zestawienie_stacji, ppw_wt=a.ppw_wt, log=print)
     wynik = uruchom(opcje)
 
     print("\n" + "=" * 60)
