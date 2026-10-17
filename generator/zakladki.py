@@ -80,7 +80,7 @@ def przygotuj_strony(zestawienie: str, arkusz: str = "Arkusz1", wt: str = ""):
 # ---------------------------------------------------------------------------
 _COM10_W_MM = 104.7
 _COM10_H_MM = 241.3
-_MARGINES_GORA_MM = 10.0          # tekst zaczyna się ~1 cm od górnej krawędzi
+_MARGINES_GORA_MM = 15.0          # tekst zaczyna się 1,5 cm od górnej krawędzi
 _ROZMIAR_PT = 12                  # pogrubiona czcionka 12 pt
 
 
