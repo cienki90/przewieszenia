@@ -180,6 +180,8 @@ def main(argv=None):
                     help="nie twórz kopii planu z numerami przewieszeń")
     ap.add_argument("--bez-kontroli-stacji", action="store_true",
                     help="nie sprawdzaj po numeracji stacji trafo na podstawie zestawienia")
+    ap.add_argument("--bez-ramki", action="store_true",
+                    help="nie rysuj ramki okalającej rzutnię na arkuszach wynikowych")
     a = ap.parse_args(argv)
 
     wynik = a.wynik or os.path.splitext(a.plan)[0] + " wynik.dxf"
@@ -219,6 +221,7 @@ def main(argv=None):
 
     szablon = a.arkusze if os.path.exists(a.arkusze) else a.baza
     W = Wyjscie(szablon)
+    W.ramka = not a.bez_ramki        # ramka okalająca rzutnię na każdym arkuszu (domyślnie tak)
     W.warstwa(rysunek_mod.WARSTWA_KONTROLI, rysunek_mod.KOLOR_KONTROLI)  # warstwa numerów kontroli
     if W.arkusze:
         a0 = W.arkusze[0]

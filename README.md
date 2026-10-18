@@ -211,6 +211,10 @@ Z `przewieszenia baza.dxf` pobierane są wysokości zawieszenia i zwisy (dla roz
 słupów) oraz style DXF. Wynik powstaje w układzie arkuszy z `arkusze.dxf` (po dwa poziome rysunki
 na arkusz albo jeden pionowy; puste arkusze są usuwane).
 
+Na **każdym arkuszu wynikowym** rysowana jest **ramka okalająca rzutnię** — zamknięta polilinia
+w przestrzeni papieru, dopasowana do prostokąta rzutni (warstwa `0`, grubość linii 0,30 mm).
+Wyłączenie: `--bez-ramki`.
+
 Środek znacznika (PUWG 2000) jest przeliczany na WGS84 i program pobiera najbliższy adres z
 GUGiK UUG, a gdy się nie uda — z OpenStreetMap. Adresy trafiają do pamięci podręcznej
 `<plan>_adresy.json`. Bez internetu program działa normalnie (opcja „bez internetu” / `--adresy brak`).

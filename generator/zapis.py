@@ -56,6 +56,9 @@ class Wyjscie:
         self.warstwy: dict = {}      # nazwa -> kolor (warstwy do dopisania do tabeli LAYER)
         self.ext = [math.inf, math.inf, -math.inf, -math.inf]
         self._nr_wym = 0
+        self.ramka = True           # rysuj ramkę okalającą rzutnię na każdym arkuszu
+        self.ramka_warstwa = "0"    # warstwa ramki (jak w rysunkach rysowanych ręcznie)
+        self.ramka_lw = 30          # grubość linii ramki [0.01 mm] (370=30 -> 0,30 mm)
 
     def warstwa(self, nazwa: str, kolor: int = 7):
         """Rejestruje warstwę do dopisania do tabeli LAYER (gdy nie ma jej w szablonie)."""
@@ -175,7 +178,11 @@ class Wyjscie:
             vp = max(rzutnie[br], key=lambda d: getf(d, 40) * getf(d, 41))
             H = getf(vp, 45)
             W = H * getf(vp, 40) / getf(vp, 41)
-            L.update(br=br, cx=getf(vp, 12), cy=getf(vp, 22), W=W, H=H)
+            # prostokąt rzutni W PRZESTRZENI PAPIERU (środek 10/20, rozmiar 40/41) -
+            # posłuży do narysowania ramki okalającej rzutnię na każdym arkuszu
+            L.update(br=br, cx=getf(vp, 12), cy=getf(vp, 22), W=W, H=H,
+                     pcx=getf(vp, 10), pcy=getf(vp, 20),
+                     pW=getf(vp, 40), pH=getf(vp, 41))
             self.arkusze.append(L)
         self.arkusze.sort(key=lambda a: a["kol"])
         self.uzyte = 0
@@ -253,12 +260,36 @@ class Wyjscie:
         self.klony.append(dict(br=br, lay_h=lay_h, nazwa=nazwa, encje=nowe, lay=lay, wlasc=wz["wlasc"],
                                nr=len(self.klony)))
         self.arkusze.append(dict(lay_h=lay_h, nazwa=nazwa, kol=kol, lay=lay, wlasc=wz["wlasc"], br=br,
-                                 cx=wz["cx"] + dx, cy=wz["cy"], W=wz["W"], H=wz["H"], klon=True))
+                                 cx=wz["cx"] + dx, cy=wz["cy"], W=wz["W"], H=wz["H"], klon=True,
+                                 pcx=wz.get("pcx"), pcy=wz.get("pcy"),
+                                 pW=wz.get("pW"), pH=wz.get("pH")))
 
     # ------------------------------------------------------------------
     def _rozszerz(self, x, y):
         e = self.ext
         e[0], e[1], e[2], e[3] = min(e[0], x), min(e[1], y), max(e[2], x), max(e[3], y)
+
+    def _ramka_tagi(self, owner, pcx, pcy, pW, pH, papier=True):
+        """Zamknięta polilinia (LWPOLYLINE) okalająca rzutnię - w PRZESTRZENI PAPIERU arkusza.
+
+        Prostokąt opisuje rzutnię: środek (pcx,pcy), rozmiar na papierze (pW×pH). Rysowana
+        na tej samej warstwie i z tą samą grubością linii, co ramka rysowana ręcznie w CAD.
+        papier=True dopisuje znacznik przestrzeni papieru (67=1); dla bloków arkuszy-klonów
+        znacznik dodaje osobny krok składania BLOCKS, więc wtedy papier=False."""
+        x0, y0 = pcx - pW / 2.0, pcy - pH / 2.0
+        x1, y1 = pcx + pW / 2.0, pcy + pH / 2.0
+        tags = [(0, "LWPOLYLINE"), (5, self._h()), (330, owner), (100, "AcDbEntity")]
+        if papier:
+            tags.append((67, "     1"))
+        tags.append((8, self.ramka_warstwa))
+        if self.ramka_lw is not None:
+            tags.append((370, f"{self.ramka_lw:>6}"))
+        tags += [(100, "AcDbPolyline"), (90, "        4"), (70, "     1"), (43, "0.0"),
+                 (10, fmt(x0)), (20, fmt(y1)),
+                 (10, fmt(x1)), (20, fmt(y1)),
+                 (10, fmt(x1)), (20, fmt(y0)),
+                 (10, fmt(x0)), (20, fmt(y0))]
+        return tags
 
     @staticmethod
     def _wspolne(h, owner, layer="0", color=None, lt=None, lts=None, lw=None):
@@ -385,6 +416,29 @@ class Wyjscie:
             self._wymiar(w["u"], w["v"], P, rot)
 
     # ------------------------------------------------------------------
+    def _dodaj_ramki(self, klony, aktywny):
+        """Dodaje ramkę okalającą rzutnię do każdego UŻYTEGO arkusza, w jego przestrzeni papieru.
+
+        Arkusz może być: (a) aktywny - encje w sekcji ENTITIES (self.encje_papier),
+        (b) klon - encje w jego liście k['encje'] (BLOCKS; znacznik 67 dołoży składanie),
+        (c) inny arkusz szablonu - encje w BLOCKS (self.bloki_szablonu) pod jego block_record."""
+        br_klonow = {k["br"]: k for k in klony}
+        self._ramki_blokow = {}                        # br arkusza szablonu -> [encje ramki do BLOCKS]
+        for a in self.arkusze[:self.uzyte]:
+            br = a.get("br")
+            if not br or a.get("pcx") is None or a.get("pW") is None:
+                continue  # arkusz bez rzutni/wymiarów papieru
+            if br in br_klonow:                        # (b) klon - bez 67 (dołoży je składanie BLOCKS)
+                tagi = self._ramka_tagi(br, a["pcx"], a["pcy"], a["pW"], a["pH"], papier=False)
+                br_klonow[br]["encje"].append((tagi[0][1], tagi[1:]))
+            elif br in aktywny:                        # (a) arkusz aktywny - sekcja ENTITIES
+                tagi = self._ramka_tagi(br, a["pcx"], a["pcy"], a["pW"], a["pH"], papier=True)
+                self.encje_papier.append((tagi[0][1], tagi[1:]))
+            else:                                      # (c) inny arkusz szablonu - BLOCKS (wg block_record)
+                tagi = self._ramka_tagi(br, a["pcx"], a["pcy"], a["pW"], a["pH"], papier=True)
+                self._ramki_blokow.setdefault(br, []).append((tagi[0][1], tagi[1:]))
+
+    # ------------------------------------------------------------------
     def zapisz(self, path: str, usun_puste_arkusze: bool = True):
         S = self.S
         aktywny = {get(d, 330) for t, d in self.encje_papier}
@@ -394,6 +448,9 @@ class Wyjscie:
                     continue
                 self.usuniete |= {a["br"], a["lay_h"]}
         klony = [k for k in self.klony if k["nr"] < max(0, self.uzyte - (len(self.arkusze) - len(self.klony)))]
+        # --- RAMKA okalająca rzutnię na każdym UŻYTYM arkuszu (w przestrzeni papieru) ---
+        if self.ramka:
+            self._dodaj_ramki(klony, aktywny)
         # nazwy bloków dla nowych arkuszy
         nr_ps = 0
         for t, d in self.tabele:
@@ -432,8 +489,17 @@ class Wyjscie:
                                               (2, nazwa), (70, "     0"), (62, f"{kolor:>6}"),
                                               (6, "Continuous"), (370, "    25"), (390, "F")]))
             out_tab.append((t, d))
-        # BLOCKS
-        blk = [(t, d) for t, d in self.bloki_szablonu if _owner(d) not in self.usuniete]
+        # BLOCKS (z dołożeniem ramek do arkuszy szablonu - przed ich ENDBLK, wg block_record)
+        ramki_blokow = getattr(self, "_ramki_blokow", {})
+        blk = []
+        for t, d in self.bloki_szablonu:
+            if _owner(d) in self.usuniete:
+                continue
+            if t == "ENDBLK":
+                br = _owner(d)
+                for et, ed in ramki_blokow.get(br, []):
+                    blk.append((et, ed))
+            blk.append((t, d))
         for t, d in self.bloki_szablonu:
             if _owner(d) in self.usuniete and get(d, 5):
                 self.usuniete.add(get(d, 5))
