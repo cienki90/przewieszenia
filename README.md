@@ -81,10 +81,16 @@ z repozytorium `mm` oraz „rysunki stałe” z repo `Orientacje-arkusze`) w jed
 Wymaga **Pythona 3.9+** ze standardowym `tkinter`; biblioteka Pillow jest potrzebna tylko do
 podkładu mapowego w rysunkach stałych.
 
-**Okno ma osobną zakładkę dla każdego modułu** — „Numeracja słupów”,
+**Okno ma panel modułów po lewej** (nowoczesny wygląd w stylu Windows 11, tryb jasny/ciemny
+przełączany w nagłówku) — „Numeracja słupów”,
 „Przewieszenia”, „Zestawienie”, „Obliczenia”, „Rysunki stałe”, „Arkusze PZT”, „Opisy techniczne”,
 „PPW”, „Zakładki” — każda z własnym wyborem pliku i opcjami. Na dole okna wspólny katalog zapisu,
 pasek postępu i dziennik przebiegu.
+
+> **Numery warunków (WT) są zapamiętywane.** Raz wpisany numer WT (moduły Opisy, PPW, Zakładki)
+> wraca przy kolejnym uruchomieniu programu, a wcześniej użyte numery są dostępne na liście
+> rozwijanej pola WT. Ustawienia (numery WT, motyw, ostatni moduł) zapisywane są w pliku
+> `%LOCALAPPDATA%\GeneratorNN\ustawienia.json`.
 
 > **Zakładki** (strony-przekładki): dla każdej stacji trafo tworzy osobną stronę w rozmiarze
 > **Com-10 (104,7 × 241,3 mm)**, z trzema liniami przy górze strony (wyśrodkowanymi poziomo,
@@ -244,7 +250,8 @@ generator_gui.py        – start okna (używany też przy budowie .exe)
 generator_cli.py        – start wiersza poleceń
 generator/
   pipeline.py           – uruchamianie pojedynczego modułu (okno i wiersz poleceń)
-  gui.py                – interfejs okienkowy z zakładkami (osobna zakładka na każdy moduł)
+  gui.py                – interfejs okienkowy: panel modułów, tryb jasny/ciemny (sv-ttk, opcjonalnie)
+  ustawienia.py         – zapamiętywanie ustawień okna między uruchomieniami (numery WT, motyw)
   numeruj_slupy/        – automatyczna numeracja słupów nN (podpakiet; z gałęzi numeracja-slupow, wymaga ezdxf)
   przewieszenia.py      – generator rysunków przewieszeń
   kontrola.py           – kopia planu z numerami przewieszeń (kontrola powiązania)
