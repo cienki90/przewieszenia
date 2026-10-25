@@ -9,7 +9,10 @@ Na tej podstawie budowane są tablice: rozpiętość -> (wysokość, zwis) oraz 
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import math
+import os
 import re
 import statistics
 from collections import Counter, defaultdict
@@ -21,18 +24,60 @@ except ImportError:
 
 SKALA_X = 0.5  # jednostek rysunku na 1 m (poziomo)
 
+# wersja algorytmu odczytu - zmień przy każdej zmianie _czytaj, żeby unieważnić stary cache
+_WERSJA_CACHE = 1
+
 
 def _moda(vals, nd=3):
     c = Counter(round(v, nd) for v in vals)
     return c.most_common(1)[0][0] if c else None
 
 
+def _katalog_cache() -> str | None:
+    """Katalog pamięci podręcznej programu (Windows: %LOCALAPPDATA%\\GeneratorNN\\cache)."""
+    baza = os.environ.get("LOCALAPPDATA") or os.environ.get("XDG_CACHE_HOME") \
+        or os.path.join(os.path.expanduser("~"), ".cache")
+    return os.path.join(baza, "GeneratorNN", "cache") if baza else None
+
+
 class Baza:
     def __init__(self, path: str | None):
         self.rysunki = []
         if path:
-            self._czytaj(path)
+            self._czytaj_z_cache(path)
         self._tablice()
+
+    # ------------------------------------------------------------------
+    def _czytaj_z_cache(self, path):
+        """Odczyt bazy z pamięci podręcznej na dysku (klucz: skrót SHA-1 pliku bazy).
+
+        Parsowanie ~12 MB bazy DXF trwa ~1 s przy każdym uruchomieniu, a wynik (lista
+        rysunków) jest mały - zapisujemy go raz i kolejne uruchomienia czytają gotowe dane.
+        Każda zmiana pliku bazy zmienia skrót, więc cache sam się unieważnia."""
+        try:
+            with open(path, "rb") as f:
+                skrot = hashlib.sha1(f.read()).hexdigest()
+        except OSError:
+            skrot = None
+        kat = _katalog_cache()
+        plik = os.path.join(kat, f"baza_v{_WERSJA_CACHE}_{skrot}.json") if (kat and skrot) else None
+        if plik and os.path.isfile(plik):
+            try:
+                with open(plik, encoding="utf-8") as f:
+                    self.rysunki = json.load(f)
+                return
+            except (OSError, ValueError):
+                self.rysunki = []
+        self._czytaj(path)
+        if plik:
+            try:
+                os.makedirs(kat, exist_ok=True)
+                tmp = plik + ".tmp"
+                with open(tmp, "w", encoding="utf-8") as f:
+                    json.dump(self.rysunki, f)
+                os.replace(tmp, plik)
+            except OSError:
+                pass        # brak zapisu cache nie przeszkadza w pracy
 
     # ------------------------------------------------------------------
     def _czytaj(self, path):

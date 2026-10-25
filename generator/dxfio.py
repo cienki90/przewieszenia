@@ -6,24 +6,38 @@ Zapis: lista par -> tekst DXF.
 from __future__ import annotations
 
 import math
+import os
 import re
+
+# pamięć podręczna odczytanych plików: ścieżka -> ((mtime_ns, rozmiar), krotka tagów).
+# Ten sam plik czytany kilka razy w jednym uruchomieniu (np. plan: przewieszenia + kontrola)
+# jest parsowany tylko raz; zmiana pliku na dysku (mtime/rozmiar) unieważnia wpis.
+_CACHE: dict[str, tuple[tuple[int, int], tuple]] = {}
+_CACHE_MAX = 2
 
 
 def read_tags(path: str) -> list[tuple[int, str]]:
-    with open(path, "rb") as f:
+    klucz = os.path.abspath(path)
+    st = os.stat(klucz)
+    stempel = (st.st_mtime_ns, st.st_size)
+    wpis = _CACHE.get(klucz)
+    if wpis is not None and wpis[0] == stempel:
+        return list(wpis[1])     # kopia listy - wywołujący mogą ją modyfikować
+    with open(klucz, "rb") as f:
         raw = f.read()
     try:
         text = raw.decode("utf-8")
     except UnicodeDecodeError:
         text = raw.decode("cp1250", errors="replace")
+    if "\r" in text:
+        text = text.replace("\r\n", "\n")
     lines = text.split("\n")
-    lines = [ln[:-1] if ln.endswith("\r") else ln for ln in lines]
-    tags = []
-    for i in range(0, len(lines) - 1, 2):
-        code = lines[i].strip()
-        if not code:
-            continue
-        tags.append((int(code), lines[i + 1]))
+    if len(lines) % 2:           # niesparowana ostatnia linia (zwykle pusta po EOF) - pomiń
+        lines.pop()
+    tags = [(int(c), v) for c, v in zip(lines[0::2], lines[1::2]) if c.strip()]
+    if len(_CACHE) >= _CACHE_MAX:
+        _CACHE.pop(next(iter(_CACHE)))
+    _CACHE[klucz] = (stempel, tuple(tags))
     return tags
 
 

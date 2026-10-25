@@ -1,20 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Łańcuch przetwarzania: jeden plik DXF -> przewieszenia + zestawienie + obliczenia.
+"""Uruchamianie pojedynczych modułów generatora (przewieszenia, zestawienie, obliczenia, …).
 
-Z jednego rysunku planu DXF program może wykonać (dowolny podzbiór):
-
-  1. PRZEWIESZENIA – rysunki zwisów przęseł linii nN ze światłowodem  -> plik DXF,
-  2. ZESTAWIENIE   – zestawienie słupów nN w podziale na stacje          -> plik XLSX,
-  3. OBLICZENIA    – obliczenia nośności słupów (na podstawie zestawienia) -> plik XLSX.
-
-Krok OBLICZENIA korzysta z wyniku kroku ZESTAWIENIE. Jeśli włączono obliczenia bez
-zestawienia, program i tak zbuduje zestawienie (w pliku tymczasowym), żeby mieć dane
-wejściowe do obliczeń.
+Każde uruchomienie wykonuje JEDEN moduł (program nie ma łańcucha „wszystko naraz”).
+Moduł może jednak sam dołożyć potrzebne dane pomocnicze - np. OBLICZENIA z planu DXF
+budują zestawienie w pliku tymczasowym, żeby mieć dane wejściowe.
 
 Użycie z wiersza poleceń:
-    python -m generator.pipeline plan.dxf
-    python -m generator.pipeline plan.dxf --tylko zestawienie,obliczenia -o wyniki/
+    python -m generator.pipeline plan.dxf --tylko przewieszenia
+    python -m generator.pipeline plan.dxf --tylko obliczenia -o wyniki/
 """
 from __future__ import annotations
 
@@ -35,14 +29,15 @@ from . import pzt as mod_pzt
 from . import zestawienie as mod_zestawienie
 from . import ppw as mod_ppw
 from . import zakladki as mod_zakladki
-from .numeruj_slupy import przetworz as _numeruj_slupy
+# numeracja słupów (ezdxf, ~0,25 s importu) ładowana dopiero w swoim kroku - patrz _krok_numeracja
 
 # nazwy kroków (kolejność ma znaczenie) - „numeracja” jako pierwszy (projektant najpierw
 # numeruje słupy w planie, potem robi resztę; krok tworzy osobny plik „… - ponumerowane.dxf”)
 KROKI = ("numeracja", "przewieszenia", "zestawienie", "obliczenia", "orientacje", "pzt", "opisy",
          "ppw", "zakladki", "ppw_renumer")
-# „ppw_renumer” to osobna AKCJA (renumeracja DXF), nie część domyślnego łańcucha „Wszystko”
-KROKI_DOMYSLNE = tuple(k for k in KROKI if k != "ppw_renumer")
+# moduły wybierane w CLI przez --tylko (jeden na uruchomienie); „ppw_renumer” to osobna
+# akcja wywoływana przez --ppw-renumeruj
+MODULY_CLI = tuple(k for k in KROKI if k != "ppw_renumer")
 
 
 # ---------------------------------------------------------------------------
@@ -285,6 +280,7 @@ def _krok_numeracja(plan: str, wyjscie: str) -> WynikKroku:
     """Numeracja słupów nN: z planu z zaznaczonymi słupami „1” i „2” każdego obwodu
     tworzy „… - ponumerowane.dxf” z numerami i obrysami kontrolnymi (wymaga ezdxf)."""
     def uruchom():
+        from .numeruj_slupy import przetworz as _numeruj_slupy
         return _numeruj_slupy(plan, wyjscie)   # zwraca (ścieżka_wyniku, raport_tekstowy)
     try:
         (wynik, wydruk) = _przechwyc(uruchom)
@@ -546,9 +542,9 @@ def main(argv=None):
     ap.add_argument("plan", help="plik DXF planu")
     ap.add_argument("-o", "--katalog", default=None,
                     help="katalog zapisu wyników (domyślnie obok planu)")
-    ap.add_argument("--tylko", default=",".join(KROKI_DOMYSLNE),
-                    help="które kroki wykonać, po przecinku: przewieszenia,zestawienie,obliczenia "
-                         f"(domyślnie: {','.join(KROKI_DOMYSLNE)})")
+    ap.add_argument("--tylko", default=None, metavar="MODUŁ",
+                    help="który moduł uruchomić (jeden; program nie ma łańcucha): "
+                         f"{', '.join(MODULY_CLI)}")
     ap.add_argument("--adresy", default="uug,osm",
                     help="źródła nazw miejscowości/ulic: uug,osm lub 'brak' (bez internetu)")
     ap.add_argument("--obrot-od", type=float, default=50.0,
@@ -600,13 +596,17 @@ def main(argv=None):
                          "„Projekt wykonawczy”->„Projekt powykonawczy”; podaj plik DXF (np. PZT)")
     a = ap.parse_args(argv)
 
-    wybrane = tuple(k.strip().lower() for k in a.tylko.split(",") if k.strip())
     # --ppw-renumeruj: tryb samej renumeracji DXF (nie wymaga planu ani innych kroków)
     if a.ppw_renumeruj:
         wybrane = ("ppw_renumer",)
-    nieznane = [k for k in wybrane if k not in KROKI]
-    if nieznane:
-        ap.error(f"nieznane kroki: {', '.join(nieznane)} (dozwolone: {', '.join(KROKI)})")
+    else:
+        modul = (a.tylko or "").strip().lower()
+        if not modul:
+            ap.error(f"podaj moduł: --tylko <{'|'.join(MODULY_CLI)}>")
+        if modul not in MODULY_CLI:
+            ap.error(f"nieznany moduł: {modul} (dozwolone: {', '.join(MODULY_CLI)}; "
+                     "jedno uruchomienie = jeden moduł)")
+        wybrane = (modul,)
 
     opcje = Opcje(plan=a.plan, katalog=a.katalog, kroki=wybrane, adresy=a.adresy,
                   obrot_od=a.obrot_od, zostaw_puste_arkusze=a.zostaw_puste_arkusze,

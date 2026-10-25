@@ -1,7 +1,8 @@
 # Generator projektów nN — przewieszenia · zestawienie · obliczenia
 
-Jeden program, który z **jednego pliku planu DXF** tworzy trzy opracowania projektu linii nN
-z projektowanym światłowodem:
+Jeden program, który z **pliku planu DXF** tworzy opracowania projektu linii nN z projektowanym
+światłowodem. **Każdy moduł uruchamia się osobno** (własna zakładka w oknie / `--tylko <moduł>`
+w wierszu poleceń) — program nie ma łańcucha „wszystko naraz”:
 
 | Krok | Co powstaje | Plik |
 |---|---|---|
@@ -53,8 +54,8 @@ z projektowanym światłowodem:
 > `!trafo_<nr>` + drzewo sieci).
 >
 > **Powiązanie po numerze stacji trafo.** Słupy i szablon rysunków stałych nie muszą być w tym
-> samym pliku — wystarczy, że **numery stacji się zgadzają**. W łańcuchu plan tras (ze słupami)
-> jest automatycznie źródłem miejscowości dla szablonu; można też wskazać go ręcznie
+> samym pliku — wystarczy, że **numery stacji się zgadzają**. Gdy moduł uruchomiono na planie tras (ze słupami),
+> plan jest automatycznie źródłem miejscowości dla szablonu; można też wskazać go ręcznie
 > (`--plan-slupow`, w oknie pole „Plan ze słupami”). Stacje wiązane są po numerze
 > (`03-0541` = `0541` = `541`). Gdy nie ma ani planu ze słupami, ani słupów w szablonie,
 > program wraca do położenia odnośnika stacji.
@@ -80,7 +81,7 @@ z repozytorium `mm` oraz „rysunki stałe” z repo `Orientacje-arkusze`) w jed
 Wymaga **Pythona 3.9+** ze standardowym `tkinter`; biblioteka Pillow jest potrzebna tylko do
 podkładu mapowego w rysunkach stałych.
 
-**Okno ma osobną zakładkę dla każdego modułu** — „Wszystko (łańcuch)”, „Numeracja słupów”,
+**Okno ma osobną zakładkę dla każdego modułu** — „Numeracja słupów”,
 „Przewieszenia”, „Zestawienie”, „Obliczenia”, „Rysunki stałe”, „Arkusze PZT”, „Opisy techniczne”,
 „PPW”, „Zakładki” — każda z własnym wyborem pliku i opcjami. Na dole okna wspólny katalog zapisu,
 pasek postępu i dziennik przebiegu.
@@ -132,8 +133,10 @@ nie trzeba niczego instalować.
 
 - `setup.bat` — sprawdza Pythona i `tkinter` (oraz opcjonalnie instaluje PyInstaller),
 - `uruchom.bat` — otwiera **okno** programu,
-- `generuj.bat "plan.dxf"` — wersja **wiersza poleceń** (można przeciągnąć plik DXF na `.bat`),
-- `sprawdz.bat` — test: uruchamia cały łańcuch na pliku przykładowym i sprawdza wyniki.
+- `generuj.bat "plan.dxf" przewieszenia` — wersja **wiersza poleceń**, jeden moduł (można przeciągnąć
+  plik DXF na `.bat` — wtedy program zapyta o moduł),
+- `sprawdz.bat` — test: uruchamia kolejno moduły przewieszenia, zestawienie i obliczenia na pliku
+  przykładowym i sprawdza wyniki.
 
 Pliki `.bat` obsługują polskie znaki (`chcp 65001`) i same wykrywają Pythona (`py -3` lub `python`).
 
@@ -143,11 +146,11 @@ Pliki `.bat` obsługują polskie znaki (`chcp 65001`) i same wykrywają Pythona 
 # okno programu
 python -m generator            # albo: python generator_gui.py
 
-# wiersz poleceń (cały łańcuch)
-python -m generator.pipeline "przewieszenia plan.dxf"
+# wiersz poleceń - jeden moduł na uruchomienie
+python -m generator.pipeline "przewieszenia plan.dxf" --tylko przewieszenia
 
 # tylko wybrane kroki, inny katalog zapisu
-python generator_cli.py "przewieszenia plan.dxf" --tylko zestawienie,obliczenia -o wyniki
+python generator_cli.py "przewieszenia plan.dxf" --tylko obliczenia -o wyniki
 
 # rysunki stałe z wybranego szablonu, bez pobierania podkładu z internetu
 python generator_cli.py plan.dxf --tylko orientacje --szablon-orientacji szablon.dxf --bez-podkladu
@@ -157,7 +160,8 @@ Najważniejsze opcje wiersza poleceń:
 
 ```
 -o, --katalog         katalog zapisu wyników (domyślnie obok planu)
---tylko a,b,c         które kroki: przewieszenia,zestawienie,obliczenia,orientacje,pzt
+--tylko <moduł>       (wymagane) jeden moduł: numeracja, przewieszenia, zestawienie, obliczenia,
+                      orientacje, pzt, opisy, ppw, zakladki
 --szablon-orientacji  szablon DXF dla rysunków stałych (domyślnie dołączony szablon.dxf)
 --bez-podkladu        rysunki stałe bez pobierania podkładu mapowego (bez internetu/Pillow)
 --pzt-wzorzec <plik>  plik DXF z layoutem-wzorcem „a” dla arkuszy PZT (domyślnie plan wejściowy)
@@ -208,7 +212,9 @@ Wyłączenie: `--bez-kontroli-stacji`.
 ### Przewieszenia — baza i arkusze
 
 Z `przewieszenia baza.dxf` pobierane są wysokości zawieszenia i zwisy (dla rozpiętości i typów
-słupów) oraz style DXF. Wynik powstaje w układzie arkuszy z `arkusze.dxf` (po dwa poziome rysunki
+słupów) oraz style DXF. Odczytana baza jest zapamiętywana w pamięci podręcznej
+(`%LOCALAPPDATA%\GeneratorNN\cache`), więc kolejne uruchomienia nie parsują ponownie ~12 MB pliku;
+zmiana pliku bazy automatycznie unieważnia cache. Wynik powstaje w układzie arkuszy z `arkusze.dxf` (po dwa poziome rysunki
 na arkusz albo jeden pionowy; puste arkusze są usuwane).
 
 Na **każdym arkuszu wynikowym** rysowana jest **ramka okalająca rzutnię** — zamknięta polilinia
@@ -237,8 +243,8 @@ z podpisami projektantów. Słupy niespełniające warunku nośności są wyró�
 generator_gui.py        – start okna (używany też przy budowie .exe)
 generator_cli.py        – start wiersza poleceń
 generator/
-  pipeline.py           – łańcuch: DXF -> przewieszenia + zestawienie + obliczenia
-  gui.py                – interfejs okienkowy z zakładkami (osobna zakładka na moduł + „Wszystko”)
+  pipeline.py           – uruchamianie pojedynczego modułu (okno i wiersz poleceń)
+  gui.py                – interfejs okienkowy z zakładkami (osobna zakładka na każdy moduł)
   numeruj_slupy/        – automatyczna numeracja słupów nN (podpakiet; z gałęzi numeracja-slupow, wymaga ezdxf)
   przewieszenia.py      – generator rysunków przewieszeń
   kontrola.py           – kopia planu z numerami przewieszeń (kontrola powiązania)

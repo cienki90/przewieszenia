@@ -1,7 +1,7 @@
 @echo off
 chcp 65001 >nul
 rem ==========================================================================
-rem  sprawdz.bat - test poprawnosci: uruchamia caly lancuch na pliku
+rem  sprawdz.bat - test poprawnosci: uruchamia kolejno moduly na pliku
 rem  przykladowym "przewieszenia plan.dxf" (bez internetu) i sprawdza,
 rem  czy powstaly wszystkie trzy pliki wynikowe w katalogu _test.
 rem ==========================================================================
@@ -20,9 +20,12 @@ if not exist "%PLAN%" (
 
 if not exist "_test" mkdir "_test"
 
-echo Uruchamiam caly lancuch (przewieszenia + zestawienie + obliczenia)...
-%PY% generator_cli.py "%PLAN%" -o "_test" --adresy brak --seed 1
-if errorlevel 1 (
+for %%M in (przewieszenia zestawienie obliczenia) do (
+  echo Uruchamiam modul %%M...
+  %PY% generator_cli.py "%PLAN%" -o "_test" --tylko %%M --adresy brak --seed 1
+  if errorlevel 1 set "BLAD=1"
+)
+if defined BLAD (
   echo.
   echo TEST NIEUDANY: program zwrocil blad.
   pause

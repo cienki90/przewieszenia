@@ -1,10 +1,12 @@
 @echo off
 chcp 65001 >nul
 rem ==========================================================================
-rem  generuj.bat - wersja wiersza polecen. Przeciagnij plik planu DXF na ten
-rem  plik .bat albo podaj sciezke jako argument:
-rem      generuj.bat "przewieszenia plan.dxf"
-rem  Bez argumentu program zapyta o plik.
+rem  generuj.bat - wersja wiersza polecen (jeden modul na uruchomienie).
+rem  Przeciagnij plik planu DXF na ten plik .bat albo podaj argumenty:
+rem      generuj.bat "przewieszenia plan.dxf" przewieszenia
+rem  Brakujacy plik lub modul program zapyta z klawiatury.
+rem  Moduly: numeracja przewieszenia zestawienie obliczenia orientacje pzt
+rem          opisy ppw zakladki
 rem ==========================================================================
 setlocal
 cd /d "%~dp0"
@@ -24,7 +26,13 @@ if "%PLAN%"=="" (
   exit /b 1
 )
 
-%PY% generator_cli.py "%PLAN%"
+set "MODUL=%~2"
+if "%MODUL%"=="" (
+  echo Moduly: numeracja przewieszenia zestawienie obliczenia orientacje pzt opisy ppw zakladki
+  set /p MODUL=Ktory modul uruchomic: 
+)
+
+%PY% generator_cli.py "%PLAN%" --tylko %MODUL%
 echo.
 pause
 exit /b 0

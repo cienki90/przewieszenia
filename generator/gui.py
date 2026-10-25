@@ -2,8 +2,7 @@
 # -*- coding: utf-8 -*-
 """Okienkowy interfejs zunifikowanego generatora - z osobnymi zakładkami dla każdego modułu.
 
-Zakładki:
-  * Wszystko (łańcuch) - zaznaczasz, co ma powstać z jednego planu DXF,
+Każdy moduł ma własną zakładkę i uruchamia się osobno (bez łańcucha), m.in.:
   * Przewieszenia      - rysunki zwisów + kontrola (kopia planu z numerami, kontrola stacji),
   * Zestawienie        - zestawienie słupów nN w podziale na stacje (XLSX),
   * Obliczenia         - obliczenia nośności słupów (XLSX, z zestawienia),
@@ -27,34 +26,6 @@ from tkinter import filedialog, messagebox, ttk
 from . import pipeline
 
 TYTUL = "Generator projektów nN — przewieszenia · zestawienie · obliczenia · rysunki stałe"
-
-OPIS_KROKOW = {
-    "numeracja":     ("Numeracja słupów",
-                      "Automatyczna numeracja słupów nN — z planu z zaznaczonymi słupami „1” i „2” "
-                      "każdego obwodu tworzy „… - ponumerowane.dxf” (wymaga biblioteki ezdxf)."),
-    "przewieszenia": ("Przewieszenia (rysunki zwisów)",
-                      "Rysunki profili zwisów przęseł linii nN ze światłowodem — plik DXF."),
-    "zestawienie":   ("Zestawienie słupów",
-                      "Zestawienie słupów nN w podziale na stacje transformatorowe — plik XLSX."),
-    "obliczenia":    ("Obliczenia nośności",
-                      "Obliczenia nośności słupów na podstawie zestawienia — plik XLSX."),
-    "orientacje":    ("Rysunki stałe (plany orientacyjne)",
-                      "Osobny plan orientacyjny DXF dla każdej stacji trafo + zestawienie."),
-    "pzt":           ("Arkusze PZT (A3 1:1000)",
-                      "Dla każdej stacji trafo komplet arkuszy A3 1:1000 pokrywających trasę — na wzór "
-                      "layoutu „a” z pliku. Minimalna liczba arkuszy, zakład 50 m."),
-    "opisy":         ("Opisy techniczne (.docx)",
-                      "Dla każdej stacji osobny opis techniczny .docx z szablonu Word — na podstawie "
-                      "zestawienia (bezpośrednio z „Rysunków stałych”) + ręcznie podany numer WT."),
-    "ppw":           ("PPW (zbiorczy opis .docx)",
-                      "JEDEN zbiorczy opis techniczny .docx dla całego projektu (wszystkie stacje) — "
-                      "z szablonu Word, z tabelą „Zestawienie zbiorcze słupów” z modułu „Zestawienie” "
-                      "i miejscowościami z „Rysunków stałych”. Numer WT wpisywany ręcznie."),
-    "zakladki":      ("Zakładki (przekładki)",
-                      "Dla każdej stacji trafo osobna strona-przekładka (nr stacji / miejscowość / WT) — "
-                      "z zestawienia (zwykle „zestawienie_stacji.xlsx” z „Rysunków stałych”). "
-                      "Format do wyboru: .docx albo .pdf. Numer WT wpisywany ręcznie."),
-}
 
 DXF_TYPY = [("Rysunek DXF", "*.dxf"), ("Wszystkie pliki", "*.*")]
 DOCX_TYPY = [("Dokument Word", "*.docx"), ("Wszystkie pliki", "*.*")]
@@ -80,14 +51,6 @@ class Aplikacja:
         self._kolejka: "queue.Queue" = queue.Queue()
         self._ostatni_wynik = None
         self._ostatni_katalog = ""
-
-        # zakładka "Wszystko"
-        self.all_plan = tk.StringVar()
-        # numeracja/orientacje/PZT/opisy domyślnie wyłączone - wymagają osobnego przygotowania
-        # planu / szablonu / wzorca / WT / biblioteki ezdxf
-        self.all_kroki = {k: tk.BooleanVar(
-            value=(k not in ("numeracja", "orientacje", "pzt", "opisy", "ppw", "zakladki")))
-            for k in pipeline.KROKI}
 
         # per-moduł: plik wejściowy
         self.we = {k: tk.StringVar() for k in pipeline.KROKI}
@@ -135,7 +98,6 @@ class Aplikacja:
         self.nb = ttk.Notebook(root)
         self.nb.grid(row=0, column=0, sticky="nwe", padx=8, pady=(8, 4))
 
-        self._zakladka_wszystko()
         self._zakladka_numeracja()
         self._zakladka_zestawienie()
         self._zakladka_obliczenia()
@@ -167,24 +129,6 @@ class Aplikacja:
         return b
 
     # ---------------------------------------------------------------- zakładki
-    def _zakladka_wszystko(self):
-        f = ttk.Frame(self.nb)
-        self.nb.add(f, text="Wszystko (łańcuch)")
-        self._naglowek(f, "Z jednego planu DXF utwórz od razu kilka opracowań. Zaznacz, co ma powstać.")
-        self._pole_pliku(f, "Plik planu DXF:", self.all_plan, "Wybierz plik planu DXF")
-        box = ttk.LabelFrame(f, text="Co wygenerować")
-        box.pack(fill="x", padx=10, pady=6)
-        for k in pipeline.KROKI:
-            if k not in OPIS_KROKOW:           # kroki-akcje (np. ppw_renumer) nie są w „Wszystko”
-                continue
-            tytul, opis = OPIS_KROKOW[k]
-            ttk.Checkbutton(box, text=tytul, variable=self.all_kroki[k]).pack(anchor="w", padx=8, pady=(6, 0))
-            ttk.Label(box, text=opis, foreground="#777").pack(anchor="w", padx=30, pady=(0, 2))
-        ttk.Label(f, text="„Obliczenia” potrzebują zestawienia — powstanie automatycznie, jeśli nie zaznaczysz "
-                          "go osobno. „Rysunki stałe” używają szablonu z zakładki obok (lub dołączonego).",
-                  foreground="#777", wraplength=760, justify="left").pack(anchor="w", padx=10, pady=4)
-        self._przycisk_generuj(f, "Generuj zaznaczone", self._start_wszystko)
-
     def _zakladka_numeracja(self):
         f = ttk.Frame(self.nb)
         self.nb.add(f, text="Numeracja słupów")
@@ -486,18 +430,6 @@ class Aplikacja:
 
     def _domyslny_katalog(self, plik):
         return self.katalog.get().strip() or (os.path.dirname(os.path.abspath(plik)) if plik else "")
-
-    # ---- uruchomienie: zakładka "Wszystko" ----
-    def _start_wszystko(self):
-        plan = self.all_plan.get().strip()
-        if not plan or not os.path.isfile(plan):
-            messagebox.showwarning(TYTUL, "Wskaż istniejący plik planu DXF.", parent=self.root)
-            return
-        kroki = tuple(k for k in pipeline.KROKI if k in OPIS_KROKOW and self.all_kroki[k].get())
-        if not kroki:
-            messagebox.showwarning(TYTUL, "Zaznacz przynajmniej jedną rzecz do wygenerowania.", parent=self.root)
-            return
-        self._uruchom(plan, kroki)
 
     # ---- uruchomienie: pojedynczy moduł z jego zakładki ----
     def _start_modul(self, krok):

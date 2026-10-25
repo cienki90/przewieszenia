@@ -325,16 +325,31 @@ class DxfDocument:
 
         Zwraca listę ostrzeżeń o nieobsłużonych odwołaniach.
         """
+        return self.delete_entities([ent])
+
+    def delete_entities(self, ents) -> list[str]:
+        """Usuwa wiele encji naraz oraz odwołania do nich (SORTENTSTABLE, reaktory).
+
+        Odwołania są czyszczone w JEDNYM przebiegu po rysunku (a nie osobno dla każdej
+        encji) - przy wielu stacjach to wielokrotnie szybsze. Zwraca listę ostrzeżeń
+        o nieobsłużonych odwołaniach.
+        """
         warnings = []
-        handles = {ent.handle.upper()} if ent.handle else set()
-        to_delete = [ent]
-        # obiekty posiadane "na twardo" (np. słownik rozszerzeń)
-        for _, code, val in ent.items():
-            if code == 360:
-                child = self.by_handle.get(val.strip().upper())
-                if child is not None:
-                    to_delete.append(child)
-                    handles.add(child.handle.upper())
+        handles = set()
+        to_delete = []
+        for ent in ents:
+            if self.tags[ent.start] is None:
+                continue
+            to_delete.append(ent)
+            if ent.handle:
+                handles.add(ent.handle.upper())
+            # obiekty posiadane "na twardo" (np. słownik rozszerzeń)
+            for _, code, val in ent.items():
+                if code == 360:
+                    child = self.by_handle.get(val.strip().upper())
+                    if child is not None:
+                        to_delete.append(child)
+                        handles.add(child.handle.upper())
         for e in to_delete:
             for i in range(e.start, e.end):
                 self.tags[i] = None
@@ -1764,17 +1779,16 @@ class Generator:
 
         # 3) usuń odnośniki i obrysy pozostałych stacji
         if not opt.keep_other_stations:
+            targets = []
             for other in self.stations:
                 if other is st:
                     continue
                 for ent in (other.label, other.zone_poly):
                     if ent is None or ent is st.zone_poly or ent.handle.upper() not in doc.by_handle:
                         continue
-                    target = H(ent)
-                    if doc.tags[target.start] is None:
-                        continue
-                    for w in doc.delete_entity(target):
-                        st.notes.append(f"pozostawione odwołanie: {w}")
+                    targets.append(H(ent))
+            for w in doc.delete_entities(targets):
+                st.notes.append(f"pozostawione odwołanie: {w}")
 
         # 4) podkład mapowy
         base = opt.template.stem
