@@ -126,6 +126,10 @@ class Aplikacja:
             self.wt[m] = v
         self.opisy_wt, self.ppw_wt, self.zakladki_wt = (self.wt[m] for m in MODULY_WT)
 
+        # pola wypełnione automatycznie wynikami tej sesji: nazwa zmiennej -> wpisana ścieżka
+        # (tylko w pamięci - nowa sesja programu zaczyna od pustych pól)
+        self._podpiete: dict[str, str] = {}
+
         self._przyciski = []                               # przyciski "Generuj" do blokowania
         self._strony = {}                                  # klucz -> ramka strony modułu
         self._wybrana = tk.StringVar()
@@ -380,7 +384,7 @@ class Aplikacja:
         self._pole_pliku(f, "Własne zestawienie (.xlsx):", self.obl_zestawienie,
                          "Wybierz własny plik zestawienia (.xls/.xlsx)", typy=XLSX_TYPY)
         self._podpowiedz(f, "(opcjonalnie — gdy podasz własne zestawienie, obliczenia liczą się z niego, "
-                            "a pole „Plik DXF” jest ignorowane)")
+                            "a pole „Plik DXF” jest ignorowane; wypełnia się samo po module „Zestawienie”)")
         box = self._sekcja(f, "Opcje")
         r = ttk.Frame(box)
         r.pack(fill="x", pady=4)
@@ -434,7 +438,7 @@ class Aplikacja:
                          "plik „zestawienie_stacji.xlsx” z Rysunków stałych. Numer warunków (WT) wpisz ręcznie.")
         self._pole_pliku(f, "Zestawienie (.xlsx):", self.opisy_zestawienie,
                          "Wybierz zestawienie (np. z Rysunków stałych)", typy=XLSX_TYPY)
-        self._podpowiedz(f, "(np. „zestawienie_stacji.xlsx” z modułu „Rysunki stałe”)")
+        self._podpowiedz(f, "(„zestawienie_stacji.xlsx” — wypełnia się samo po module „Rysunki stałe”)")
         self._pole_pliku(f, "Szablon opisu (.docx):", self.opisy_szablon,
                          "Wybierz szablon .docx", typy=DOCX_TYPY)
         self._podpowiedz(f, "(puste = dołączony szablon_opisu.docx; gdy wskażesz własny szablon, "
@@ -470,10 +474,10 @@ class Aplikacja:
                          "„Zestawienie”, miejscowości z „Rysunków stałych”. Numer WT wpisz ręcznie.")
         self._pole_pliku(f, "Zestawienie (.xlsx):", self.ppw_zestawienie,
                          "Wybierz zestawienie z modułu „Zestawienie”", typy=XLSX_TYPY)
-        self._podpowiedz(f, "(plik z modułu „Zestawienie”, arkusz „zestawienie”: stacja/ilość/długość)")
+        self._podpowiedz(f, "(plik z modułu „Zestawienie” — wypełnia się sam po jego uruchomieniu)")
         self._pole_pliku(f, "Miejscowości (.xlsx):", self.ppw_zestawienie_stacji,
                          "Wybierz „zestawienie_stacji.xlsx” z Rysunków stałych", typy=XLSX_TYPY)
-        self._podpowiedz(f, "(„zestawienie_stacji.xlsx” z Rysunków stałych — źródło nazw miejscowości)")
+        self._podpowiedz(f, "(„zestawienie_stacji.xlsx” z Rysunków stałych — wypełnia się samo po tym module)")
         self._pole_pliku(f, "Szablon PPW (.docx):", self.ppw_szablon, "Wybierz szablon .docx", typy=DOCX_TYPY)
         self._podpowiedz(f, "(puste = dołączony „PPW miński szablon.docx”; gdy wskażesz własny, PPW.docx "
                             "zapisze się w JEGO folderze)")
@@ -522,7 +526,7 @@ class Aplikacja:
                          "z „Rysunków stałych”. Numer WT wpisz ręcznie, gdy zestawienie go nie zawiera.")
         self._pole_pliku(f, "Zestawienie (.xlsx):", self.zakladki_zestawienie,
                          "Wybierz zestawienie (np. z Rysunków stałych)", typy=XLSX_TYPY)
-        self._podpowiedz(f, "(np. „zestawienie_stacji.xlsx” z modułu „Rysunki stałe”)")
+        self._podpowiedz(f, "(„zestawienie_stacji.xlsx” — wypełnia się samo po module „Rysunki stałe”)")
         box = self._sekcja(f, "Opcje")
         rf = ttk.Frame(box)
         rf.pack(fill="x", pady=4)
@@ -717,6 +721,52 @@ class Aplikacja:
             pass
         self.root.after(80, self._pompuj)
 
+    # ---- podpinanie wyników tej sesji do kolejnych modułów ----
+    def _odbiorcy_wyniku(self, krok, wyjscie):
+        """Dla wyniku modułu zwraca (plik, [(moduł, pole, StringVar), ...]) - gdzie go podpiąć."""
+        if krok == "numeracja":
+            return wyjscie, [("Przewieszenia", "plik planu", self.we["przewieszenia"]),
+                             ("Zestawienie", "plik DXF", self.we["zestawienie"]),
+                             ("Obliczenia", "plik DXF", self.we["obliczenia"]),
+                             ("Arkusze PZT", "plik planu", self.we["pzt"]),
+                             ("Rysunki stałe", "plan ze słupami", self.orient_plan_slupow)]
+        if krok == "zestawienie":
+            return wyjscie, [("Obliczenia", "własne zestawienie", self.obl_zestawienie),
+                             ("PPW", "zestawienie", self.ppw_zestawienie)]
+        if krok == "obliczenia":
+            return wyjscie, [("Opisy techniczne", "obliczenia", self.opisy_obliczenia)]
+        if krok == "orientacje":
+            zest = os.path.join(wyjscie, "zestawienie_stacji.xlsx")
+            return zest, [("Opisy techniczne", "zestawienie", self.opisy_zestawienie),
+                          ("PPW", "miejscowości", self.ppw_zestawienie_stacji),
+                          ("Zakładki", "zestawienie", self.zakladki_zestawienie)]
+        if krok == "pzt":
+            return wyjscie, [("PPW", "plik DXF do renumeracji", self.ppw_renumer_dxf)]
+        return None, []
+
+    def _podepnij_wyniki(self, udane):
+        """Pliki wygenerowane w tej sesji programu wpisuje do pól modułów, które ich używają.
+
+        Pole jest wypełniane, gdy jest puste albo gdy poprzednio wypełnił je program (nowszy wynik
+        zastępuje starszy) - ścieżki wybrane ręcznie przez użytkownika nie są nadpisywane."""
+        podpiete = []
+        for k in udane:
+            plik, odbiorcy = self._odbiorcy_wyniku(k.nazwa, k.wyjscie) if k.wyjscie else (None, [])
+            if not plik or not os.path.isfile(plik):
+                continue
+            plik = os.path.normpath(plik)
+            for modul, pole, var in odbiorcy:
+                teraz = var.get().strip()
+                if teraz and teraz != self._podpiete.get(str(var)):
+                    continue                        # wybrane ręcznie - zostaw
+                var.set(plik)
+                self._podpiete[str(var)] = plik
+                podpiete.append(f"  {modul} ({pole}) ← {os.path.basename(plik)}")
+        if podpiete:
+            self._pisz("\nPODPIĘTO DO KOLEJNYCH MODUŁÓW (wyniki tej sesji):")
+            for linia in podpiete:
+                self._pisz(linia)
+
     def _zakoncz(self, wynik):
         self.pracuje = False
         self.pasek.stop()
@@ -734,6 +784,7 @@ class Aplikacja:
         self._pisz("PODSUMOWANIE:")
         for k in wynik.kroki:
             self._pisz(f"  [{'OK' if k.ok else 'BŁĄD'}] {k.nazwa} — {k.wyjscie or k.blad or ''}")
+        self._podepnij_wyniki(udane)
         self.btn_otworz.configure(state="normal" if udane else "disabled")
         if not nieudane:
             self.status.configure(text=f"Gotowe — utworzono {len(udane)} wynik(ów).")
