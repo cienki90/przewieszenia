@@ -135,6 +135,20 @@ Plik `GeneratorNN.exe` jest budowany automatycznie przez GitHub Actions po każd
 (zakładka **Releases**). Uruchom go dwuklikiem — pliki bazy i arkuszy są wbudowane w program,
 nie trzeba niczego instalować.
 
+## Gotowy program (czysta kopia)
+
+`narzedzia/publikuj_gotowy.py` tworzy kopię programu **bez przykładów i materiałów pomocniczych**
+(tylko kod, szablony i skrypty `.bat`, w stanie z ostatniego commita) wraz z plikiem `INSTRUKCJA.txt`.
+Kopia może być odświeżana **automatycznie** hookami gita (po commicie, pull i amend na gałęzi
+`PGE_MAKER_CLAUDE`). Hooki są lokalne - zainstaluj je raz na danym klonie:
+
+```bash
+python narzedzia/publikuj_gotowy.py "D:/OneDrive/MMUI/ai test/GOTOWE PROJEKTY/PGE MAKER" --zainstaluj-hook
+```
+
+Bez hooków kopię odświeża to samo polecenie bez `--zainstaluj-hook`. Pliki programu usunięte
+z repozytorium znikają też z kopii; własne pliki w katalogu kopii (np. wyniki) nie są ruszane.
+
 ## Uruchomienie z kodu (Windows)
 
 - `setup.bat` — sprawdza Pythona i `tkinter` (oraz opcjonalnie instaluje PyInstaller),

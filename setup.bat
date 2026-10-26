@@ -2,9 +2,8 @@
 chcp 65001 >nul
 rem ==========================================================================
 rem  setup.bat - przygotowanie srodowiska do uruchomienia programu pod Windows
-rem  Program nie wymaga zadnych bibliotek (sam Python 3.9+ ze standardowym
-rem  tkinter). Ten skrypt tylko sprawdza, czy Python jest zainstalowany,
-rem  oraz instaluje PyInstaller, jesli chcesz samodzielnie zbudowac plik .exe.
+rem  Sprawdza, czy Python (3.10+, z tkinter) jest zainstalowany, i instaluje
+rem  biblioteki programu z pliku requirements.txt (docx, xlsx, ezdxf, wyglad okna).
 rem ==========================================================================
 setlocal
 
@@ -22,8 +21,11 @@ if errorlevel 1 (
 )
 echo.
 
-echo Instaluje PyInstaller (opcjonalnie - tylko do budowy pliku .exe)...
-%PY% -m pip install --upgrade pip pyinstaller
+echo Instaluje biblioteki programu (requirements.txt)...
+%PY% -m pip install --upgrade -r "%~dp0requirements.txt"
+if errorlevel 1 (
+  echo   UWAGA: nie udalo sie zainstalowac bibliotek - sprawdz polaczenie z internetem.
+)
 echo.
 echo Gotowe. Uruchom program plikiem  uruchom.bat  (okno) albo  generuj.bat  (wiersz polecen).
 pause
