@@ -1,4 +1,6 @@
 __pycache__/
+# numer wersji zapisywany przy publikacji/budowie (generator/wersja.py)
+generator/_wersja.txt
 *.pyc
 
 # katalogi i pliki wynikowe / testowe

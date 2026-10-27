@@ -13,6 +13,8 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
@@ -41,6 +43,13 @@ jobs:
           python generator_cli.py "szablon.dxf" -o _test_zak --tylko zakladki --zakladki-zestawienie "_test_orient/rysunki stałe/zestawienie_stacji.xlsx" --zakladki-format pdf --zakladki-wt "WT/1"
           test -s "_test_zak/zakladki.pdf"
 
+      - name: Numer wersji do programu
+        shell: bash
+        run: |
+          GLOWNA=$(python -c "import re;print(re.search(r'__version__\s*=\s*\"([^\"]+)', open('generator/__init__.py',encoding='utf-8').read()).group(1))")
+          echo "$GLOWNA.$(git rev-list --count HEAD) ($(git log -1 --format=%cs), $(git rev-parse --short HEAD))" > generator/_wersja.txt
+          cat generator/_wersja.txt
+
       - name: Budowa exe
         run: >
           pyinstaller --onefile --windowed --name GeneratorNN
@@ -52,6 +61,7 @@ jobs:
           --add-data "PPW miński szablon.docx;."
           --add-data "wzorce;wzorce"
           --add-data "generator/fonty;fonty"
+          --add-data "generator/_wersja.txt;generator"
           --hidden-import PIL._tkinter_finder
           --hidden-import docx
           --hidden-import openpyxl

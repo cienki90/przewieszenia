@@ -31,6 +31,7 @@ from tkinter import filedialog, messagebox, ttk
 
 from . import pipeline
 from . import ustawienia
+from .wersja import wersja
 
 try:
     import sv_ttk
@@ -69,7 +70,7 @@ def _czcionka_ui():
 class Aplikacja:
     def __init__(self, root: tk.Tk):
         self.root = root
-        root.title(TYTUL)
+        root.title(f"{TYTUL} — wersja {wersja()}")
         root.minsize(1060, 800)
 
         self.ust = ustawienia.wczytaj()
@@ -222,7 +223,11 @@ class Aplikacja:
         gora = ttk.Frame(root, padding=(20, 14, 20, 8))
         gora.grid(row=0, column=0, sticky="we")
         gora.columnconfigure(0, weight=1)
-        ttk.Label(gora, text=TYTUL, style="Tytul.TLabel").grid(row=0, column=0, sticky="w")
+        linia = ttk.Frame(gora)
+        linia.grid(row=0, column=0, sticky="w")
+        ttk.Label(linia, text=TYTUL, style="Tytul.TLabel").pack(side="left")
+        ttk.Label(linia, text=f"wersja {wersja()}", style="Podtytul.TLabel").pack(
+            side="left", padx=(12, 0), pady=(6, 0))
         ttk.Label(gora, text=PODTYTUL, style="Podtytul.TLabel").grid(row=1, column=0, sticky="w")
         self.btn_motyw = ttk.Button(gora, text=self._tekst_motywu(), command=self._przelacz_motyw)
         self.btn_motyw.grid(row=0, column=1, rowspan=2, sticky="e")
@@ -256,8 +261,8 @@ class Aplikacja:
         self._zakladka_numeracja()
         self._zakladka_zestawienie()
         self._zakladka_obliczenia()
-        self._zakladka_orientacje()
         self._zakladka_pzt()
+        self._zakladka_orientacje()
         self._zakladka_opisy()
         self._zakladka_przewieszenia()
         self._zakladka_ppw()

@@ -15,4 +15,6 @@ Wszystkie moduły korzystają tylko z biblioteki standardowej Pythona 3.9+
 from __future__ import annotations
 
 __all__ = ["pipeline", "zasoby"]
-__version__ = "1.0"
+# numer główny wersji (zmieniany ręcznie przy dużych zmianach); pełny numer z kolejnym
+# numerem kompilacji podaje generator.wersja.wersja()
+__version__ = "2.0"

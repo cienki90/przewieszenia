@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import subprocess
 import sys
 
@@ -45,12 +46,14 @@ PLIKI_PROGRAMU = [
 POMIN = {"generator/numeruj_slupy/README.md"}
 
 MANIFEST = ".pliki_programu.txt"
+PLIK_WERSJI = "generator/_wersja.txt"     # odczytywany przez generator/wersja.py
 INSTRUKCJA = "INSTRUKCJA.txt"
 HOOKI = ("post-commit", "post-merge", "post-rewrite")
 
 TRESC_INSTRUKCJI = """\
 GENERATOR PROJEKTÓW nN — gotowy program
 =======================================
+Wersja: {wersja}
 
 Pierwsze uruchomienie (raz na komputerze):
   1. Zainstaluj Pythona 3.10+ ze strony https://www.python.org/
@@ -121,7 +124,16 @@ def publikuj(repo: str, cel: str) -> tuple[int, int, int]:
 
     galaz = _git(repo, "rev-parse", "--abbrev-ref", "HEAD").strip()
     commit = _git(repo, "rev-parse", "--short", "HEAD").strip()
-    instrukcja = TRESC_INSTRUKCJI.format(galaz=galaz, commit=commit).replace("\n", "\r\n")
+    # numer wersji dla kopii (bez gita): <główna z generator/__init__.py>.<liczba commitów>
+    init = _git(repo, "show", "HEAD:generator/__init__.py")
+    glowna = re.search(r'__version__\s*=\s*"([^"]+)"', init)
+    licznik = _git(repo, "rev-list", "--count", "HEAD").strip()
+    data = _git(repo, "log", "-1", "--format=%cs").strip()
+    wersja = f"{glowna.group(1) if glowna else '0'}.{licznik} ({data}, {commit})"
+    _zapisz_jesli_inny(os.path.join(cel, *PLIK_WERSJI.split("/")), (wersja + "\n").encode("utf-8"))
+    pliki = pliki + [PLIK_WERSJI]
+
+    instrukcja = TRESC_INSTRUKCJI.format(galaz=galaz, commit=commit, wersja=wersja).replace("\n", "\r\n")
     _zapisz_jesli_inny(os.path.join(cel, INSTRUKCJA), instrukcja.encode("utf-8"))
 
     # usuń pliki programu, których już nie ma (tylko te, które sami wcześniej umieściliśmy)
