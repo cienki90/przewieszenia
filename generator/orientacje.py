@@ -1529,13 +1529,21 @@ def wstaw_stacje_z_pliku(szablon: DxfDocument, zrodlo: Path, zone_layer: str = "
 
     Dzięki temu szablon rysunków stałych może być „czysty” (sam podkład + tabelka), a zasięgi
     stacji pochodzą z jednego źródła - pliku PZT (warstwy !trafo_<nr>). Zasięgi trafiają na
-    warstwę ``zone_layer`` szablonu. Stacje, które szablon już ma, nie są dublowane."""
+    warstwę ``zone_layer`` szablonu. Stacje są przenoszone tylko do szablonu BEZ własnych stacji;
+    gdy szablon ma stacje albo plik nie ma zasięgów, szablon wraca bez zmian (plik służy wtedy
+    tylko jako źródło słupów do nazw miejscowości)."""
     zr = DxfDocument.load(zrodlo)
     stacje = find_stations(zr, zone_layer)
-    if not stacje:
-        raise ValueError(f"W pliku {Path(zrodlo).name} nie znaleziono stacji trafo "
-                         f"(odnośników „STACJA TRAFO” ani zasięgów na warstwach {zone_layer}_<nr>)")
-    istniejace = {st.designation for st in find_stations(szablon, zone_layer)}
+    if not any(st.zone_poly is not None for st in stacje):
+        # zwykły plan ze słupami (bez zasięgów stacji) - służy tylko jako źródło słupów
+        log(f"Plik {Path(zrodlo).name} nie ma zasięgów stacji - stacje z szablonu, "
+            f"słupy (miejscowości) z tego pliku.")
+        return szablon
+    if find_stations(szablon, zone_layer):
+        # szablon ma własne stacje - nie dokładamy cudzych; plik służy tylko jako źródło słupów
+        log(f"Szablon ma własne stacje - stacje z szablonu, słupy (miejscowości) z pliku "
+            f"{Path(zrodlo).name}.")
+        return szablon
     nazwy_zr = _nazwy_obiektow(zr)
     uchwyty_sz = {v: h for h, v in _nazwy_obiektow(szablon).items()}
     model = uchwyty_sz.get(("BLOCK_RECORD", "*MODEL_SPACE"))
@@ -1546,9 +1554,6 @@ def wstaw_stacje_z_pliku(szablon: DxfDocument, zrodlo: Path, zone_layer: str = "
 
     wstawione, pominiete = [], []
     for st in stacje:
-        if st.designation in istniejace:
-            pominiete.append(f"{st.designation} (jest już w szablonie)")
-            continue
         if st.zone_poly is None:
             pominiete.append(f"{st.designation} (brak zasięgu w pliku)")
             continue

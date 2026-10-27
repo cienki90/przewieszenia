@@ -43,7 +43,7 @@ w wierszu poleceń) — program nie ma łańcucha „wszystko naraz”:
 > „bez podkładu”. W pliku .exe Pillow i szablon są już wbudowane.
 >
 > **Szablon bez stacji + zasięgi z pliku PZT.** Szablon rysunków stałych może zawierać sam podkład
-> i tabelkę — bez zasięgów i odnośników stacji. Wtedy wskaż **plik PZT** (pole „Zasięgi stacji”,
+> i tabelkę — bez zasięgów i odnośników stacji. Wtedy wskaż **plik PZT** (pole „Plik PZT (stacje i słupy)”,
 > CLI `--zasiegi plik_PZT.dxf`): program przenosi z niego do szablonu zasięgi z warstw `!trafo_<nr>`
 > (na warstwę `!trafo`) i odnośniki „STACJA TRAFO”, po czym tworzy osobny rysunek dla każdej stacji.
 > Plik PZT jest też źródłem słupów do nazw miejscowości. Po module „Arkusze PZT” pole wypełnia się samo.
@@ -62,7 +62,7 @@ w wierszu poleceń) — program nie ma łańcucha „wszystko naraz”:
 > **Powiązanie po numerze stacji trafo.** Słupy i szablon rysunków stałych nie muszą być w tym
 > samym pliku — wystarczy, że **numery stacji się zgadzają**. Gdy moduł uruchomiono na planie tras (ze słupami),
 > plan jest automatycznie źródłem miejscowości dla szablonu; można też wskazać go ręcznie
-> (`--plan-slupow`, w oknie pole „Plan ze słupami”). Stacje wiązane są po numerze
+> (`--plan-slupow`, w oknie pole „Plik PZT (stacje i słupy)” — przy szablonie z własnymi stacjami plik służy tylko jako źródło słupów). Stacje wiązane są po numerze
 > (`03-0541` = `0541` = `541`). Gdy nie ma ani planu ze słupami, ani słupów w szablonie,
 > program wraca do położenia odnośnika stacji.
 
