@@ -59,6 +59,7 @@ class Opcje:
     orient_podklad: bool = True                  # pobierać podkład mapowy (wymaga internetu + Pillow)
     orient_szablon: str | None = None            # szablon rysunków stałych (gdy inny niż plan; None = dołączony)
     orient_plan_slupow: str | None = None        # plan ze słupami - źródło miejscowości (wiązanie po nr stacji)
+    orient_zasiegi: str | None = None            # plik z zasięgami stacji (np. PZT) - szablon bez stacji
     # arkusze PZT
     pzt_wzorzec: str | None = None               # plik z layoutem-wzorcem "a" (None = plan wejściowy)
     pzt_zaklad: float = 50.0                     # wspólny odcinek trasy sąsiednich arkuszy [m]
@@ -233,6 +234,8 @@ def uruchom(opcje: Opcje) -> Wynik:
                     szablon = zasoby.szablon_orientacji_dxf() or plan
                 if opcje.orient_plan_slupow:
                     plan_slupow = opcje.orient_plan_slupow        # jawnie wskazany plan ze słupami
+                elif opcje.orient_zasiegi:
+                    plan_slupow = opcje.orient_zasiegi            # plik PZT ma też słupy (miejscowości)
                 elif os.path.abspath(szablon) != os.path.abspath(plan):
                     # szablon rysunków stałych jest innym plikiem niż plan tras ze słupami ->
                     # miejscowości ustal ze słupów planu i powiąż z szablonem po NUMERZE stacji
@@ -381,6 +384,8 @@ def _krok_orientacje(szablon: str, wyjscie_dir: str, opcje: Opcje, plan_slupow=N
         argv.append("--bez-podkladu")
     if plan_slupow:
         argv += ["--plan-slupow", plan_slupow]
+    if opcje.orient_zasiegi:
+        argv += ["--zasiegi", opcje.orient_zasiegi]          # szablon bez stacji - zasięgi z pliku PZT
     # miejscowości z Warunków Technicznych (WT) - nadrzędne źródło nazw, spójne z PZT/opisami
     nazwy_csv = None
     if opcje.wt_plik and plan_slupow:
@@ -566,6 +571,9 @@ def main(argv=None):
     ap.add_argument("--plan-slupow", default=None,
                     help="plan DXF ze słupami - źródło miejscowości dla rysunków stałych "
                          "(wiązanie z szablonem po numerze stacji trafo; domyślnie plan wejściowy)")
+    ap.add_argument("--zasiegi", default=None,
+                    help="rysunki stałe: plik DXF z zasięgami stacji trafo (np. plik PZT) - dla szablonu "
+                         "bez stacji; zasięgi i odnośniki STACJA TRAFO są brane z tego pliku")
     ap.add_argument("--pzt-wzorzec", default=None,
                     help="plik DXF z layoutem-wzorcem „a” dla arkuszy PZT (domyślnie plan wejściowy)")
     ap.add_argument("--pzt-zaklad", type=float, default=50.0,
@@ -616,6 +624,7 @@ def main(argv=None):
                   seed=a.seed, kabel=a.kabel, obliczenia_zestawienie=a.obliczenia_zestawienie,
                   orient_podklad=not a.bez_podkladu,
                   orient_szablon=a.szablon_orientacji, orient_plan_slupow=a.plan_slupow,
+                  orient_zasiegi=a.zasiegi,
                   pzt_wzorzec=a.pzt_wzorzec, pzt_zaklad=a.pzt_zaklad, wt_plik=a.wt,
                   opisy_szablon=a.opisy_szablon, opisy_zestawienie=a.opisy_zestawienie,
                   opisy_wt=a.opisy_wt, opisy_obliczenia=a.opisy_obliczenia,

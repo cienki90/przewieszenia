@@ -1339,7 +1339,7 @@ def bbox_of(pts):
 class Station:
     prefix: str                 # "03"
     number: str                 # "0541"
-    label: Entity
+    label: Entity | None        # odnośnik „STACJA TRAFO” (None - stacja tylko z warstwy !trafo_<nr>)
     x: float                    # położenie stacji (grot odnośnika) - easting
     y: float                    # northing
     zone_poly: Entity | None = None
@@ -1415,10 +1415,19 @@ def find_stations(doc: DxfDocument, zone_layer: str = "!trafo",
             x, y = float(ent.get(10)), float(ent.get(20))
         stations.append(Station(m.group(1), m.group(2), ent, x, y))
 
-    polys = [(e, _lwpoly_points(e)) for e in doc.query("LWPOLYLINE", section="ENTITIES",
-                                                        layer=zone_layer) if not e.paperspace]
+    # obrysy zasięgu: warstwa zone_layer ("!trafo") albo warstwy stacji "!trafo_<nr>" (plik PZT)
+    zl = zone_layer.lower()
+    polys = [(e, _lwpoly_points(e)) for e in doc.query("LWPOLYLINE", section="ENTITIES")
+             if not e.paperspace and (e.layer.lower() == zl or e.layer.lower().startswith(zl + "_"))]
     polys = [(e, p) for e, p in polys if len(p) >= 3]
+    uzyte = set()
     for st in stations:
+        # obrys na warstwie z numerem tej stacji (np. !trafo_05-0565) - powiązanie pewne, bez geometrii
+        wlasny = [(e, p) for e, p in polys if e.layer.lower() == f"{zl}_{st.designation}".lower()]
+        if wlasny:
+            st.zone_poly, st.zone_pts = wlasny[0]
+            uzyte.add(id(st.zone_poly))
+            continue
         inside = [(polygon_area(p), e, p) for e, p in polys if point_in_polygon(st.x, st.y, p)]
         if inside:
             _, st.zone_poly, st.zone_pts = min(inside, key=lambda t: t[0])
@@ -1429,6 +1438,21 @@ def find_stations(doc: DxfDocument, zone_layer: str = "!trafo",
             st.notes.append(f"obrys dopasowany wg odległości ({near[0][0]:.0f} m)")
         else:
             st.notes.append("nie znaleziono obrysu zasięgu stacji")
+        if st.zone_poly is not None:
+            uzyte.add(id(st.zone_poly))
+
+    # zasięgi stacji bez odnośnika „STACJA TRAFO” (warstwa !trafo_<nr>) - stacja z nazwy warstwy,
+    # położenie = środek obrysu
+    znane = {st.designation for st in stations}
+    for e, p in polys:
+        m = re.fullmatch(re.escape(zl) + r"_(\d+)-(\d+)", e.layer.lower())
+        if id(e) in uzyte or not m or f"{m.group(1)}-{m.group(2)}" in znane:
+            continue
+        xmin, ymin, xmax, ymax = bbox_of(p)
+        st = Station(m.group(1), m.group(2), None, (xmin + xmax) / 2, (ymin + ymax) / 2, e, p)
+        st.notes.append("stacja z warstwy zasięgu (brak odnośnika „STACJA TRAFO”)")
+        stations.append(st)
+        znane.add(st.designation)
 
     # duplikaty numerów
     seen = {}
@@ -1438,6 +1462,116 @@ def find_stations(doc: DxfDocument, zone_layer: str = "!trafo",
         seen[st.designation] = st
     stations.sort(key=lambda s: (s.prefix, s.nr))
     return stations
+
+
+# ---------------------------------------------------------------------------
+# zasięgi stacji z innego pliku (np. PZT) - szablon bez stacji
+# ---------------------------------------------------------------------------
+_TABELE_NAZWANE = ("STYLE", "LTYPE", "LAYER", "BLOCK_RECORD", "APPID", "DIMSTYLE", "UCS", "VIEW", "VPORT")
+
+
+def _nazwy_obiektow(doc: DxfDocument) -> dict:
+    """{uchwyt: (typ, NAZWA)} - wpisy tablic i obiekty nazwane w słownikach (np. MLEADERSTYLE).
+
+    Służy do przepinania odwołań między plikami: ten sam styl ma w każdym pliku inny uchwyt,
+    ale tę samą nazwę."""
+    out = {}
+    for e in doc.entities:
+        if doc.tags[e.start] is None or not e.handle:
+            continue
+        if e.type in _TABELE_NAZWANE:
+            out[e.handle.upper()] = (e.type, (e.get(2) or "").strip().upper())
+    for d in doc.query("DICTIONARY", section="OBJECTS"):
+        pary = [(c, v.strip()) for _, c, v in d.items()]
+        for (c, v), (c2, h) in zip(pary, pary[1:]):
+            obj = doc.by_handle.get(h.upper()) if c == 3 and c2 in (350, 360) else None
+            if obj is not None:
+                out.setdefault(h.upper(), (obj.type, v.upper()))
+    return out
+
+
+def _kopia_encji(ent: Entity, cel: DxfDocument, nazwy_zrodla: dict, uchwyty_celu: dict,
+                 wlasciciel: str, warstwa: str | None = None):
+    """Tagi encji ``ent`` gotowe do wstawienia do ``cel`` albo None, gdy nie da się przepiąć odwołań.
+
+    Nowy uchwyt, właściciel = przestrzeń modelu celu, odwołania do stylów/typów linii przepięte
+    po nazwie; reaktory, słownik rozszerzeń i dane rozszerzone (xdata) pomijane."""
+    out, w_grupie, wlasciciel_ustawiony = [], False, False
+    for _, code, val in ent.items():
+        if code == 102:
+            w_grupie = val.strip().startswith("{")
+            continue
+        if w_grupie or code == 360 or code >= 1000:
+            continue
+        if code == 5:
+            out.append((5, cel.new_handle()))
+        elif code == 330 and not wlasciciel_ustawiony:
+            out.append((330, wlasciciel))
+            wlasciciel_ustawiony = True
+        elif code == 8 and warstwa:
+            out.append((8, warstwa))
+        elif code in _POINTER_CODES and val.strip() not in ("", "0"):
+            klucz = nazwy_zrodla.get(val.strip().upper())
+            nowy = uchwyty_celu.get(klucz) if klucz else None
+            if nowy is None:
+                if code in (347, 390):          # materiał / styl wydruku - opcjonalne
+                    continue
+                return None
+            out.append((code, nowy))
+        else:
+            out.append((code, val))
+    return out
+
+
+def wstaw_stacje_z_pliku(szablon: DxfDocument, zrodlo: Path, zone_layer: str = "!trafo",
+                         log=print) -> DxfDocument:
+    """Kopiuje do szablonu zasięgi stacji i odnośniki „STACJA TRAFO” z innego pliku (np. PZT).
+
+    Dzięki temu szablon rysunków stałych może być „czysty” (sam podkład + tabelka), a zasięgi
+    stacji pochodzą z jednego źródła - pliku PZT (warstwy !trafo_<nr>). Zasięgi trafiają na
+    warstwę ``zone_layer`` szablonu. Stacje, które szablon już ma, nie są dublowane."""
+    zr = DxfDocument.load(zrodlo)
+    stacje = find_stations(zr, zone_layer)
+    if not stacje:
+        raise ValueError(f"W pliku {Path(zrodlo).name} nie znaleziono stacji trafo "
+                         f"(odnośników „STACJA TRAFO” ani zasięgów na warstwach {zone_layer}_<nr>)")
+    istniejace = {st.designation for st in find_stations(szablon, zone_layer)}
+    nazwy_zr = _nazwy_obiektow(zr)
+    uchwyty_sz = {v: h for h, v in _nazwy_obiektow(szablon).items()}
+    model = uchwyty_sz.get(("BLOCK_RECORD", "*MODEL_SPACE"))
+    warstwy = {(e.get(2) or "").strip().upper() for e in szablon.query("LAYER")}
+    kotwica = next((e for e in szablon.query(section="ENTITIES") if not e.paperspace), None)
+    if model is None or kotwica is None:
+        raise ValueError("Szablon nie ma przestrzeni modelu z elementami - nie można wstawić zasięgów stacji")
+
+    wstawione, pominiete = [], []
+    for st in stacje:
+        if st.designation in istniejace:
+            pominiete.append(f"{st.designation} (jest już w szablonie)")
+            continue
+        if st.zone_poly is None:
+            pominiete.append(f"{st.designation} (brak zasięgu w pliku)")
+            continue
+        poly = _kopia_encji(st.zone_poly, szablon, nazwy_zr, uchwyty_sz, model, warstwa=zone_layer)
+        if poly is None:
+            pominiete.append(f"{st.designation} (nie udało się skopiować zasięgu)")
+            continue
+        szablon.add_entity_before(kotwica, [(0, "LWPOLYLINE")] + poly)
+        opis = ""
+        if st.label is not None:
+            warstwa = None if st.label.layer.upper() in warstwy else zone_layer
+            etykieta = _kopia_encji(st.label, szablon, nazwy_zr, uchwyty_sz, model, warstwa=warstwa)
+            if etykieta is not None:
+                szablon.add_entity_before(kotwica, [(0, st.label.type)] + etykieta)
+            else:
+                opis = " - bez odnośnika (style odnośnika nie pasują do szablonu)"
+        wstawione.append(st.designation + opis)
+    log(f"Zasięgi stacji z pliku {Path(zrodlo).name}: {len(wstawione)} "
+        f"({', '.join(wstawione) or 'brak'})")
+    for p in pominiete:
+        log(f"  pominięto: {p}")
+    # ponowne wczytanie - nowe encje trafiają do indeksu (find_stations, by_handle)
+    return DxfDocument(szablon.to_bytes())
 
 
 # ---------------------------------------------------------------------------
@@ -1544,6 +1678,7 @@ class Options:
     station_placeholder: str | None = None     # np. "03-xx"; None = autodetekcja
     file_pattern: str = "{nr}.dxf"
     plan_slupow: Path | None = None             # plan ze słupami - źródło miejscowości wiązanych po NUMERZE stacji
+    zones_source: Path | None = None            # plik z zasięgami stacji (np. PZT) - dla szablonu bez stacji
 
 
 def load_names_csv(path: Path) -> dict:
@@ -1575,17 +1710,21 @@ class Generator:
             layers = {(e.get(2) or "").strip() for e in self.template.query("LAYER")}
             self.template = add_raster_image(self.template, "!podklad" if "!podklad" in layers else "0")
             self.image_added = True
+        if opt.zones_source:
+            # szablon bez stacji: zasięgi i odnośniki stacji z pliku PZT
+            self.template = wstaw_stacje_z_pliku(self.template, opt.zones_source, opt.zone_layer, log=log)
         self.layout = SheetLayout.from_doc(self.template)
         self.stations = find_stations(self.template, opt.zone_layer)
         if not self.stations:
-            raise ValueError("Nie znaleziono w szablonie odnośników 'STACJA TRAFO ...'")
+            raise ValueError("Nie znaleziono stacji trafo: szablon nie ma odnośników 'STACJA TRAFO ...' - "
+                             "wskaż plik z zasięgami stacji (np. plik PZT)")
         x0 = self.stations[0].x
         self.zone = pl2000_zone_from_easting(x0)
         # słupy należące do każdej stacji (wg zestawienia) - podstawa do ustalenia miejscowości.
         # Źródłem słupów jest plan ze słupami (gdy wskazany) - stacje wiązane po NUMERZE,
         # a gdy nie - sam szablon. Dzięki temu plan tras i rysunki stałe nie muszą być tym
         # samym plikiem; wystarczy, że numery stacji trafo się zgadzają.
-        zrodlo_slupow = opt.plan_slupow or opt.template
+        zrodlo_slupow = opt.plan_slupow or opt.zones_source or opt.template
         self.slupy_stacji = self._slupy_stacji(zrodlo_slupow)      # {nr stacji: [(x, y), ...]}
         if opt.plan_slupow and self.slupy_stacji:
             self.log(f"Miejscowości stacji ustalane ze słupów planu: {Path(opt.plan_slupow).name} "
@@ -2010,6 +2149,9 @@ def parse_args(argv=None):
     g.add_argument("--plan-slupow", type=Path,
                    help="plan DXF ze słupami - miejscowości ustalane z geokodowania słupów danej stacji "
                         "i wiązane z szablonem po NUMERZE stacji trafo (np. gdy słupów nie ma w szablonie)")
+    g.add_argument("--zasiegi", type=Path,
+                   help="plik DXF z zasięgami stacji trafo (np. plik PZT: warstwy !trafo_<nr> + odnośniki "
+                        "STACJA TRAFO) - dla szablonu bez stacji; domyślnie też źródło słupów (miejscowości)")
 
     g = p.add_argument_group("podkład mapowy")
     g.add_argument("--bez-podkladu", action="store_true",
@@ -2109,7 +2251,8 @@ def main(argv=None) -> int:
         tile_url=a.serwer_kafli, basemap_sources=tuple(a.zrodla_podkladu.split(",")), user_agent=a.user_agent, geocode=not a.bez_geokodowania,
         place_sources=tuple(a.zrodla_nazw.split(",")), verify_places=a.weryfikuj_nazwy,
         majority_place=a.nazwa_wg_wiekszosci, refresh_basemap=a.odswiez_podklad,
-        names_csv=a.nazwy, plan_slupow=a.plan_slupow, only=only, keep_other_stations=a.zostaw_inne_stacje,
+        names_csv=a.nazwy, plan_slupow=a.plan_slupow, zones_source=a.zasiegi,
+        only=only, keep_other_stations=a.zostaw_inne_stacje,
         zone_layer=a.warstwa_obrysow, table_block=a.blok_tabelki,
         place_phrase=a.fraza_miejscowosci, station_placeholder=a.znacznik_stacji,
         file_pattern=a.nazwa_pliku,

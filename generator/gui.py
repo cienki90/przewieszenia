@@ -97,6 +97,7 @@ class Aplikacja:
         # opcje rysunków stałych
         self.orient_szablon = tk.StringVar()
         self.orient_plan_slupow = tk.StringVar()           # plan ze słupami (źródło miejscowości)
+        self.orient_zasiegi = tk.StringVar()               # plik PZT z zasięgami stacji (szablon bez stacji)
         self.orient_podklad = tk.BooleanVar(value=True)
         # opcje arkuszy PZT
         self.pzt_wzorzec = tk.StringVar()                  # plik z layoutem-wzorcem "a" (puste = plan)
@@ -440,6 +441,11 @@ class Aplikacja:
                          "(wg zestawienia).")
         self._pole_pliku(f, "Szablon rysunków stałych:", self.we["orientacje"], "Wybierz szablon DXF")
         self._podpowiedz(f, "(puste = dołączony szablon.dxf)")
+        self._pole_pliku(f, "Zasięgi stacji (plik PZT):", self.orient_zasiegi,
+                         "Wybierz plik PZT z zasięgami stacji (warstwy !trafo_<nr>)")
+        self._podpowiedz(f, "(dla szablonu BEZ zasięgów stacji — zasięgi i odnośniki „STACJA TRAFO” są brane "
+                            "z pliku PZT, a dla każdej stacji powstaje osobny rysunek; wypełnia się samo po "
+                            "module „Arkusze PZT”. Plik PZT jest też źródłem słupów do nazw miejscowości)")
         self._pole_pliku(f, "Plan ze słupami (nazwy):", self.orient_plan_slupow,
                          "Wybierz plan DXF ze słupami (źródło miejscowości)")
         self._podpowiedz(f, "(opcjonalnie — miejscowości ustalane z geokodowania słupów tego planu i wiązane "
@@ -659,6 +665,10 @@ class Aplikacja:
         if krok == "orientacje" and plik and not os.path.isfile(plik):
             messagebox.showwarning(TYTUL, "Wskazany szablon nie istnieje.", parent=self.root)
             return
+        zas = self.orient_zasiegi.get().strip()
+        if krok == "orientacje" and zas and not os.path.isfile(zas):
+            messagebox.showwarning(TYTUL, "Wskazany plik z zasięgami stacji (PZT) nie istnieje.", parent=self.root)
+            return
         # dla orientacji bez pliku: użyj dołączonego szablonu jako wejścia
         wejscie = plik
         orient_szablon = None
@@ -720,6 +730,7 @@ class Aplikacja:
             orient_podklad=self.orient_podklad.get(),
             orient_szablon=orient_szablon or (self.orient_szablon.get().strip() or None),
             orient_plan_slupow=(self.orient_plan_slupow.get().strip() or None),
+            orient_zasiegi=(self.orient_zasiegi.get().strip() or None),
             pzt_wzorzec=(self.pzt_wzorzec.get().strip() or None),
             pzt_zaklad=_float(self.pzt_zaklad.get(), 50.0),
             wt_plik=(self.wt_plik.get().strip() or None),
@@ -790,7 +801,8 @@ class Aplikacja:
                           ("PPW", "miejscowości", self.ppw_zestawienie_stacji),
                           ("Zakładki", "zestawienie", self.zakladki_zestawienie)]
         if krok == "pzt":
-            return wyjscie, [("PPW", "plik DXF do renumeracji", self.ppw_renumer_dxf)]
+            return wyjscie, [("Rysunki stałe", "zasięgi stacji", self.orient_zasiegi),
+                             ("PPW", "plik DXF do renumeracji", self.ppw_renumer_dxf)]
         return None, []
 
     def _podepnij_wyniki(self, udane):

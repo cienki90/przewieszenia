@@ -42,6 +42,12 @@ w wierszu poleceń) — program nie ma łańcucha „wszystko naraz”:
 > (OSM / Geoportal) wymaga internetu i biblioteki **Pillow** — bez nich krok działa z opcją
 > „bez podkładu”. W pliku .exe Pillow i szablon są już wbudowane.
 >
+> **Szablon bez stacji + zasięgi z pliku PZT.** Szablon rysunków stałych może zawierać sam podkład
+> i tabelkę — bez zasięgów i odnośników stacji. Wtedy wskaż **plik PZT** (pole „Zasięgi stacji”,
+> CLI `--zasiegi plik_PZT.dxf`): program przenosi z niego do szablonu zasięgi z warstw `!trafo_<nr>`
+> (na warstwę `!trafo`) i odnośniki „STACJA TRAFO”, po czym tworzy osobny rysunek dla każdej stacji.
+> Plik PZT jest też źródłem słupów do nazw miejscowości. Po module „Arkusze PZT” pole wypełnia się samo.
+>
 > **Szybkość:** nazwa miejscowości jest ustalana z pierwszego źródła, które odpowie (bez
 > odpytywania wszystkich serwisów), a słupy stacji są grupowane przestrzennie — geokodujemy
 > jeden punkt na grupę, nie każdy słup. Dzięki temu generowanie jest szybkie nawet przy wielu
