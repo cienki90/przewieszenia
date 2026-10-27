@@ -861,7 +861,8 @@ def oblicz(wejscie, wyjscie=None, seed=None, kabel=DOMYSLNY_KABEL, cicho=False):
     try:
         zapisz_xlsx(wyjscie, arkusze)
     except PermissionError:
-        raise SystemExit("Nie można zapisać pliku (może jest otwarty w Excelu?):\n%s" % wyjscie)
+        raise SystemExit("Nie można zapisać pliku (może jest otwarty w Excelu albo właśnie "
+                         "synchronizowany przez OneDrive?):\n%s" % wyjscie)
     raport = ["Wczytano: %s" % wejscie]
     for st in stacje:
         raport.append("  stacja %-10s obwody: %d  słupy: %3d  długość: %6s m"

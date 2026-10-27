@@ -129,6 +129,7 @@ class Aplikacja:
         # pola wypełnione automatycznie wynikami tej sesji: nazwa zmiennej -> wpisana ścieżka
         # (tylko w pamięci - nowa sesja programu zaczyna od pustych pól)
         self._podpiete: dict[str, str] = {}
+        self._watek = None                                 # wątek roboczy bieżącego modułu
 
         self._przyciski = []                               # przyciski "Generuj" do blokowania
         self._strony = {}                                  # klucz -> ramka strony modułu
@@ -340,6 +341,13 @@ class Aplikacja:
         self._podpowiedz(ramka, f"(jeden wspólny numer — np. {przyklad}; zapamiętywany na następne "
                                 "uruchomienia, wcześniejsze numery na liście rozwijanej)")
 
+    def _pole_internetu(self, ramka):
+        """Przełącznik pobierania nazw z internetu - tylko w modułach, które z niego korzystają
+        (Przewieszenia, Arkusze PZT); wspólna zmienna, więc ustawienie jest jedno."""
+        ttk.Checkbutton(ramka, text="Nazwy miejscowości i ulic z internetu (GUGiK / OpenStreetMap)",
+                        variable=self.adresy_on).pack(anchor="w", pady=(6, 0))
+        self._podpowiedz(ramka, "(wyłączone = program działa bez internetu, bez nazw ulic/miejscowości)")
+
     def _przycisk_generuj(self, ramka, tekst, komenda):
         b = ttk.Button(ramka, text="▶  " + tekst, command=komenda, style="Accent.TButton")
         b.pack(anchor="w", pady=(14, 6))
@@ -367,6 +375,7 @@ class Aplikacja:
         ttk.Label(r, text="Przęsła dłuższe niż [m] rysuj pionowo:").pack(side="left")
         ttk.Entry(r, textvariable=self.pw_obrot, width=6).pack(side="left", padx=6)
         self._podpowiedz(box, "(0 = tylko gdy rysunek nie mieści się poziomo w arkuszu)")
+        self._pole_internetu(box)
         self._przycisk_generuj(f, "Utwórz przewieszenia", lambda: self._start_modul("przewieszenia"))
 
     def _zakladka_zestawienie(self):
@@ -429,6 +438,7 @@ class Aplikacja:
         r.pack(fill="x", pady=4)
         ttk.Label(r, text="Zakład (wspólny odcinek sąsiednich arkuszy) [m]:").pack(side="left")
         ttk.Entry(r, textvariable=self.pzt_zaklad, width=6).pack(side="left", padx=6)
+        self._pole_internetu(box)
         self._przycisk_generuj(f, "Utwórz arkusze PZT", lambda: self._start_modul("pzt"))
 
     def _zakladka_opisy(self):
@@ -566,10 +576,8 @@ class Aplikacja:
         ttk.Label(kat, text="Katalog zapisu:").grid(row=0, column=0, sticky="w")
         ttk.Entry(kat, textvariable=self.katalog).grid(row=0, column=1, sticky="we", padx=6)
         ttk.Button(kat, text="Zmień…", command=self._wybierz_katalog).grid(row=0, column=2)
-        ttk.Checkbutton(kat, text="Nazwy miejscowości i ulic z internetu (GUGiK / OpenStreetMap)",
-                        variable=self.adresy_on).grid(row=1, column=0, columnspan=3, sticky="w", pady=(6, 0))
         ttk.Label(kat, text="(puste = katalog pliku wejściowego)", style="Hint.TLabel").grid(
-            row=2, column=0, columnspan=3, sticky="w")
+            row=1, column=1, columnspan=2, sticky="w", padx=6)
 
         akcja = ttk.Frame(dol)
         akcja.grid(row=2, column=0, sticky="we", pady=6)
@@ -662,11 +670,14 @@ class Aplikacja:
         for b in self._przyciski:
             b.configure(state="disabled")
         self.btn_otworz.configure(state="disabled")
-        self.pasek.start(12)
+        self.pasek.start(40)                               # co 40 ms - płynnie, bez obciążania CPU
         self.log.configure(state="normal")
         self.log.delete("1.0", "end")
         self.log.configure(state="disabled")
-        self.status.configure(text="Trwa generowanie… (pobieranie danych z internetu może chwilę potrwać)")
+        z_internetem = (any(k in ("przewieszenia", "pzt") for k in kroki) and self.adresy_on.get()) \
+            or ("orientacje" in kroki)
+        self.status.configure(text="Trwa generowanie… (pobieranie danych z internetu może chwilę potrwać)"
+                              if z_internetem else "Trwa generowanie…")
         self._ostatni_katalog = katalog
 
         opcje = pipeline.Opcje(
@@ -696,15 +707,18 @@ class Aplikacja:
             zakladki_wt=self.zakladki_wt.get().strip(),
             log=lambda t="": self._kolejka.put(("log", t)),
         )
-        threading.Thread(target=self._praca, args=(opcje,), daemon=True).start()
+        self._watek = threading.Thread(target=self._praca, args=(opcje,), daemon=True)
+        self._watek.start()
         self.root.after(80, self._pompuj)
 
     def _praca(self, opcje):
+        # BaseException: moduły kończą się czasem przez SystemExit (np. „plik otwarty w Excelu”) -
+        # bez tego wątek ginął po cichu, a okno czekało w nieskończoność
         try:
             wynik = pipeline.uruchom(opcje)
             self._kolejka.put(("koniec", wynik))
-        except Exception as ex:  # noqa: BLE001
-            self._kolejka.put(("log", "\nBŁĄD: " + str(ex)))
+        except BaseException as ex:  # noqa: BLE001
+            self._kolejka.put(("log", "\nBŁĄD: " + (str(ex) or type(ex).__name__)))
             self._kolejka.put(("log", traceback.format_exc()))
             self._kolejka.put(("koniec", None))
 
@@ -719,6 +733,11 @@ class Aplikacja:
                     return
         except queue.Empty:
             pass
+        if self._watek is not None and not self._watek.is_alive() and self._kolejka.empty():
+            # zabezpieczenie: wątek zakończył się bez wyniku - nie zostawiaj okna w stanie „trwa”
+            self._pisz("\nBŁĄD: moduł zakończył się nieoczekiwanie (bez wyniku).")
+            self._zakoncz(None)
+            return
         self.root.after(80, self._pompuj)
 
     # ---- podpinanie wyników tej sesji do kolejnych modułów ----

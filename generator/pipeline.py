@@ -253,10 +253,13 @@ def uruchom(opcje: Opcje) -> Wynik:
             if krok == "orientacje" and r.ok and r.wyjscie:
                 zc = os.path.join(r.wyjscie, "zestawienie_stacji.xlsx")
                 orient_zest = zc if os.path.exists(zc) else orient_zest
-        except Exception as ex:  # noqa: BLE001 - raport trafia do użytkownika
-            r = WynikKroku(krok, ok=False, blad=str(ex),
-                           raport=traceback.format_exc())
-            log(f"BŁĄD: {ex}")
+        except (Exception, SystemExit) as ex:  # noqa: BLE001 - raport trafia do użytkownika
+            # moduły sygnalizują część błędów przez SystemExit (np. plik wynikowy otwarty w Excelu)
+            opis = str(ex)
+            if isinstance(ex, SystemExit) and (ex.code is None or isinstance(ex.code, int)):
+                opis = f"moduł „{krok}” zakończył się z kodem {ex.code}"
+            r = WynikKroku(krok, ok=False, blad=opis, raport=traceback.format_exc())
+            log(f"BŁĄD: {opis}")
         if r.raport:
             log(r.raport.rstrip())
         if r.ok and not tymczasowy and r.wyjscie:
