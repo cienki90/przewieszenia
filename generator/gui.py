@@ -204,7 +204,27 @@ class Aplikacja:
                                insertbackground=k["log_fg"])
         if hasattr(self, "plotno"):
             self.plotno.configure(background=st.lookup("TFrame", "background") or k["naglowek_bg"])
+        if getattr(self, "_logo", None) and hasattr(self, "lbl_logo"):
+            self.lbl_logo.configure(image=self._logo[nazwa])
         self.motyw.set(nazwa)
+
+    def _wczytaj_logo(self):
+        """Logo MMUI dla obu motywów w rozmiarze pasującym do skalowania ekranu (albo None).
+
+        PNG są wyrenderowane z SVG skryptem narzedzia/renderuj_logo.py - Tk wczytuje je
+        bez dodatkowych bibliotek."""
+        katalog = os.path.join(os.path.dirname(os.path.abspath(__file__)), "grafika")
+        try:
+            skala = self.root.winfo_fpixels("1i") / 96 * 100
+        except tk.TclError:
+            skala = 100
+        najblizsza = min((100, 125, 150, 200), key=lambda s: abs(s - skala))
+        try:
+            return {m: tk.PhotoImage(master=self.root,
+                                     file=os.path.join(katalog, f"logo_{nazwa}_{najblizsza}.png"))
+                    for m, nazwa in (("light", "jasny"), ("dark", "ciemny"))}
+        except tk.TclError:            # brak plików logo - okno działa bez niego
+            return None
 
     def _przelacz_motyw(self):
         self._ustaw_motyw("light" if self.motyw.get() == "dark" else "dark")
@@ -231,6 +251,11 @@ class Aplikacja:
         ttk.Label(gora, text=PODTYTUL, style="Podtytul.TLabel").grid(row=1, column=0, sticky="w")
         self.btn_motyw = ttk.Button(gora, text=self._tekst_motywu(), command=self._przelacz_motyw)
         self.btn_motyw.grid(row=0, column=1, rowspan=2, sticky="e")
+        # logo w prawym górnym rogu (PNG - wersja czarna/biała zależnie od motywu)
+        self._logo = self._wczytaj_logo()
+        if self._logo:
+            self.lbl_logo = ttk.Label(gora, image=self._logo[self.motyw.get()])
+            self.lbl_logo.grid(row=0, column=2, rowspan=2, sticky="e", padx=(18, 0))
 
         # --- panel boczny + strony modułów (przewijane, gdy strona nie mieści się w oknie)
         root.rowconfigure(1, weight=1)

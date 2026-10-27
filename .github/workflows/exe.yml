@@ -62,6 +62,7 @@ jobs:
           --add-data "wzorce;wzorce"
           --add-data "generator/fonty;fonty"
           --add-data "generator/_wersja.txt;generator"
+          --add-data "generator/grafika;generator/grafika"
           --hidden-import PIL._tkinter_finder
           --hidden-import docx
           --hidden-import openpyxl
