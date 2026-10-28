@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Minimalny czytnik TrueType (bez bibliotek zewnętrznych) do OSADZANIA czcionki w PDF.
 
 Potrzebny modułowi „Zakładki” przy zapisie PDF: osadzamy prawdziwą czcionkę .ttf

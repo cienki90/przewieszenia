@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Kontrola przewieszeń: kopia planu z numerami przewieszeń w miejscach zaznaczeń.
 
 Program nie zmienia oryginalnego planu. Tworzy jego KOPIĘ, a w miejscu każdego
@@ -15,10 +14,10 @@ zachowuje wszystkie pozostałe obiekty, style i ustawienia oryginału.
 from __future__ import annotations
 
 try:
-    from .dxfio import fmt, get, read_tags, split_entities, split_sections, write_tags, join_entities
+    from .dxfio import fmt, get, join_entities, read_tags, split_entities, split_sections, write_tags
     from .rysunek import KOLOR_KONTROLI, WARSTWA_KONTROLI
 except ImportError:
-    from dxfio import fmt, get, read_tags, split_entities, split_sections, write_tags, join_entities
+    from dxfio import fmt, get, join_entities, read_tags, split_entities, split_sections, write_tags
     from rysunek import KOLOR_KONTROLI, WARSTWA_KONTROLI
 
 # wysokość tekstu numeru na planie [jednostki rysunku planu].

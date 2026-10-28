@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Publikacja „czystej” kopii programu - bez przykładów i materiałów pomocniczych.
 
 Kopiuje do wskazanego katalogu tylko pliki potrzebne do działania programu (kod, szablony,

@@ -20,27 +20,27 @@ import os
 import sys
 
 try:  # uruchomienie jako część pakietu: python -m generator.pipeline / okno
-    from . import plan as plan_mod
     from . import kontrola as kontrola_mod
+    from . import plan as plan_mod
+    from . import rysunek as rysunek_mod
     from . import zestawienie as zestawienie_mod
     from .baza import Baza
     from .geokod import Geokoder
     from .plan import Plan
-    from . import rysunek as rysunek_mod
-    from .rysunek import Dane, SKALA_X, obwiednia, zbuduj
+    from .rysunek import SKALA_X, Dane, obwiednia, zbuduj
     from .zapis import Wyjscie
 except ImportError:  # uruchomienie bezpośrednie: python generator/przewieszenia.py
     import os as _os
     import sys as _sys
     _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
-    import plan as plan_mod
     import kontrola as kontrola_mod
+    import plan as plan_mod
+    import rysunek as rysunek_mod
     import zestawienie as zestawienie_mod
     from baza import Baza
     from geokod import Geokoder
     from plan import Plan
-    import rysunek as rysunek_mod
-    from rysunek import Dane, SKALA_X, obwiednia, zbuduj
+    from rysunek import SKALA_X, Dane, obwiednia, zbuduj
     from zapis import Wyjscie
 
 POLA = ["nr", "x", "y", "slup_l", "typ_l", "slup_p", "typ_p", "rozpietosc",
@@ -260,7 +260,7 @@ def main(argv=None):
         # wskazuje stację obu słupów, a w CSV jest inna (np. stary plik sprzed kontroli) - popraw
         pewna = getattr(z, "stacja_pewna", None)
         if pewna and _norm_stacja(auto["stacja"]) != pewna and _norm_stacja(auto["stacja2"]) != pewna:
-            if r and _norm_stacja((r.get("stacja") or "")) not in ("", pewna):
+            if r and _norm_stacja(r.get("stacja") or "") not in ("", pewna):
                 self_ostrz = (f"Przewieszenie {z.nr}: w pliku opisów (CSV) jest stacja "
                               f"„{(r.get('stacja') or '').strip()}”, a wg zestawienia to „ST {pewna}” "
                               f"- użyto stacji z zestawienia (popraw CSV, jeśli to pomyłka).")

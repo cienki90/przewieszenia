@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Odczyt pliku Warunków Technicznych (WT) i ustalanie miejscowości stacji z WT.
 
 Plik WT (załącznik do umowy) to tabela słupów energetycznych wykorzystywanych do
@@ -228,7 +227,6 @@ def miejscowosci_stacji_z_wt(dxf_path, wt_path, tol=3.0, log=print):
 
     Gdy dla stacji nie uda się dopasować ŻADNEGO słupa WT - zgłaszamy to głośno w ostrzeżeniach
     (fallback na geokodowanie wykonuje warstwa wyżej)."""
-    import re
     slupy_wt = wczytaj_wt(wt_path)
     if not slupy_wt:
         raise ValueError(f"Plik WT „{wt_path}” nie zawiera słupów ze współrzędnymi.")

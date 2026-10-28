@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 numeruj - automatyczna numeracja słupów nN w rysunku DXF.
 
@@ -60,7 +59,6 @@ def _diagnoza_nieobjetych(model, obwody):
     """Grupuje słupy nieprzypisane do żadnego obwodu i podpowiada, czego brakuje
     w rysunku: spójne ciągi przy stacji bez startu (dodaj markery 1/2 + 'obw. nr')
     lub słupy poza zasięgiem jakiejkolwiek stacji."""
-    import collections
     objete = set()
     for ob in obwody:
         objete |= set(ob['slupy'])

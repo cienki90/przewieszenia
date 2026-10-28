@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 numeracja - AUTOMATYCZNE nadawanie numerów słupom na podstawie markerów projektanta.
 
@@ -207,8 +206,6 @@ def _auto_starty(model, st, ids, sp):
     znajdź stację trafo, a następnie NAJBLIŻSZY KONIEC MAGISTRALI do stacji i nadaj
     mu "1". Dla każdej spójnej składowej grafu (osobny obwód) zwraca jeden start.
     Zwraca listę indeksów startowych (posortowaną: najbliższy stacji pierwszy)."""
-    ids_set = set(ids)
-
     # spójne składowe grafu w obrębie stacji
     skladowe = []
     poz = set(ids)

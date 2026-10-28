@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Uruchamianie pojedynczych modułów generatora (przewieszenia, zestawienie, obliczenia, …).
 
 Każde uruchomienie wykonuje JEDEN moduł (program nie ma łańcucha „wszystko naraz”).
@@ -24,11 +23,12 @@ from dataclasses import dataclass, field
 from . import obliczenia as mod_obliczenia
 from . import opisy as mod_opisy
 from . import orientacje as mod_orientacje
+from . import ppw as mod_ppw
 from . import przewieszenia as mod_przewieszenia
 from . import pzt as mod_pzt
-from . import zestawienie as mod_zestawienie
-from . import ppw as mod_ppw
 from . import zakladki as mod_zakladki
+from . import zestawienie as mod_zestawienie
+
 # numeracja słupów (ezdxf, ~0,25 s importu) ładowana dopiero w swoim kroku - patrz _krok_numeracja
 
 # nazwy kroków (kolejność ma znaczenie) - „numeracja” jako pierwszy (projektant najpierw
@@ -196,7 +196,6 @@ def uruchom(opcje: Opcje) -> Wynik:
 
     # PPW (zbiorczy opis) korzysta z zestawienia (tabela) i z „orientacje” (miejscowości) -
     # dołóż brakujące kroki, gdy użytkownik nie wskazał własnych plików
-    ppw_zest_budowane = None
     if "ppw" in kroki:
         if not opcje.ppw_zestawienie and "zestawienie" not in kroki:
             kroki.insert(kroki.index("ppw"), "zestawienie")

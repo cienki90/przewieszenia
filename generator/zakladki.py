@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Moduł „Zakładki” - komplet stron-przekładek (zakładek) dla całego projektu.
 
 Dla każdej stacji trafo z zestawienia powstaje jedna strona z trzema wyśrodkowanymi

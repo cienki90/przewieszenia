@@ -1,0 +1,14 @@
+# Konfiguracja ruff dla programu (uruchomienie: ruff check .)
+target-version = "py39"
+line-length = 120
+
+[lint]
+# błędy (F, E9), importy (I), typowe pułapki (B) i modernizacja składni (UP)
+select = ["E9", "F", "I", "B", "UP"]
+ignore = [
+    "UP031",  # formatowanie przez % - świadomy styl kodu
+    "B905",   # zip() bez strict= - niedostępne w Pythonie 3.9
+    "B007",   # nieużywana zmienna pętli - czytelność rozpakowania
+    "B023",   # funkcje wewnątrz pętli są wywoływane w tym samym obiegu
+    "B904",
+]

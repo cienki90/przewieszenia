@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 Generator opisów technicznych (.docx) dla Domtel Telecom.
 
@@ -491,7 +490,7 @@ def generuj(szablon, zestawienie, out=".", arkusz="Arkusz1",
     utworzone = []
     for dane in wiersze:
         doc = docx.Document(szablon)
-        info = wypelnij_dokument(doc, dane)
+        wypelnij_dokument(doc, dane)
 
         nazwa = dane["plik"]
         if not nazwa.lower().endswith(".docx"):

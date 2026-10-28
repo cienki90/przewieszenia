@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Wersja wiersza poleceń zunifikowanego generatora.
 
 Przykłady:

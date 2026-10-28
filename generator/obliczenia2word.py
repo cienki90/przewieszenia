@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 Moduł obliczenia2word.
 
@@ -36,6 +35,7 @@ import os
 
 from docx import Document
 from docx.oxml.ns import qn
+
 
 def _wzorzec_domyslny():
     """Ścieżka do wzorca tabeli obliczeń - z zasobów pakietu / .exe, a w razie czego obok modułu."""

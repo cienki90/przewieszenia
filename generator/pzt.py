@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Arkusze PZT - automatyczne arkusze A3 1:1000 dla zakresów stacji trafo.
 
 Odpowiednik programu AutoLISP PZT_ARKUSZE, przeniesiony na Pythona (bez CAD-a).
@@ -296,7 +295,6 @@ def _rozmiesc_skupisko(linie, W, H, zakazane, m, zaklad, krok, gestosc):
             celx, cely = cx - sx, cy - sy
             x0, y0 = ark[a]
             kc = max(5.0, W / 80)
-            najl = None
             dy = -H / 2
             kandydaci = []
             while dy <= H / 2 + 1e-9:
@@ -438,7 +436,6 @@ def _wczytaj_wzorzec(sciezka):
     Zwraca (W, H, (zx0, zy0, zx1, zy1)) - strefa względem lewego dolnego rogu rzutni."""
     secs = dict(split_sections(read_tags(sciezka)))
     objsy = split_entities(secs.get("OBJECTS", []))
-    tabele = split_entities(secs.get("TABLES", []))
     bloki = split_entities(secs.get("BLOCKS", []))
     ents = split_entities(secs.get("ENTITIES", []))
 
@@ -462,10 +459,8 @@ def _wczytaj_wzorzec(sciezka):
     if not rzutnie:
         raise ValueError(f"Layout-wzorzec „{NAZWA_WZORCA}” nie ma rzutni modelu.")
     vp = max(rzutnie, key=lambda d: getf(d, 40, 0) * getf(d, 41, 0))
-    cx, cy = getf(vp, 12, 0.0), getf(vp, 22, 0.0)
     H = getf(vp, 45) or getf(vp, 41)                     # wysokość widoku [m]
     W = H * getf(vp, 40, 1.0) / getf(vp, 41, 1.0)        # szerokość widoku [m]
-    x0, y0 = cx - W / 2, cy - H / 2
 
     # Strefa "zakazana" (tabelka + legenda) = prawy dolny róg arkusza. Bierzemy TYLKO bloki
     # tabelki/legendy (INSERT o nazwach z BLOKI_TABELKI) i wyznaczamy prostokąt od ich lewej
@@ -1015,7 +1010,6 @@ def _rekord_warstwy(handle, nazwa, props):
     tagi = [(5, handle), (330, "2"), (100, "AcDbSymbolTableRecord"), (100, "AcDbLayerTableRecord"),
             (2, nazwa), (70, "     0")]
     # dołóż właściwości (kolor/linia/waga), unikając duplikatów kodów
-    uzyte = {c for c, _ in tagi}
     kolor_jest = False
     for c, v in props:
         if c == 62:

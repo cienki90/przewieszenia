@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Obliczenia słupów linii napowietrznej nN.
 
@@ -29,7 +28,6 @@ import os
 import random
 import re
 import struct
-import sys
 import zipfile
 from xml.etree import ElementTree as ET
 from xml.sax.saxutils import escape

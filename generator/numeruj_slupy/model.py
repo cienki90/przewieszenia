@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 model - interpretacja wczytanego rysunku (Rysunek) na potrzeby auto-numeracji.
 
@@ -20,13 +19,31 @@ import collections
 import math
 
 try:
-    from .czytaj_dxf import (RE_OBWOD, RE_SLUP, RE_STACJA, TOL_DUPLIKAT, TOL_STACJA,
-                             DOMYSLNE_OZNACZENIE, Rysunek, graf_sieci, graf_wymiarow,
-                             w_wielokacie)
+    from .czytaj_dxf import (
+        DOMYSLNE_OZNACZENIE,
+        RE_OBWOD,
+        RE_SLUP,
+        RE_STACJA,
+        TOL_DUPLIKAT,
+        TOL_STACJA,
+        Rysunek,
+        graf_sieci,
+        graf_wymiarow,
+        w_wielokacie,
+    )
 except ImportError:  # bezpośrednie uruchomienie bez pakietu
-    from czytaj_dxf import (RE_OBWOD, RE_SLUP, RE_STACJA, TOL_DUPLIKAT, TOL_STACJA,
-                            DOMYSLNE_OZNACZENIE, Rysunek, graf_sieci, graf_wymiarow,
-                            w_wielokacie)
+    from czytaj_dxf import (
+        DOMYSLNE_OZNACZENIE,
+        RE_OBWOD,
+        RE_SLUP,
+        RE_STACJA,
+        TOL_DUPLIKAT,
+        TOL_STACJA,
+        Rysunek,
+        graf_sieci,
+        graf_wymiarow,
+        w_wielokacie,
+    )
 
 BLAD, UWAGA, INFO = 'BŁĄD', 'UWAGA', 'INFO'
 

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 zapis_dxf - zapis wyników numeracji do pliku DXF (biblioteka ezdxf).
 
@@ -28,11 +27,6 @@ try:
 except ImportError as _ex:          # ezdxf jest OPCJONALNY - potrzebny tylko do zapisu wyniku
     ezdxf = None
     _EZDXF_BLAD = _ex
-
-try:
-    from .numeracja import _wektor
-except ImportError:
-    from numeracja import _wektor
 
 # paleta kolorów ACI dla kolejnych obwodów (pomijamy biały/czarny 7 i czerwień 1 zarezerw.)
 PALETA_ACI = [1, 3, 5, 6, 2, 4, 30, 150, 190, 210, 40, 90, 230, 8, 250, 170]

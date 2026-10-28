@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Zestawienie słupów nN z pliku DXF -> plik Excel (.xlsx)
 

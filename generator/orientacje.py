@@ -148,7 +148,7 @@ def fmt_float(v: float) -> str:
 
 @dataclass
 class Entity:
-    doc: "DxfDocument"
+    doc: DxfDocument
     start: int          # indeks tagu (0, TYP)
     end: int            # indeks pierwszego tagu następnej encji (wyłącznie)
     type: str
@@ -209,11 +209,11 @@ class DxfDocument:
         self._index()
 
     @classmethod
-    def load(cls, path) -> "DxfDocument":
+    def load(cls, path) -> DxfDocument:
         with open(path, "rb") as f:
             return cls(f.read())
 
-    def copy(self) -> "DxfDocument":
+    def copy(self) -> DxfDocument:
         new = object.__new__(DxfDocument)
         new.newline, new.encoding = self.newline, self.encoding
         new.tags = [None if t is None else list(t) for t in self.tags]
@@ -1114,8 +1114,9 @@ class BasemapProvider:
 
     # --- WMS: obraz od razu w PL-2000, w kawałkach -----------------------------------
     def _render_wms(self, src, bbox, zone, width, height, resolution):
-        from PIL import Image
         import hashlib
+
+        from PIL import Image
         xmin, ymax = bbox[0], bbox[3]
         out = Image.new("RGB", (width, height), "white")
         step = src.max_size
@@ -1592,7 +1593,7 @@ class SheetLayout:
     template_scale: float
 
     @classmethod
-    def from_doc(cls, doc: DxfDocument) -> "SheetLayout":
+    def from_doc(cls, doc: DxfDocument) -> SheetLayout:
         vps = [e for e in doc.query("VIEWPORT", section="ENTITIES") if e.paperspace]
         # pierwsza rzutnia układu to zawsze "rzutnia papieru" (widok samego arkusza)
         vps = vps[1:] if len(vps) > 1 else vps
@@ -1780,7 +1781,7 @@ class Generator:
             wg_stacji.setdefault(_norm_name_station(st), []).append((x, y))
         return wg_stacji
 
-    def _miejscowosci_stacji(self, st: "Station"):
+    def _miejscowosci_stacji(self, st: Station):
         """Lista (miejscowość, liczba słupów) dla stacji - jakie miejscowości obejmuje stacja.
 
         Dla szybkości NIE geokodujemy każdego słupa z osobna (to tysiące zapytań do serwisów),

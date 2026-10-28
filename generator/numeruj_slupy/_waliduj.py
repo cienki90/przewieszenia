@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Walidacja: nadane numery vs istniejące (ground truth) na pliku z pełną numeracją.
 
 Dla uczciwości testu program dostaje tylko starty 'obw. nr X' i markery; porównujemy
 nadane numery z numerami już wpisanymi w DXF."""
 import sys
+
 try:
     from .model import wczytaj
     from .numeracja import numeruj

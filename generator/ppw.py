@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Moduł PPW - zbiorczy opis techniczny (.docx) dla CAŁEGO projektu (wszystkie stacje w jednym pliku).
 
 W odróżnieniu od modułu „Opisy” (osobny plik na stację) PPW tworzy JEDEN dokument podsumowujący
@@ -50,6 +49,7 @@ def _wymagaj_bibliotek():
     if docx is None:
         try:
             import copy as _c
+
             import docx as _d
         except ImportError as ex:
             raise ImportError("Moduł PPW wymaga biblioteki python-docx (pip install python-docx)") from ex

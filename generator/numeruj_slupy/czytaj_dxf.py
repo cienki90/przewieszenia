@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 czytaj_dxf - odczyt rysunku DXF do modelu na potrzeby AUTOMATYCZNEJ numeracji słupów.
 

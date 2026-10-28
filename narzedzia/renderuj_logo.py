@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Zamiana logo SVG (generator/grafika/mmui-logo.svg) na pliki PNG dla okna programu.
 
 Tk nie wyświetla SVG, ale PNG wczytuje bez dodatkowych bibliotek - dlatego logo jest

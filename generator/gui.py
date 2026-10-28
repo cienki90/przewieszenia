@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Okienkowy interfejs zunifikowanego generatora - nowoczesny układ z panelem modułów.
 
 Układ okna:
@@ -24,13 +23,11 @@ import os
 import queue
 import sys
 import threading
-import traceback
-
 import tkinter as tk
+import traceback
 from tkinter import filedialog, messagebox, ttk
 
-from . import pipeline
-from . import ustawienia
+from . import pipeline, ustawienia
 from .wersja import wersja
 
 try:
@@ -81,7 +78,7 @@ class Aplikacja:
         self.adresy_on = tk.BooleanVar(value=True)         # nazwy ulic/miejscowości z internetu
         self.motyw = tk.StringVar(value=self.ust.get("motyw", "light"))
         self.pracuje = False
-        self._kolejka: "queue.Queue" = queue.Queue()
+        self._kolejka: queue.Queue = queue.Queue()
         self._ostatni_wynik = None
         self._ostatni_katalog = ""
 
