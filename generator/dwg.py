@@ -6,9 +6,10 @@ darmowego konwertera:
   - ODA File Converter (Open Design Alliance; zalecany, Windows/Linux/macOS),
   - LibreDWG (programy „dwg2dxf” / „dxf2dwg”) - zapasowo.
 
-Ścieżkę konwertera można wskazać zmienną środowiskową GENERATOR_ODA (plik ODAFileConverter)
-albo GENERATOR_LIBREDWG (katalog z dwg2dxf/dxf2dwg). Bez nich program szuka w typowych
-miejscach instalacji i w PATH.
+Ścieżkę ODA (plik ODAFileConverter albo folder instalacji) można wskazać w oknie programu
+(„Wskaż ODA…”, zapamiętywane w ustawieniach) albo zmienną środowiskową GENERATOR_ODA;
+LibreDWG - zmienną GENERATOR_LIBREDWG (katalog z dwg2dxf/dxf2dwg). Bez nich program szuka
+w PATH, w typowych miejscach instalacji oraz w folderach „ODA*” na dyskach (np. D:\\programy\\oda).
 """
 from __future__ import annotations
 
@@ -32,11 +33,57 @@ def jest_dwg(sciezka) -> bool:
     return bool(sciezka) and str(sciezka).lower().endswith(".dwg")
 
 
-# ---------------------------------------------------------------------------
+_EXE_ODA = "ODAFileConverter.exe" if sys.platform.startswith("win") else "ODAFileConverter"
+_znaleziony_oda: list = []                              # pamięć podręczna wyniku szukania
+
+
+def _oda_w(sciezka):
+    """Plik konwertera albo folder, w którym leży (najwyżej 2 poziomy niżej)."""
+    if not sciezka:
+        return None
+    if os.path.isfile(sciezka):
+        return sciezka
+    if os.path.isdir(sciezka):
+        for w in ("", "*", os.path.join("*", "*")):
+            trafienia = sorted(glob.glob(os.path.join(glob.escape(sciezka), w, _EXE_ODA)))
+            if trafienia:
+                return trafienia[-1]                    # najnowsza wersja (sortowanie po nazwie)
+    return None
+
+
+def _ze_ustawien():
+    try:
+        from . import ustawienia
+    except ImportError:
+        return None
+    return ustawienia.wczytaj().get("oda")
+
+
+def ustaw_oda(sciezka) -> str | None:
+    """Zapamiętuje wskazany plik/folder ODA w ustawieniach. Zwraca znaleziony plik albo None."""
+    plik = _oda_w(sciezka)
+    if plik:
+        from . import ustawienia
+        dane = ustawienia.wczytaj()
+        dane["oda"] = plik
+        ustawienia.zapisz(dane)
+        _znaleziony_oda[:] = [plik]
+    return plik
+
+
 def _znajdz_oda():
-    env = os.environ.get("GENERATOR_ODA")
-    if env and os.path.isfile(env):
-        return env
+    if _znaleziony_oda and os.path.isfile(_znaleziony_oda[0]):
+        return _znaleziony_oda[0]
+    p = _szukaj_oda()
+    _znaleziony_oda[:] = [p] if p else []
+    return p
+
+
+def _szukaj_oda():
+    for zrodlo in (os.environ.get("GENERATOR_ODA"), _ze_ustawien()):
+        p = _oda_w(zrodlo)
+        if p:
+            return p
     for nazwa in ("ODAFileConverter", "ODAFileConverter.exe"):
         p = shutil.which(nazwa)
         if p:
@@ -45,7 +92,16 @@ def _znajdz_oda():
     if sys.platform.startswith("win"):
         for baza in (os.environ.get("ProgramFiles", r"C:\Program Files"),
                      os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")):
-            wzorce.append(os.path.join(baza, "ODA", "ODAFileConverter*", "ODAFileConverter.exe"))
+            wzorce.append(os.path.join(baza, "ODA", "ODAFileConverter*", _EXE_ODA))
+        # instalacje poza Program Files, np. D:\\ODA\\…, D:\\programy\\oda\\… (glob w Windows
+        # ignoruje wielkość liter)
+        for litera in "CDEFGH":
+            dysk = litera + ":\\"
+            if os.path.isdir(dysk):
+                wzorce += [os.path.join(dysk, "ODA*", _EXE_ODA),
+                           os.path.join(dysk, "ODA*", "*", _EXE_ODA),
+                           os.path.join(dysk, "*", "ODA*", _EXE_ODA),
+                           os.path.join(dysk, "*", "ODA*", "*", _EXE_ODA)]
     elif sys.platform == "darwin":
         wzorce.append("/Applications/ODAFileConverter.app/Contents/MacOS/ODAFileConverter")
     else:
@@ -80,8 +136,8 @@ def konwerter() -> str | None:
 def _brak():
     return BrakKonwertera(
         "Do obsługi plików DWG potrzebny jest darmowy program ODA File Converter "
-        f"({LINK_ODA}) albo LibreDWG. Zainstaluj go (lub wskaż ścieżkę w zmiennej "
-        "GENERATOR_ODA) i uruchom ponownie. Możesz też zapisać plik jako DXF w programie CAD.")
+        f"({LINK_ODA}) albo LibreDWG. Zainstaluj go albo wskaż jego folder przyciskiem "
+        "„Wskaż ODA…” w oknie (lub w zmiennej GENERATOR_ODA) i uruchom ponownie. Możesz też zapisać plik jako DXF w programie CAD.")
 
 
 def _uruchom(argv, opis):

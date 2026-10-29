@@ -611,7 +611,8 @@ class Aplikacja:
         ttk.Label(kat, text="(puste = katalog pliku wejściowego)", style="Hint.TLabel").grid(
             row=1, column=1, columnspan=2, sticky="w", padx=6)
         ttk.Checkbutton(kat, text="Zapisuj rysunki także jako DWG (wymaga ODA File Converter)",
-                        variable=self.eksport_dwg).grid(row=2, column=1, columnspan=2, sticky="w", padx=6)
+                        variable=self.eksport_dwg).grid(row=2, column=1, sticky="w", padx=6)
+        ttk.Button(kat, text="Wskaż ODA…", command=self._wskaz_oda).grid(row=2, column=2)
 
         akcja = ttk.Frame(dol)
         akcja.grid(row=2, column=0, sticky="we", pady=6)
@@ -644,6 +645,22 @@ class Aplikacja:
                                     initialdir=self.katalog.get() or None)
         if p:
             self.katalog.set(os.path.normpath(p))
+
+    def _wskaz_oda(self):
+        """Wybór folderu ODA File Converter (konwersja DWG) - zapamiętywany w ustawieniach."""
+        from . import dwg
+        teraz = dwg.konwerter()
+        p = filedialog.askdirectory(parent=self.root, title="Folder programu ODA File Converter")
+        if not p:
+            if teraz:
+                self._pisz(f"Konwerter DWG: {teraz}")
+            return
+        plik = dwg.ustaw_oda(os.path.normpath(p))
+        if plik:
+            self._pisz(f"Konwerter DWG: ODA File Converter ({plik}) - zapamiętano.")
+        else:
+            messagebox.showwarning(TYTUL, "W tym folderze nie ma pliku ODAFileConverter.exe.",
+                                   parent=self.root)
 
     def _pisz(self, tekst: str):
         self.log.configure(state="normal")

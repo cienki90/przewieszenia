@@ -145,7 +145,8 @@ i katalog wyników są takie same jak dla oryginału. Opcja **„Zapisuj rysunki
 
 Format DWG jest zamknięty, dlatego potrzebny jest darmowy **ODA File Converter**
 (<https://www.opendesign.com/guestfiles/oda_file_converter>) — program znajduje go sam w
-`C:\Program Files\ODA\…` lub w PATH; inną ścieżkę wskazuje zmienna `GENERATOR_ODA`. Zapasowo
+`C:\Program Files\ODA\…`, w folderach `ODA*` na dyskach (np. `D:\programy\oda`) lub w PATH;
+inną lokalizację wskazuje się przyciskiem **„Wskaż ODA…”** w oknie (zapamiętywane) albo zmienną `GENERATOR_ODA`. Zapasowo
 działa **LibreDWG** (`dwg2dxf`/`dxf2dwg`, katalog w `GENERATOR_LIBREDWG`). Bez konwertera DXF
 działa jak dotąd, a eksport DWG jest pomijany z ostrzeżeniem.
 
