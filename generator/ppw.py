@@ -445,6 +445,20 @@ def _ustaw_numer_w_encjach(ents, nalezy, nowy):
     return False
 
 
+def nazwa_powykonawcza(sciezka: str, katalog: str | None = None) -> str:
+    """Ścieżka pliku powykonawczego: „PPW <nazwa>.dxf” (w ``katalog`` albo obok pliku wejściowego).
+
+    Przedrostek nie jest dublowany, gdy nazwa już zaczyna się od „PPW” - chyba że wynik trafiłby
+    w sam plik wejściowy (ten sam folder): wtedy zawsze dopisujemy „PPW ”, żeby nie nadpisać oryginału."""
+    nazwa = os.path.splitext(os.path.basename(sciezka))[0]
+    folder = katalog if katalog is not None else os.path.dirname(sciezka)
+    wynik = os.path.join(folder, nazwa + ".dxf")
+    if not nazwa.upper().startswith("PPW") or os.path.normcase(os.path.abspath(wynik)) == \
+            os.path.normcase(os.path.abspath(sciezka)):
+        wynik = os.path.join(folder, "PPW " + nazwa + ".dxf")
+    return wynik
+
+
 def _zamien_powykonawczy(secs):
     """W całym rysunku zamienia 'Projekt wykonawczy'->'Projekt powykonawczy'
     (fallback 'wykonawczy'->'powykonawczy'), w TEXT i MTEXT. Zwraca liczbę zmian."""
@@ -533,8 +547,7 @@ def renumeruj_rysunki(dxf, wyjscie=None, log=None):
     zmian_txt = _zamien_powykonawczy(secs)
 
     if not wyjscie:
-        baza, _ext = os.path.splitext(dxf)
-        wyjscie = baza + " - powykonawczy.dxf"
+        wyjscie = nazwa_powykonawcza(dxf)
     tags = []
     for name in kolejnosc:
         tags += [(0, "SECTION"), (2, name)] + secs[name] + [(0, "ENDSEC")]

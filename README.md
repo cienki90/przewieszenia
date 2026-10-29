@@ -126,7 +126,7 @@ pasek postępu i dziennik przebiegu.
 > `1.1, 1.2…`; jeden arkusz → bez kropki) i zamienia „Projekt wykonawczy” → „Projekt
 > powykonawczy”. Pole numeru rozpoznawane uniwersalnie (MTEXT wys. 2.0, treść `N`/`N.N`; styl
 > `LEGENDA` preferowany, ale niewymagany). Działa na czystym Pythonie (bez `ezdxf`), tworzy
-> nieniszcząco `… - powykonawczy.dxf`. CLI: `--ppw-renumeruj plik.dxf`.
+> nieniszcząco plik `PPW <nazwa>.dxf`. CLI: `--ppw-renumeruj plik.dxf`.
 
 > **Numeracja słupów** (z repo gałęzi `numeracja-slupow`): automatycznie numeruje słupy nN.
 > W planie zaznacz ręcznie numery „1” i „2” dwóch pierwszych słupów każdego obwodu (warstwa

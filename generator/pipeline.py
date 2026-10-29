@@ -131,7 +131,7 @@ def domyslne_wyjscia(plan: str, katalog: str | None = None) -> dict:
         "opisy": os.path.join(kat, "opisy"),                 # podfolder z opisami .docx
         "ppw": os.path.join(kat, "PPW.docx"),                # zbiorczy opis techniczny .docx
         "zakladki": os.path.join(kat, "zakladki.docx"),      # strony-przekładki (docx/pdf wg formatu)
-        "ppw_renumer": os.path.join(kat, f"{baza} - powykonawczy.dxf"),  # renumeracja rysunków DXF
+        "ppw_renumer": mod_ppw.nazwa_powykonawcza(plan, kat),   # renumeracja rysunków: „PPW <nazwa>.dxf”
     }
 
 
@@ -601,10 +601,9 @@ def _krok_ppw_renumer(opcje: Opcje, plan: str, wyjscie: str) -> WynikKroku:
     """Renumeracja numerów rysunku w tabelkach arkuszy DXF (STACJA-ARKUSZ) + „Projekt
     wykonawczy”->„Projekt powykonawczy”. Działa na pliku opcje.ppw_renumer_dxf (lub planie)."""
     dxf = opcje.ppw_renumer_dxf or plan
-    # nazwa wyniku obok pliku wejściowego: „<nazwa> - powykonawczy.dxf”
+    # nazwa wyniku w katalogu wyników: „PPW <nazwa>.dxf”
     if opcje.ppw_renumer_dxf:
-        baza = _bazowa_nazwa(opcje.ppw_renumer_dxf)
-        wyjscie = os.path.join(os.path.dirname(wyjscie), f"{baza} - powykonawczy.dxf")
+        wyjscie = mod_ppw.nazwa_powykonawcza(opcje.ppw_renumer_dxf, os.path.dirname(wyjscie))
 
     def uruchom():
         return mod_ppw.renumeruj_rysunki(dxf, wyjscie, log=print)

@@ -531,7 +531,7 @@ class Aplikacja:
         ren = self._sekcja(f, "Renumeracja numerów rysunku (DXF)")
         self._podpowiedz(ren, "Dla arkuszy STACJA-ARKUSZ (np. 112-1) nadaje numery rysunku w tabelkach "
                               "(112→1, wiele arkuszy → 1.1, 1.2; jeden → bez kropki) i zamienia „Projekt "
-                              "wykonawczy” → „Projekt powykonawczy”. Tworzy „… - powykonawczy.dxf”.")
+                              "wykonawczy” → „Projekt powykonawczy”. Tworzy „PPW <nazwa pliku>.dxf”.")
         self._pole_pliku(ren, "Plik DXF (PZT/arkusze):", self.ppw_renumer_dxf,
                          "Wybierz plik DXF z arkuszami STACJA-ARKUSZ")
         self._przycisk_generuj(ren, "Renumeruj rysunki (DXF)", self._start_renumer)
