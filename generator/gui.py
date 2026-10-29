@@ -27,7 +27,7 @@ import tkinter as tk
 import traceback
 from tkinter import filedialog, messagebox, ttk
 
-from . import pipeline, ustawienia
+from . import pipeline, projekt, ustawienia
 from .wersja import wersja
 
 try:
@@ -134,12 +134,128 @@ class Aplikacja:
         self._watek = None                                 # wątek roboczy bieżącego modułu
         self._kroki_biezace = ()                           # moduł(y) bieżącego uruchomienia (do dziennika)
 
+        self.projekt = tk.StringVar()                      # folder bieżącego projektu ("" = brak)
+
         self._przyciski = []                               # przyciski "Generuj" do blokowania
         self._strony = {}                                  # klucz -> ramka strony modułu
         self._wybrana = tk.StringVar()
         self._ustaw_motyw(self.motyw.get())
         self._buduj()
         root.protocol("WM_DELETE_WINDOW", self._zamknij)
+        # ostatni projekt wraca przy starcie - wszystkie zakładki od razu wypełnione
+        ostatni = self.ust.get("projekt_ostatni")
+        if ostatni and os.path.isfile(projekt.sciezka(ostatni)):
+            self._otworz_projekt(ostatni, cicho=True)
+
+    # ================================================================= projekt
+    def _pola_projektu(self) -> dict:
+        """Pola okna zapisywane w projekcie: klucz -> zmienna tk."""
+        pola = {f"plik_{k}": v for k, v in self.we.items()}
+        for nazwa in ("katalog", "pw_obrot", "obl_seed", "obl_kabel", "obl_zestawienie", "orient_szablon",
+                      "orient_zasiegi", "orient_podklad", "pzt_wzorzec", "pzt_zaklad", "wt_plik",
+                      "opisy_szablon", "opisy_zestawienie", "opisy_obliczenia", "ppw_szablon", "ppw_zestawienie",
+                      "ppw_zestawienie_stacji", "ppw_renumer_dxf", "zakladki_zestawienie", "zakladki_format",
+                      "adresy_on"):
+            pola[nazwa] = getattr(self, nazwa)
+        for m, v in self.wt.items():
+            pola[f"wt_{m}"] = v
+        return pola
+
+    def _zapisz_projekt(self):
+        folder = self.projekt.get()
+        if not folder or not os.path.isdir(folder):
+            return
+        pola = self._pola_projektu()
+        auto = [k for k, v in pola.items() if str(v) in self._podpiete and v.get() == self._podpiete[str(v)]]
+        try:
+            projekt.zapisz(folder, {k: v.get() for k, v in pola.items()}, auto)
+        except OSError:
+            pass
+
+    def _ustaw_projekt(self, folder):
+        folder = os.path.normpath(folder)
+        self.projekt.set(folder)
+        self.ust["projekt_ostatni"] = folder
+        self.ust["projekty"] = projekt.dopisz_ostatni(self.ust.get("projekty") or [], folder)
+        self._odswiez_ostatnie()
+        self._zaplanuj_zapis()
+
+    def _otworz_projekt(self, folder_lub_plik, cicho=False):
+        dane = projekt.wczytaj(folder_lub_plik)
+        if dane is None:
+            if not cicho:
+                messagebox.showwarning(TYTUL, "Nie udało się wczytać projektu (brak pliku "
+                                              f"„{projekt.NAZWA_PLIKU}” albo plik uszkodzony).", parent=self.root)
+            return
+        if self.projekt.get():
+            self._zapisz_projekt()                         # poprzedni projekt nie traci zmian
+        pola = self._pola_projektu()
+        self._podpiete.clear()
+        for k, wartosc in (dane.get("pola") or {}).items():
+            if k in pola:
+                try:
+                    pola[k].set(wartosc)
+                except (tk.TclError, ValueError):
+                    pass
+        for k in dane.get("auto") or []:
+            if k in pola:
+                self._podpiete[str(pola[k])] = pola[k].get()
+        self._ustaw_projekt(projekt.folder(projekt.sciezka(folder_lub_plik)))
+        if hasattr(self, "log"):
+            self._pisz(f"Projekt: {self.projekt.get()}")
+
+    def _wybierz_projekt(self):
+        p = filedialog.askopenfilename(parent=self.root, title="Otwórz projekt (plik projektu albo plan w folderze)",
+                                       filetypes=[("Projekt GeneratorNN", projekt.NAZWA_PLIKU),
+                                                  ("Wszystkie pliki", "*.*")])
+        if not p:
+            return
+        folder = os.path.dirname(p)
+        if os.path.isfile(projekt.sciezka(folder)):
+            self._otworz_projekt(folder)
+        else:                                              # folder bez projektu - nowy projekt w nim
+            self._nowy_projekt(folder)
+
+    def _nowy_projekt(self, folder=None):
+        if self.projekt.get():
+            self._zapisz_projekt()
+        # czyszczone są pola plików; opcje i numery WT zostają jak były
+        pliki = ("katalog", "obl_zestawienie", "orient_szablon", "orient_zasiegi", "pzt_wzorzec", "wt_plik",
+                 "opisy_szablon", "opisy_zestawienie", "opisy_obliczenia", "ppw_szablon", "ppw_zestawienie",
+                 "ppw_zestawienie_stacji", "ppw_renumer_dxf", "zakladki_zestawienie")
+        for k, v in self._pola_projektu().items():
+            if k.startswith("plik_") or k in pliki:
+                v.set("")
+        self._podpiete.clear()
+        if folder:
+            self._ustaw_projekt(folder)
+            self._zapisz_projekt()
+        else:
+            self.projekt.set("")
+            self.ust["projekt_ostatni"] = ""
+            self._zaplanuj_zapis()
+
+    def _odswiez_ostatnie(self):
+        if not hasattr(self, "menu_ostatnie"):
+            return
+        self.menu_ostatnie.delete(0, "end")
+        lista = [f for f in (self.ust.get("projekty") or []) if os.path.isfile(projekt.sciezka(f))]
+        for f in lista:
+            self.menu_ostatnie.add_command(label=f, command=lambda f=f: self._otworz_projekt(f))
+        if not lista:
+            self.menu_ostatnie.add_command(label="(brak)", state="disabled")
+
+    def _projekt_przy_uruchomieniu(self, plik):
+        """Brak projektu - zakłada go w folderze planu (pierwszy plik DXF/DWG modułów)."""
+        if self.projekt.get():
+            return
+        for k in ("numeracja", "przewieszenia", "zestawienie", "obliczenia", "pzt"):
+            p = self.we[k].get().strip()
+            if p and os.path.isfile(p):
+                self._ustaw_projekt(os.path.dirname(os.path.abspath(p)))
+                return
+        if plik and os.path.isfile(plik):
+            self._ustaw_projekt(os.path.dirname(os.path.abspath(plik)))
 
     # ================================================================= ustawienia
     def _historia_wt(self) -> list:
@@ -166,6 +282,7 @@ class Aplikacja:
         if self._zapis_id is not None:
             self.root.after_cancel(self._zapis_id)
         self._zapisz_ustawienia()
+        self._zapisz_projekt()
         self.root.destroy()
 
     # ================================================================= wygląd
@@ -259,6 +376,25 @@ class Aplikacja:
         if self._logo:
             self.lbl_logo = ttk.Label(gora, image=self._logo[self.motyw.get()])
             self.lbl_logo.grid(row=0, column=2, rowspan=2, sticky="e", padx=(18, 0))
+
+        # --- pasek projektu: zapamiętane pliki i opcje wszystkich modułów dla jednego zadania
+        pasek = ttk.Frame(gora)
+        pasek.grid(row=2, column=0, columnspan=3, sticky="we", pady=(10, 0))
+        pasek.columnconfigure(1, weight=1)
+        ttk.Label(pasek, text="Projekt:", style="Sekcja.TLabel").grid(row=0, column=0, sticky="w")
+        self._opis_projektu = tk.StringVar()
+        ttk.Label(pasek, textvariable=self._opis_projektu, style="Hint.TLabel").grid(
+            row=0, column=1, sticky="w", padx=(8, 8))
+        ttk.Button(pasek, text="Otwórz…", command=self._wybierz_projekt).grid(row=0, column=2, padx=2)
+        mb = ttk.Menubutton(pasek, text="Ostatnie")
+        self.menu_ostatnie = tk.Menu(mb, tearoff=False)
+        mb.configure(menu=self.menu_ostatnie)
+        mb.grid(row=0, column=3, padx=2)
+        ttk.Button(pasek, text="Nowy", command=self._nowy_projekt).grid(row=0, column=4, padx=(2, 0))
+        self.projekt.trace_add("write", lambda *_: self._opis_projektu.set(
+            self.projekt.get() or "brak — założy się sam w folderze planu przy pierwszym uruchomieniu modułu"))
+        self.projekt.set(self.projekt.get())
+        self._odswiez_ostatnie()
 
         # --- panel boczny + strony modułów (przewijane, gdy strona nie mieści się w oknie)
         root.rowconfigure(1, weight=1)
@@ -768,6 +904,8 @@ class Aplikacja:
         if self._zapis_id is not None:
             self.root.after_cancel(self._zapis_id)
         self._zapisz_ustawienia(do_historii=wt)
+        self._projekt_przy_uruchomieniu(plik)
+        self._zapisz_projekt()
         katalog = self._domyslny_katalog(plik)
         self._kroki_biezace = tuple(kroki)
         self.pracuje = True
@@ -911,6 +1049,7 @@ class Aplikacja:
         for k in wynik.kroki:
             self._pisz(f"  [{'OK' if k.ok else 'BŁĄD'}] {k.nazwa} — {k.wyjscie or k.blad or ''}")
         self._podepnij_wyniki(udane)
+        self._zapisz_projekt()                             # podpięte wyniki zostają w projekcie
         dziennik = self._zapisz_dziennik()
         if dziennik:
             self._pisz(f"\nDziennik zapisano: {dziennik}")
