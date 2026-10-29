@@ -22,7 +22,7 @@ if not exist "_test" mkdir "_test"
 
 for %%M in (przewieszenia zestawienie obliczenia) do (
   echo Uruchamiam modul %%M...
-  %PY% generator_cli.py "%PLAN%" -o "_test" --tylko %%M --adresy brak --seed 1
+  %PY% generator_cli.py "%PLAN%" -o "_test" --tylko %%M --adresy brak --seed 1 --dxf
   if errorlevel 1 set "BLAD=1"
 )
 if defined BLAD (

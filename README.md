@@ -139,16 +139,17 @@ pasek postępu i dziennik przebiegu.
 
 Każdy moduł przyjmuje na wejściu **DXF albo DWG** (plan, szablon rysunków stałych, plik PZT,
 wzorzec PZT, plik do renumeracji). Plik DWG jest najpierw zamieniany na tymczasowy DXF — nazwy
-i katalog wyników są takie same jak dla oryginału. Opcja **„Zapisuj rysunki także jako DWG”**
-(w oknie pod katalogiem zapisu, w CLI `--dwg`) dokłada obok każdego wyniku `.dxf` kopię `.dwg`
-(format AutoCAD 2018).
+i katalog wyników są takie same jak dla oryginału. **Rysunki wynikowe są domyślnie
+zapisywane jako DWG** (format AutoCAD 2018), a gdy nie wykryto ODA File Converter — jako DXF.
+Zapis w DXF można wymusić, odznaczając w oknie „Zapisuj rysunki jako DWG” (pod katalogiem zapisu)
+albo opcją `--dxf` w wierszu poleceń.
 
 Format DWG jest zamknięty, dlatego potrzebny jest darmowy **ODA File Converter**
 (<https://www.opendesign.com/guestfiles/oda_file_converter>) — program znajduje go sam w
 `C:\Program Files\ODA\…`, w folderach `ODA*` na dyskach (np. `D:\programy\oda`) lub w PATH;
 inną lokalizację wskazuje się przyciskiem **„Wskaż ODA…”** w oknie (zapamiętywane) albo zmienną `GENERATOR_ODA`. Zapasowo
-działa **LibreDWG** (`dwg2dxf`/`dxf2dwg`, katalog w `GENERATOR_LIBREDWG`). Bez konwertera DXF
-działa jak dotąd, a eksport DWG jest pomijany z ostrzeżeniem.
+działa **LibreDWG** (`dwg2dxf`/`dxf2dwg`, katalog w `GENERATOR_LIBREDWG`). Bez konwertera program działa
+na DXF jak dotąd.
 
 ## Program dla Windows (.exe)
 

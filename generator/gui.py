@@ -77,7 +77,7 @@ class Aplikacja:
         # wspólne
         self.katalog = tk.StringVar()
         self.adresy_on = tk.BooleanVar(value=True)         # nazwy ulic/miejscowości z internetu
-        self.eksport_dwg = tk.BooleanVar(value=bool(self.ust.get("eksport_dwg", False)))
+        self.eksport_dwg = tk.BooleanVar(value=bool(self.ust.get("zapis_dwg", True)))
         self.motyw = tk.StringVar(value=self.ust.get("motyw", "light"))
         self.pracuje = False
         self._kolejka: queue.Queue = queue.Queue()
@@ -155,7 +155,7 @@ class Aplikacja:
         if do_historii:
             self.ust["wt_historia"] = ustawienia.dopisz_do_historii(self._historia_wt(), do_historii)
         self.ust["motyw"] = self.motyw.get()
-        self.ust["eksport_dwg"] = self.eksport_dwg.get()
+        self.ust["zapis_dwg"] = self.eksport_dwg.get()
         self.ust["modul"] = self._wybrana.get()
         ustawienia.zapisz(self.ust)
 
@@ -610,7 +610,7 @@ class Aplikacja:
         ttk.Button(kat, text="Zmień…", command=self._wybierz_katalog).grid(row=0, column=2)
         ttk.Label(kat, text="(puste = katalog pliku wejściowego)", style="Hint.TLabel").grid(
             row=1, column=1, columnspan=2, sticky="w", padx=6)
-        ttk.Checkbutton(kat, text="Zapisuj rysunki także jako DWG (wymaga ODA File Converter)",
+        ttk.Checkbutton(kat, text="Zapisuj rysunki jako DWG (bez ODA File Converter — jako DXF)",
                         variable=self.eksport_dwg).grid(row=2, column=1, sticky="w", padx=6)
         ttk.Button(kat, text="Wskaż ODA…", command=self._wskaz_oda).grid(row=2, column=2)
 
