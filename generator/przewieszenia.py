@@ -173,6 +173,9 @@ def main(argv=None):
                          "'brak' = bez internetu (domyślnie uug,osm)")
     ap.add_argument("--odswiez-adresy", action="store_true",
                     help="pobierz miejscowości i ulice ponownie dla wszystkich przewieszeń (nadpisuje CSV)")
+    ap.add_argument("--nazwy", default=None,
+                    help="CSV „numer;miejscowość” z ręcznymi poprawkami nazw stacji - uzupełnia miejscowość, "
+                         "gdy geokodowanie jej nie ustaliło")
     ap.add_argument("--kontrola", default=None,
                     help="plik kontrolny: kopia planu z numerami przewieszeń w miejscach zaznaczeń "
                          "(domyślnie <plan> - kontrola.dxf)")
@@ -217,7 +220,17 @@ def main(argv=None):
 
     G = None
     if a.adresy.strip().lower() not in ("", "brak", "nie", "0"):
-        G = Geokoder(os.path.splitext(a.plan)[0] + "_adresy.json", zrodla=a.adresy.lower().split(","))
+        # wspólna pamięć adresów programu + dawny plik pamięci obok planu (tylko odczyt)
+        G = Geokoder(zrodla=a.adresy.lower().split(","),
+                     dodatkowe_pamieci=[os.path.splitext(a.plan)[0] + "_adresy.json"])
+    # ręczne poprawki nazw miejscowości stacji - uzupełniają miejscowość, gdy geokodowanie jej nie dało
+    nazwy_stacji = {}
+    if a.nazwy:
+        try:
+            from . import nazwy as nazwy_mod
+        except ImportError:          # bezpośrednie uruchomienie skryptu
+            import nazwy as nazwy_mod
+        nazwy_stacji = nazwy_mod.wczytaj(a.nazwy)
 
     szablon = a.arkusze if os.path.exists(a.arkusze) else a.baza
     W = Wyjscie(szablon)
@@ -273,6 +286,11 @@ def main(argv=None):
                 auto["miejscowosc"] = adr[0]
                 if a.odswiez_adresy or not r or not auto["ulica"]:
                     auto["ulica"] = adr[1]
+        if not auto["miejscowosc"] and nazwy_stacji:
+            nr_st = _norm_stacja(auto["stacja"])
+            nr_st = int(nr_st.split("-")[-1]) if nr_st and nr_st.split("-")[-1].isdigit() else None
+            if nr_st in nazwy_stacji:
+                auto["miejscowosc"] = nazwy_stacji[nr_st]
         wiersze.append(auto)
 
         L = int(auto["rozpietosc"])

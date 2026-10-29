@@ -98,22 +98,54 @@ def _nominatim(lat, lon):
 ZRODLA = {"uug": _uug, "osm": _nominatim}
 
 
+def wspolna_pamiec() -> str:
+    """Wspólna pamięć adresów wszystkich planów: %LOCALAPPDATA%\\GeneratorNN\\cache\\adresy.json.
+
+    Klucze to współrzędne PL-2000 (0,1 m), więc ta sama lokalizacja z różnych planów i uruchomień
+    nie jest pytana w internecie drugi raz, a folder projektu nie jest zaśmiecany plikami pamięci."""
+    baza = os.environ.get("LOCALAPPDATA") or os.environ.get("XDG_CACHE_HOME") \
+        or os.path.join(os.path.expanduser("~"), ".cache")
+    return os.path.join(baza, "GeneratorNN", "cache", "adresy.json")
+
+
+def _wczytaj_json(sciezka):
+    try:
+        with open(sciezka, encoding="utf-8") as f:
+            dane = json.load(f)
+        return dane if isinstance(dane, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
 class Geokoder:
-    def __init__(self, cache_path: str | None = None, zrodla=("uug", "osm"), opoznienie: float = 1.1):
-        self.cache_path = cache_path
+    def __init__(self, cache_path: str | None = None, zrodla=("uug", "osm"), opoznienie: float = 1.1,
+                 dodatkowe_pamieci=()):
+        """cache_path - plik pamięci (domyślnie wspólna pamięć programu); dodatkowe_pamieci - starsze
+        pliki (np. „<plan>_adresy.json”) tylko do odczytu - adresy pobrane wcześniej nie przepadają."""
+        self.cache_path = cache_path or wspolna_pamiec()
         self.cache = {}
+        for p in dodatkowe_pamieci:
+            self.cache.update(_wczytaj_json(p))
+        self.cache.update(_wczytaj_json(self.cache_path))
         self.zrodla = [z for z in zrodla if z in ZRODLA]
         self.opoznienie = opoznienie  # Nominatim (OSM): max 1 zapytanie / s
         self._ostatnio = 0.0
         self.bledy: list[str] = []
-        if cache_path and os.path.exists(cache_path):
-            with open(cache_path, encoding="utf-8") as f:
-                self.cache = json.load(f)
 
     def zapisz(self):
-        if self.cache_path:
-            with open(self.cache_path, "w", encoding="utf-8") as f:
-                json.dump(self.cache, f, ensure_ascii=False, indent=1)
+        """Zapis z dołączeniem tego, co w międzyczasie zapisały inne uruchomienia (nic nie ginie)."""
+        if not self.cache_path:
+            return
+        try:
+            dane = _wczytaj_json(self.cache_path)
+            dane.update(self.cache)
+            os.makedirs(os.path.dirname(self.cache_path), exist_ok=True)
+            tmp = self.cache_path + f".{os.getpid()}.tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(dane, f, ensure_ascii=False, indent=1)
+            os.replace(tmp, self.cache_path)
+        except OSError:
+            pass                      # brak zapisu pamięci nie przerywa generowania
 
     def adres(self, x: float, y: float):
         """Zwraca (miejscowość, ulica) dla punktu w PUWG 2000 lub None przy błędzie."""

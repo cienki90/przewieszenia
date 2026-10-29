@@ -398,6 +398,8 @@ def _krok_przewieszenia(plan: str, wyjscie: str, opcje: Opcje) -> WynikKroku:
             "--kontrola", kontrola]
     if opcje.zostaw_puste_arkusze:
         argv.append("--zostaw-puste-arkusze")
+    if opcje.nazwy_plik and os.path.isfile(opcje.nazwy_plik):
+        argv += ["--nazwy", opcje.nazwy_plik]                # ręczne poprawki nazw miejscowości stacji
     kod, raport = _przechwyc(mod_przewieszenia.main, argv)
     ok = (kod == 0) and os.path.exists(wyjscie)
     r = WynikKroku("przewieszenia", ok=ok, wyjscie=wyjscie if ok else None, raport=raport,
