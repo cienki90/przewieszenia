@@ -38,7 +38,8 @@ except ImportError:          # motyw opcjonalny - bez niego okno używa „clam�
 TYTUL = "Generator projektów nN"
 PODTYTUL = "przewieszenia · zestawienie · obliczenia · rysunki stałe · PZT · opisy"
 
-DXF_TYPY = [("Rysunek DXF", "*.dxf"), ("Wszystkie pliki", "*.*")]
+DXF_TYPY = [("Rysunek DXF / DWG", "*.dxf *.dwg"), ("Rysunek DXF", "*.dxf"), ("Rysunek DWG", "*.dwg"),
+            ("Wszystkie pliki", "*.*")]
 DOCX_TYPY = [("Dokument Word", "*.docx"), ("Wszystkie pliki", "*.*")]
 XLSX_TYPY = [("Skoroszyt Excel", "*.xlsx *.xls"), ("Wszystkie pliki", "*.*")]
 
@@ -76,6 +77,7 @@ class Aplikacja:
         # wspólne
         self.katalog = tk.StringVar()
         self.adresy_on = tk.BooleanVar(value=True)         # nazwy ulic/miejscowości z internetu
+        self.eksport_dwg = tk.BooleanVar(value=bool(self.ust.get("eksport_dwg", False)))
         self.motyw = tk.StringVar(value=self.ust.get("motyw", "light"))
         self.pracuje = False
         self._kolejka: queue.Queue = queue.Queue()
@@ -153,6 +155,7 @@ class Aplikacja:
         if do_historii:
             self.ust["wt_historia"] = ustawienia.dopisz_do_historii(self._historia_wt(), do_historii)
         self.ust["motyw"] = self.motyw.get()
+        self.ust["eksport_dwg"] = self.eksport_dwg.get()
         self.ust["modul"] = self._wybrana.get()
         ustawienia.zapisz(self.ust)
 
@@ -607,6 +610,8 @@ class Aplikacja:
         ttk.Button(kat, text="Zmień…", command=self._wybierz_katalog).grid(row=0, column=2)
         ttk.Label(kat, text="(puste = katalog pliku wejściowego)", style="Hint.TLabel").grid(
             row=1, column=1, columnspan=2, sticky="w", padx=6)
+        ttk.Checkbutton(kat, text="Zapisuj rysunki także jako DWG (wymaga ODA File Converter)",
+                        variable=self.eksport_dwg).grid(row=2, column=1, columnspan=2, sticky="w", padx=6)
 
         akcja = ttk.Frame(dol)
         akcja.grid(row=2, column=0, sticky="we", pady=6)
@@ -653,7 +658,7 @@ class Aplikacja:
     def _start_modul(self, krok):
         plik = self.we[krok].get().strip()
         if krok != "orientacje" and (not plik or not os.path.isfile(plik)):
-            messagebox.showwarning(TYTUL, "Wskaż istniejący plik DXF.", parent=self.root)
+            messagebox.showwarning(TYTUL, "Wskaż istniejący plik DXF lub DWG.", parent=self.root)
             return
         if krok == "orientacje" and plik and not os.path.isfile(plik):
             messagebox.showwarning(TYTUL, "Wskazany szablon nie istnieje.", parent=self.root)
@@ -738,6 +743,7 @@ class Aplikacja:
             zakladki_zestawienie=(self.zakladki_zestawienie.get().strip() or None),
             zakladki_format=(self.zakladki_format.get().strip() or "docx"),
             zakladki_wt=self.zakladki_wt.get().strip(),
+            eksport_dwg=self.eksport_dwg.get(),
             log=lambda t="": self._kolejka.put(("log", t)),
         )
         self._watek = threading.Thread(target=self._praca, args=(opcje,), daemon=True)

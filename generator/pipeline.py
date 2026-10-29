@@ -18,8 +18,9 @@ import sys
 import tempfile
 import traceback
 from contextlib import redirect_stderr, redirect_stdout
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
+from . import dwg as mod_dwg
 from . import obliczenia as mod_obliczenia
 from . import opisy as mod_opisy
 from . import orientacje as mod_orientacje
@@ -80,6 +81,8 @@ class Opcje:
     zakladki_zestawienie: str | None = None      # xlsx z „Rysunków stałych” (None = z kroku „orientacje”)
     zakladki_format: str = "docx"                # format wyniku: „docx” albo „pdf” (przełącznik)
     zakladki_wt: str = ""                        # numer warunków (WT) - wspólny, wpisywany ręcznie
+    # DWG: pliki wejściowe .dwg są wczytywane zawsze (konwersja do DXF); eksport wyników - opcja
+    eksport_dwg: bool = False                    # zapisz też kopię każdego wyniku DXF jako .dwg
     log: object = print                          # funkcja logowania (podmieniana w GUI)
 
 
@@ -90,6 +93,7 @@ class WynikKroku:
     wyjscie: str | None = None
     raport: str = ""
     blad: str | None = None
+    dodatkowe: list = field(default_factory=list)   # inne utworzone pliki (np. kopia kontrolna)
 
 
 @dataclass
@@ -139,8 +143,70 @@ def _przechwyc(funkcja, *args, **kwargs):
 
 
 # ---------------------------------------------------------------------------
+# pola Opcje wskazujące pliki rysunków - każde może być DWG (wczytywany przez konwersję do DXF)
+POLA_RYSUNKOW = ("plan", "orient_szablon", "orient_plan_slupow", "orient_zasiegi",
+                 "pzt_wzorzec", "ppw_renumer_dxf")
+
+
 def uruchom(opcje: Opcje) -> Wynik:
-    """Wykonuje wybrane kroki łańcucha i zwraca zbiorczy wynik."""
+    """Wykonuje wybrane kroki łańcucha i zwraca zbiorczy wynik.
+
+    Pliki DWG na wejściu są najpierw zamieniane na tymczasowe DXF (nazwy i katalog wyników
+    zostają jak dla oryginału); przy opcje.eksport_dwg wyniki DXF dostają kopię .dwg."""
+    log = opcje.log or (lambda *_: None)
+    dwg_we = [p for p in (getattr(opcje, n) for n in POLA_RYSUNKOW) if mod_dwg.jest_dwg(p)]
+    if not dwg_we and not opcje.eksport_dwg:
+        return _uruchom_kroki(opcje)
+    if not mod_dwg.konwerter():
+        if dwg_we:
+            raise mod_dwg._brak()
+        log("UWAGA: brak konwertera DWG - wyniki zostaną zapisane tylko jako DXF.")
+        return _uruchom_kroki(opcje)
+    log(f"Konwerter DWG: {mod_dwg.konwerter()}")
+    wejscia = mod_dwg.Wejscia(log=log)
+    try:
+        zmiany = {n: wejscia.dxf(getattr(opcje, n)) for n in POLA_RYSUNKOW}
+        # katalog wyników - jak dla oryginalnego pliku DWG (nie katalogu tymczasowego)
+        if not opcje.katalog:
+            for n in ("plan", "ppw_renumer_dxf"):
+                p = getattr(opcje, n)
+                if p and os.path.isfile(p):
+                    if mod_dwg.jest_dwg(p):
+                        zmiany["katalog"] = os.path.dirname(os.path.abspath(p))
+                    break
+        wynik = _uruchom_kroki(replace(opcje, **zmiany))
+    finally:
+        wejscia.sprzatnij()
+    if opcje.eksport_dwg:
+        _eksportuj_dwg(wynik, log)
+    return wynik
+
+
+def _pliki_dxf_wyniku(k: WynikKroku) -> list:
+    """Pliki DXF utworzone przez krok (plik wyniku, katalog z rysunkami, plik kontrolny)."""
+    if not k.ok or not k.wyjscie:
+        return []
+    if os.path.isdir(k.wyjscie):
+        return sorted(os.path.join(k.wyjscie, f) for f in os.listdir(k.wyjscie)
+                      if f.lower().endswith(".dxf"))
+    pliki = [k.wyjscie] + k.dodatkowe
+    return [p for p in pliki if p.lower().endswith(".dxf") and os.path.isfile(p)]
+
+
+def _eksportuj_dwg(wynik: Wynik, log):
+    for k in wynik.kroki:
+        pliki = _pliki_dxf_wyniku(k)
+        if not pliki:
+            continue
+        log(f"\n=== EKSPORT DWG ({k.nazwa}) ===")
+        for dxf in pliki:
+            try:
+                log(f"-> zapisano: {mod_dwg.dxf_na_dwg(dxf)}")
+            except Exception as ex:  # noqa: BLE001 - DXF już jest; DWG to dodatek
+                log(f"UWAGA: nie udało się zapisać DWG dla {os.path.basename(dxf)}: {ex}")
+
+
+def _uruchom_kroki(opcje: Opcje) -> Wynik:
     log = opcje.log or (lambda *_: None)
     plan = opcje.plan
     kroki = [k for k in KROKI if k in opcje.kroki]          # zachowaj właściwą kolejność
@@ -163,7 +229,7 @@ def uruchom(opcje: Opcje) -> Wynik:
         elif tylko_renumer and os.path.isfile(opcje.ppw_renumer_dxf):
             plan = opcje.ppw_renumer_dxf
         else:
-            raise FileNotFoundError(f"Nie znaleziono pliku planu DXF: {plan}")
+            raise FileNotFoundError(f"Nie znaleziono pliku planu DXF/DWG: {plan}")
     katalog = opcje.katalog or os.path.dirname(os.path.abspath(plan))
     os.makedirs(katalog, exist_ok=True)
     wyj = domyslne_wyjscia(plan, katalog)
@@ -317,6 +383,7 @@ def _krok_przewieszenia(plan: str, wyjscie: str, opcje: Opcje) -> WynikKroku:
     r = WynikKroku("przewieszenia", ok=ok, wyjscie=wyjscie if ok else None, raport=raport,
                    blad=None if ok else "Nie udało się utworzyć rysunków przewieszeń.")
     if ok and os.path.exists(kontrola):
+        r.dodatkowe.append(kontrola)
         r.raport = (r.raport + f"\n-> kopia planu z numerami (kontrola): {kontrola}").strip()
     return r
 
@@ -546,7 +613,9 @@ def main(argv=None):
     ap = argparse.ArgumentParser(
         description="Zunifikowany generator: z jednego planu DXF tworzy przewieszenia, "
                     "zestawienie słupów i obliczenia nośności.")
-    ap.add_argument("plan", help="plik DXF planu")
+    ap.add_argument("plan", help="plik planu DXF albo DWG (DWG wymaga ODA File Converter / LibreDWG)")
+    ap.add_argument("--dwg", action="store_true",
+                    help="zapisz też kopię każdego wyniku DXF w formacie DWG")
     ap.add_argument("-o", "--katalog", default=None,
                     help="katalog zapisu wyników (domyślnie obok planu)")
     ap.add_argument("--tylko", default=None, metavar="MODUŁ",
@@ -631,8 +700,12 @@ def main(argv=None):
                   ppw_zestawienie_stacji=a.ppw_zestawienie_stacji, ppw_wt=a.ppw_wt,
                   zakladki_zestawienie=a.zakladki_zestawienie, zakladki_format=a.zakladki_format,
                   zakladki_wt=a.zakladki_wt,
-                  ppw_renumer_dxf=a.ppw_renumeruj, log=print)
-    wynik = uruchom(opcje)
+                  ppw_renumer_dxf=a.ppw_renumeruj, eksport_dwg=a.dwg, log=print)
+    try:
+        wynik = uruchom(opcje)
+    except (FileNotFoundError, mod_dwg.BrakKonwertera) as ex:
+        print(f"BŁĄD: {ex}", file=sys.stderr)
+        return 1
 
     print("\n" + "=" * 60)
     print("PODSUMOWANIE")

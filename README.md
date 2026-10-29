@@ -135,6 +135,20 @@ pasek postępu i dziennik przebiegu.
 > z numerami na warstwach `_numery_<stacja>_<obwod>` oraz obrysami kontrolnymi. Wymaga biblioteki
 > **ezdxf** (w `.exe` wbudowana).
 
+## Pliki DWG
+
+Każdy moduł przyjmuje na wejściu **DXF albo DWG** (plan, szablon rysunków stałych, plik PZT,
+wzorzec PZT, plik do renumeracji). Plik DWG jest najpierw zamieniany na tymczasowy DXF — nazwy
+i katalog wyników są takie same jak dla oryginału. Opcja **„Zapisuj rysunki także jako DWG”**
+(w oknie pod katalogiem zapisu, w CLI `--dwg`) dokłada obok każdego wyniku `.dxf` kopię `.dwg`
+(format AutoCAD 2018).
+
+Format DWG jest zamknięty, dlatego potrzebny jest darmowy **ODA File Converter**
+(<https://www.opendesign.com/guestfiles/oda_file_converter>) — program znajduje go sam w
+`C:\Program Files\ODA\…` lub w PATH; inną ścieżkę wskazuje zmienna `GENERATOR_ODA`. Zapasowo
+działa **LibreDWG** (`dwg2dxf`/`dxf2dwg`, katalog w `GENERATOR_LIBREDWG`). Bez konwertera DXF
+działa jak dotąd, a eksport DWG jest pomijany z ostrzeżeniem.
+
 ## Program dla Windows (.exe)
 
 Plik `GeneratorNN.exe` jest budowany automatycznie przez GitHub Actions po każdej zmianie kodu
