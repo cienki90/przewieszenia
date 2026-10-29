@@ -14,6 +14,13 @@ w wierszu poleceń) — program nie ma łańcucha „wszystko naraz”:
 | **Opisy techniczne** | osobny opis techniczny `.docx` dla każdej stacji (z szablonu Word) | `opisy/<nr>.docx` |
 | **Zakładki** | strony-przekładki (nr stacji / miejscowość / WT) dla każdej stacji | `zakladki.docx` lub `zakladki.pdf` |
 
+> **Podgląd i przesuwanie arkuszy PZT.** W zakładce „Arkusze PZT” przycisk „Podgląd i przesuwanie
+> arkuszy…” otwiera (tylko na żądanie) mapę poglądową wybranej stacji: zasięg, trasę `!tele` i arkusze
+> (z marginesem i strefą tabelki). Arkusze przeciąga się myszą; niepokryte odcinki trasy świecą na
+> czerwono. Rozkład stacji liczony jest w tle dopiero po jej wybraniu. Zapisany układ trafia do
+> `<plan> - arkusze PZT.json` obok planu, a generowanie PZT używa go zamiast rozkładu automatycznego
+> (z ostrzeżeniem, gdy ręczny układ nie pokrywa całej trasy).
+
 > **Opisy techniczne** (z repo `generator_opisow`): dla każdej stacji z zestawienia tworzy opis
 > `.docx` z szablonu Word (kontrolki `trafo`, `miejscowosc`, `wt`). Zestawienie można **podpiąć
 > wprost z „Rysunków stałych”** (`zestawienie_stacji.xlsx`) — program rozpoznaje kolumny po

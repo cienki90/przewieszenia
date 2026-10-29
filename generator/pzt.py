@@ -558,18 +558,20 @@ def _numer_poligonu(poly, stacje, oznaczenia, ostrzezenia):
     return None
 
 
-def zaplanuj(we: Wejscie, miejscowosci_stacji=None, tylko=None, zaklad=ZAKLAD, log=print):
-    """Zwraca listę arkuszy (Arkusz) dla wszystkich stacji oraz listę ostrzeżeń.
+@dataclass
+class DaneStacji:
+    """Wszystko, co potrzebne do rozmieszczenia arkuszy jednej stacji (też dla podglądu)."""
+    nr: str                 # znormalizowany numer, np. "565"
+    oznaczenie: str         # pełne oznaczenie, np. "05-0565"
+    poligony: list          # [[(x, y), ...], ...] zasięg stacji
+    linie: list             # [[(x, y), ...], ...] trasa !tele w zasięgu
 
-    miejscowosci_stacji - {znormalizowany_nr_stacji: [miejscowości...]} do wpisania w tabelce
-                          (po zasięgu stacji trafo); każdy arkusz danej stacji dostaje tę samą listę.
-    tylko               - zbiór znormalizowanych numerów stacji do wygenerowania (None = wszystkie)."""
-    ostrzezenia = []
+
+def dane_stacji(we: Wejscie, ostrzezenia=None):
+    """Lista DaneStacji (w kolejności numerów) i {nr: [uchwyty poligonów]} - wspólne dla
+    generowania arkuszy i podglądu ich układu."""
+    ostrzezenia = [] if ostrzezenia is None else ostrzezenia
     oznaczenia = {_norm_nr(nr): nr for nr, _ in we.stacje}      # 494 -> 03-0494
-    W, H = we.wzor_okno
-    miejscowosci_stacji = miejscowosci_stacji or {}
-
-    # numer stacji dla każdego poligonu + uchwyty poligonów (do warstw stacji)
     poligony = []
     poligony_stacji = {}          # nr -> [uchwyty poligonów tej stacji]
     for nazwa_warstwy, pts, uchwyt in we.poligony:
@@ -581,27 +583,106 @@ def zaplanuj(we: Wejscie, miejscowosci_stacji=None, tylko=None, zaklad=ZAKLAD, l
             poligony.append((nr, pts))
             if uchwyt:
                 poligony_stacji.setdefault(nr, []).append(uchwyt)
-
-    arkusze = []
+    wynik = []
     for nr in sorted({n for n, _ in poligony}, key=lambda s: (len(s), s)):
-        if tylko and nr not in tylko:
-            continue
         polys = [pts for n, pts in poligony if n == nr]
         linie = []
         for poly in polys:
             linie += _trasa_w_poligonie(we.trasy, poly)
-        if not linie:
-            ostrzezenia.append(f"Stacja {oznaczenia.get(nr, nr)}: brak trasy !tele w zakresie - pominięto.")
+        wynik.append(DaneStacji(nr, oznaczenia.get(nr, nr), polys, linie))
+    return wynik, poligony_stacji
+
+
+# ============================================================ ręczny układ arkuszy (podgląd)
+# Układ przesunięty ręcznie w oknie podglądu zapisywany jest obok planu jako
+# „<plan> - arkusze PZT.json”: {"okno": [W, H], "stacje": {"565": [[x0, y0], ...]}}.
+# Generowanie PZT używa go zamiast rozkładu automatycznego (tylko dla zapisanych stacji).
+UKLAD_WERSJA = 1
+
+
+def sciezka_ukladu(dxf: str) -> str:
+    import os
+    return os.path.splitext(os.path.abspath(dxf))[0] + " - arkusze PZT.json"
+
+
+def wczytaj_uklad(sciezka: str, okno=None, log=print) -> dict:
+    """{nr stacji: [(x0, y0), ...]} z pliku układu albo {} (brak pliku / inny rozmiar arkusza)."""
+    import json
+    try:
+        with open(sciezka, encoding="utf-8") as f:
+            dane = json.load(f)
+    except (OSError, ValueError):
+        return {}
+    if okno and dane.get("okno") and any(abs(a - b) > 0.01 for a, b in zip(dane["okno"], okno)):
+        log(f"Uwaga: zapisany układ arkuszy dotyczy innego rozmiaru arkusza {dane['okno']} - pominięto.")
+        return {}
+    return {str(nr): [tuple(map(float, p)) for p in pts] for nr, pts in (dane.get("stacje") or {}).items()}
+
+
+def zapisz_uklad(sciezka: str, okno, stacje: dict) -> None:
+    """Zapisuje ręczny układ arkuszy ({nr: [(x0, y0), ...]}); pusty słownik usuwa plik."""
+    import json
+    import os
+    if not stacje:
+        if os.path.exists(sciezka):
+            os.remove(sciezka)
+        return
+    dane = {"wersja": UKLAD_WERSJA, "okno": [round(okno[0], 4), round(okno[1], 4)],
+            "stacje": {nr: [[round(x, 3), round(y, 3)] for x, y in pts] for nr, pts in sorted(stacje.items())}}
+    tmp = sciezka + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(dane, f, ensure_ascii=False, indent=1)
+    os.replace(tmp, sciezka)
+
+
+def niepokryte(linie, narozniki, W, H, zakazane, m=MARGINES_MM, gestosc=GESTOSC):
+    """Próbki trasy (x, y), które nie leżą w obszarze użytkowym żadnego arkusza
+    (ramka minus margines, minus róg tabelki) - dziury po ręcznym przesunięciu."""
+    zx0, zy1 = zakazane[0] - m, zakazane[3] + m
+    return [(x, y) for x, y, _c, _t in _probkuj(linie, gestosc)
+            if not any(_w_uzyt(x - x0, y - y0, W, H, m, zx0, zy1) for x0, y0 in narozniki)]
+
+
+def zaplanuj(we: Wejscie, miejscowosci_stacji=None, tylko=None, zaklad=ZAKLAD, uklad=None, log=print):
+    """Zwraca listę arkuszy (Arkusz) dla wszystkich stacji oraz listę ostrzeżeń.
+
+    miejscowosci_stacji - {znormalizowany_nr_stacji: [miejscowości...]} do wpisania w tabelce
+                          (po zasięgu stacji trafo); każdy arkusz danej stacji dostaje tę samą listę.
+    tylko               - zbiór znormalizowanych numerów stacji do wygenerowania (None = wszystkie).
+    uklad               - {nr: [(x0, y0), ...]} ręczny układ arkuszy (z okna podglądu) - zastępuje
+                          rozkład automatyczny dla tych stacji."""
+    ostrzezenia = []
+    W, H = we.wzor_okno
+    miejscowosci_stacji = miejscowosci_stacji or {}
+    uklad = uklad or {}
+    stacje, poligony_stacji = dane_stacji(we, ostrzezenia)
+
+    arkusze = []
+    for st in stacje:
+        nr = st.nr
+        if tylko and nr not in tylko:
+            continue
+        if not st.linie:
+            ostrzezenia.append(f"Stacja {st.oznaczenie}: brak trasy !tele w zakresie - pominięto.")
             continue
         miejsc = list(miejscowosci_stacji.get(nr, []))
-        narozniki = rozmiesc(linie, W, H, we.wzor_zakazane, zaklad=zaklad)
+        if uklad.get(nr):
+            narozniki = list(uklad[nr])
+            luki = niepokryte(st.linie, narozniki, W, H, we.wzor_zakazane)
+            zrodlo = " (układ ręczny)"
+            if luki:
+                ostrzezenia.append(f"Stacja {st.oznaczenie}: ręczny układ arkuszy nie pokrywa ok. "
+                                   f"{len(luki) * GESTOSC:.0f} m trasy - sprawdź w podglądzie.")
+        else:
+            narozniki = rozmiesc(st.linie, W, H, we.wzor_zakazane, zaklad=zaklad)
+            zrodlo = ""
         for i, (x0, y0) in enumerate(narozniki, 1):
-            a = Arkusz(x0, y0, W, H, stacja=oznaczenia.get(nr, nr), nr_stacji=nr,
+            a = Arkusz(x0, y0, W, H, stacja=st.oznaczenie, nr_stacji=nr,
                        nazwa=f"{nr}-{i}", nr_rys=f"{PREFIKS_RYS}{i}")
             a.miejscowosci = miejsc
             arkusze.append(a)
         opis_m = (" - " + ", ".join(miejsc)) if miejsc else ""
-        log(f"   stacja {oznaczenia.get(nr, nr):<10} arkuszy: {len(narozniki)}{opis_m}")
+        log(f"   stacja {st.oznaczenie:<10} arkuszy: {len(narozniki)}{zrodlo}{opis_m}")
     return arkusze, ostrzezenia, poligony_stacji
 
 
@@ -1279,7 +1360,7 @@ def _ustal_miejscowosci(dxf, wt_plik, adresy, cache_dir, log):
 
 
 def przetworz(dxf, wyjscie=None, wzorzec=None, tylko=None, miejscowosci_stacji=None,
-              adresy="uug,osm", cache_dir=None, wt_plik=None, zaklad=ZAKLAD, log=print):
+              adresy="uug,osm", cache_dir=None, wt_plik=None, zaklad=ZAKLAD, uklad=None, log=print):
     """Tworzy arkusze PZT z pliku DXF. Zwraca (ścieżka_wyniku, liczba_arkuszy, ostrzeżenia).
 
     Miejscowość w tabelce każdego arkusza ustalana jest wg zasięgu stacji trafo:
@@ -1287,7 +1368,10 @@ def przetworz(dxf, wyjscie=None, wzorzec=None, tylko=None, miejscowosci_stacji=N
         wierzchołków !tele w zasięgu !trafo; patrz wt.miejscowosci_stacji_z_wt),
       * inaczej - z GEOKODOWANIA słupów stacji (miejscowosci_wg_stacji).
     Można też podać gotową mapę w `miejscowosci_stacji` ({nr: [miejscowości]});
-    `adresy='brak'` wyłącza geokodowanie - wtedy nazwa zostaje z wzorca."""
+    `adresy='brak'` wyłącza geokodowanie - wtedy nazwa zostaje z wzorca.
+
+    `uklad` - plik ręcznego układu arkuszy (z okna podglądu); None = „<plan> - arkusze PZT.json”
+    obok planu, jeśli istnieje; False = zawsze rozkład automatyczny."""
     we = wczytaj(dxf, wzorzec)
     if not we.poligony:
         raise ValueError(f"W pliku nie ma poligonów zasięgu stacji na warstwie {WARSTWA_ZAKRES}.")
@@ -1296,8 +1380,16 @@ def przetworz(dxf, wyjscie=None, wzorzec=None, tylko=None, miejscowosci_stacji=N
     norm_tylko = {_norm_nr(s) for s in tylko} if tylko else None
     if miejscowosci_stacji is None:
         miejscowosci_stacji = _ustal_miejscowosci(dxf, wt_plik, adresy, cache_dir, log)
+    reczny = {}
+    if uklad is not False:
+        plik_ukladu = uklad or sciezka_ukladu(dxf)
+        reczny = wczytaj_uklad(plik_ukladu, we.wzor_okno, log=log)
+        if reczny:
+            import os
+            log(f"Ręczny układ arkuszy z pliku {os.path.basename(plik_ukladu)} "
+                f"(stacje: {', '.join(sorted(reczny))}).")
     arkusze, ostrzezenia, poligony_stacji = zaplanuj(we, miejscowosci_stacji=miejscowosci_stacji,
-                                                     tylko=norm_tylko, zaklad=zaklad, log=log)
+                                                     tylko=norm_tylko, zaklad=zaklad, uklad=reczny, log=log)
     if not arkusze:
         raise ValueError("Nie powstał żaden arkusz (brak trasy w zakresach stacji?).")
     if not wyjscie:

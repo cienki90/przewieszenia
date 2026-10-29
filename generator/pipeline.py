@@ -65,6 +65,7 @@ class Opcje:
     # arkusze PZT
     pzt_wzorzec: str | None = None               # plik z layoutem-wzorcem "a" (None = plan wejściowy)
     pzt_zaklad: float = 50.0                     # wspólny odcinek trasy sąsiednich arkuszy [m]
+    pzt_uklad: str | None = None                 # ręczny układ arkuszy (JSON z podglądu); None = obok planu
     # Warunki Techniczne (WT) - źródło miejscowości słupów wg zasięgu stacji (zamiast geokodowania)
     wt_plik: str | None = None                   # plik WT (.xls/.xlsx); None = geokodowanie
     # opisy techniczne (.docx)
@@ -156,6 +157,10 @@ def uruchom(opcje: Opcje) -> Wynik:
     zostają jak dla oryginału). Przy opcje.eksport_dwg (domyślnie) rysunki wynikowe są
     zapisywane jako DWG; gdy nie wykryto konwertera (ODA), zostają w formacie DXF."""
     log = opcje.log or (lambda *_: None)
+    # ręczny układ arkuszy PZT leży obok ORYGINALNEGO planu (także DWG) - ścieżkę ustalamy przed
+    # zamianą wejścia na tymczasowy DXF
+    if opcje.pzt_uklad is None and opcje.plan:
+        opcje = replace(opcje, pzt_uklad=mod_pzt.sciezka_ukladu(opcje.plan))
     dwg_we = [p for p in (getattr(opcje, n) for n in POLA_RYSUNKOW) if mod_dwg.jest_dwg(p)]
     if not dwg_we and not opcje.eksport_dwg:
         return _uruchom_kroki(opcje)
@@ -488,7 +493,7 @@ def _krok_pzt(dxf: str, wyjscie: str, opcje: Opcje) -> WynikKroku:
     def uruchom():
         return mod_pzt.przetworz(dxf, wyjscie, wzorzec=opcje.pzt_wzorzec,
                                  adresy=opcje.adresy, wt_plik=opcje.wt_plik,
-                                 zaklad=opcje.pzt_zaklad, log=print)
+                                 zaklad=opcje.pzt_zaklad, uklad=opcje.pzt_uklad, log=print)
     (wynik, raport) = _przechwyc(uruchom)
     plik = wynik[0] if isinstance(wynik, tuple) else wyjscie
     ok = os.path.exists(plik)

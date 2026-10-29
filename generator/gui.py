@@ -471,7 +471,28 @@ class Aplikacja:
         ttk.Label(r, text="Zakład (wspólny odcinek sąsiednich arkuszy) [m]:").pack(side="left")
         ttk.Entry(r, textvariable=self.pzt_zaklad, width=6).pack(side="left", padx=6)
         self._pole_internetu(box)
+        podglad = ttk.Frame(box)
+        podglad.pack(fill="x", pady=(8, 0))
+        ttk.Button(podglad, text="Podgląd i przesuwanie arkuszy…", command=self._podglad_pzt).pack(side="left")
+        ttk.Label(podglad, text="  (mapa poglądowa wybranej stacji; zapisany układ jest używany przy generowaniu)",
+                  style="Hint.TLabel").pack(side="left")
         self._przycisk_generuj(f, "Utwórz arkusze PZT", lambda: self._start_modul("pzt"))
+
+    def _podglad_pzt(self):
+        """Okno podglądu układu arkuszy - otwierane tylko na żądanie (liczenie rozkładu w tle)."""
+        plik = self.we["pzt"].get().strip()
+        if not plik or not os.path.isfile(plik):
+            messagebox.showwarning(TYTUL, "Wskaż istniejący plik planu DXF (pole „Plik planu DXF”).",
+                                   parent=self.root)
+            return
+        okno = getattr(self, "_okno_podgladu", None)
+        if okno is not None and okno.winfo_exists():
+            okno.lift()
+            return
+        from .podglad_pzt import PodgladPZT
+        self._okno_podgladu = PodgladPZT(self.root, plik, wzorzec=(self.pzt_wzorzec.get().strip() or None),
+                                         zaklad=_float(self.pzt_zaklad.get(), 50.0),
+                                         ciemny=self.motyw.get() == "dark")
 
     def _zakladka_opisy(self):
         f = self._strona("opisy", "Opisy techniczne", "Opisy techniczne (.docx)",
