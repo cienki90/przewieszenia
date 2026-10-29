@@ -289,7 +289,7 @@ Wyłączenie: `--bez-ramki`.
 
 Środek znacznika (PUWG 2000) jest przeliczany na WGS84 i program pobiera najbliższy adres z
 GUGiK UUG, a gdy się nie uda — z OpenStreetMap. Adresy trafiają do pamięci podręcznej
-wspólnej dla wszystkich planów: `%LOCALAPPDATA%\GeneratorNN\cachedresy.json` (dawne pliki
+wspólnej dla wszystkich planów: `%LOCALAPPDATA%\GeneratorNN\cache\adresy.json` (dawne pliki
 `<plan>_adresy.json` są nadal czytane). Bez internetu program działa normalnie (opcja „bez internetu” /
 `--adresy brak`). Ręczne poprawki nazw (okno „Nazwy miejscowości…”) uzupełniają miejscowość, gdy
 geokodowanie jej nie ustaliło.
