@@ -48,6 +48,8 @@ class PodgladPZT(tk.Toplevel):
         self.nr = None                 # wybrana stacja
         self._kolejka = queue.Queue()
         self._drag = None              # (indeks arkusza, ostatnie x, y ekranu)
+        self._przesuniety = False      # czy podczas przeciągania arkusz się ruszył
+        self.zaznaczony = None         # indeks zaznaczonego arkusza (do usunięcia)
         self._pan = None
         self.s, self.cx, self.cy = 1.0, 0.0, 0.0      # skala [px/m] i środek widoku [m]
 
@@ -68,6 +70,10 @@ class PodgladPZT(tk.Toplevel):
         self.cb.bind("<<ComboboxSelected>>", lambda e: self._wybierz(self._nr_z_listy()))
         self.info = ttk.Label(panel, text="", justify="left", wraplength=240)
         self.info.pack(anchor="w", pady=(0, 10))
+        self.btn_dziury = ttk.Button(panel, text="Domknij dziury", command=self._domknij_dziury)
+        self.btn_dziury.pack(fill="x", pady=2)
+        self.btn_usun = ttk.Button(panel, text="Usuń zaznaczony arkusz", command=self._usun)
+        self.btn_usun.pack(fill="x", pady=2)
         self.btn_auto = ttk.Button(panel, text="Przywróć automatyczny", command=self._przywroc)
         self.btn_auto.pack(fill="x", pady=2)
         self.btn_dopasuj = ttk.Button(panel, text="Dopasuj widok", command=self._dopasuj)
@@ -76,7 +82,8 @@ class PodgladPZT(tk.Toplevel):
         self.btn_zapisz.pack(fill="x", pady=(12, 2))
         ttk.Button(panel, text="Zamknij", command=self._zamknij).pack(fill="x", pady=2)
         ttk.Label(panel, justify="left", wraplength=240, text=(
-            "Przeciągnij arkusz lewym przyciskiem myszy.\n"
+            "Przeciągnij arkusz lewym przyciskiem myszy (kliknięty arkusz jest zaznaczony).\n"
+            "Podwójne kliknięcie — nowy arkusz w tym miejscu; Delete — usuń zaznaczony.\n"
             "Kółko — przybliżenie, prawy przycisk — przesuwanie widoku.\n\n"
             "Czerwone odcinki trasy nie mieszczą się w żadnym arkuszu (z marginesem, poza tabelką).\n\n"
             "Zapisany układ jest używany przy generowaniu „Arkuszy PZT” dla tego planu."),
@@ -91,12 +98,14 @@ class PodgladPZT(tk.Toplevel):
         self.plotno.bind("<ButtonPress-3>", lambda e: setattr(self, "_pan", (e.x, e.y)))
         self.plotno.bind("<B3-Motion>", self._przesun_widok)
         self.plotno.bind("<MouseWheel>", self._kolko)
+        self.plotno.bind("<Double-Button-1>", self._dodaj_w_punkcie)
+        self.bind("<Delete>", lambda e: self._usun())
         self.status = ttk.Label(self, text="", anchor="w", padding=(12, 4))
         self.status.grid(row=1, column=0, columnspan=2, sticky="we")
         self._ustaw_przyciski(False)
 
     def _ustaw_przyciski(self, aktywne: bool):
-        for b in (self.btn_auto, self.btn_dopasuj, self.btn_zapisz):
+        for b in (self.btn_auto, self.btn_dopasuj, self.btn_zapisz, self.btn_dziury, self.btn_usun):
             b.configure(state="normal" if aktywne else "disabled")
 
     # ------------------------------------------------------------------ praca w tle
@@ -155,6 +164,7 @@ class PodgladPZT(tk.Toplevel):
         if nr is None:
             return
         self.nr = nr
+        self.zaznaczony = None
         self.cb.current(list(self.stacje).index(nr))
         if nr in self.auto:
             self._pokaz_stacje()
@@ -183,8 +193,85 @@ class PodgladPZT(tk.Toplevel):
     def _przywroc(self):
         if self.nr in self.auto:
             self.biezacy[self.nr] = [list(p) for p in self.auto[self.nr]]
+            self.zaznaczony = None
             self.zmiany = True
             self._rysuj()
+
+    # ------------------------------------------------------------------ dodawanie / usuwanie
+    def _dodaj(self, x0, y0):
+        self.biezacy[self.nr].append([x0, y0])
+        self.zaznaczony = len(self.biezacy[self.nr]) - 1
+        self.zmiany = True
+        self._rysuj()
+
+    def _dodaj_w_punkcie(self, e):
+        if self.nr not in self.biezacy:
+            return
+        W, H = self.we.wzor_okno
+        x, y = self._swiat(e.x, e.y)
+        self._dodaj(x - W / 2, y - H / 2)                 # arkusz wyśrodkowany w klikniętym miejscu
+
+    def _usun(self):
+        if self.nr not in self.biezacy or self.zaznaczony is None:
+            self.status.configure(text="Kliknij arkusz, aby go zaznaczyć, potem usuń.")
+            return
+        if len(self.biezacy[self.nr]) <= 1:
+            self.status.configure(text="Stacja musi mieć przynajmniej jeden arkusz.")
+            return
+        del self.biezacy[self.nr][self.zaznaczony]
+        self.zaznaczony = None
+        self.zmiany = True
+        self._rysuj()
+
+    def _domknij_dziury(self):
+        """Dokłada arkusze na niepokrytych odcinkach trasy - każdy nowy arkusz w położeniu, które
+        pokrywa najwięcej niepokrytych próbek (kandydaci wokół pierwszej niepokrytej próbki)."""
+        if self.nr not in self.biezacy:
+            return
+        st = self.stacje[self.nr]
+        W, H = self.we.wzor_okno
+        zak, m = self.we.wzor_zakazane, pzt.MARGINES_MM
+        zx0, zy1 = zak[0] - m, zak[3] + m
+        dodane = 0
+        for _ in range(30):                                # zabezpieczenie przed zapętleniem
+            luki = pzt.niepokryte(st.linie, [tuple(p) for p in self.biezacy[self.nr]], W, H, zak)
+            if not luki:
+                break
+            px, py = luki[0]
+            najlepszy, ile_najl = None, 0
+            kx, ky = W / 8, H / 8
+            for i in range(-4, 5):
+                for j in range(-4, 5):
+                    x0, y0 = px - W / 2 + i * kx, py - H / 2 + j * ky
+                    if not pzt._w_uzyt(px - x0, py - y0, W, H, m, zx0, zy1):
+                        continue
+                    ile = sum(1 for x, y in luki if pzt._w_uzyt(x - x0, y - y0, W, H, m, zx0, zy1))
+                    if ile > ile_najl:
+                        najlepszy, ile_najl = (x0, y0), ile
+            if najlepszy is None:
+                break
+            self.biezacy[self.nr].append(list(najlepszy))
+            dodane += 1
+        if dodane:
+            self.zmiany = True
+            self.zaznaczony = None
+        self._rysuj()
+        self.status.configure(text=f"Domknięto dziury: dodano {dodane} ark." if dodane else "Brak dziur do domknięcia.")
+
+    def _uporzadkuj(self, nr):
+        """Kolejność arkuszy wzdłuż trasy (jak w rozkładzie automatycznym) - numeracja nr-1, nr-2…"""
+        st = self.stacje[nr]
+        W, H = self.we.wzor_okno
+        zak, m = self.we.wzor_zakazane, pzt.MARGINES_MM
+        zx0, zy1 = zak[0] - m, zak[3] + m
+        probki = pzt._probkuj(st.linie, pzt.GESTOSC)
+
+        def pierwsza(p):
+            for i, (x, y, _c, _t) in enumerate(probki):
+                if pzt._w_uzyt(x - p[0], y - p[1], W, H, m, zx0, zy1):
+                    return i
+            return len(probki)
+        self.biezacy[nr].sort(key=pierwsza)
 
     # ------------------------------------------------------------------ geometria widoku
     def _ekran(self, x, y):
@@ -227,7 +314,8 @@ class PodgladPZT(tk.Toplevel):
         for i, (x0, y0) in enumerate(self.biezacy[self.nr]):
             tag = ("ark", f"ark{i}")
             c.create_rectangle(*self._ekran(x0, y0 + H), *self._ekran(x0 + W, y0), outline=k["arkusz"],
-                               width=2, fill=k["arkusz"], stipple="gray12", tags=tag)
+                               width=4 if i == self.zaznaczony else 2, fill=k["arkusz"], stipple="gray12",
+                               tags=tag)
             c.create_rectangle(*self._ekran(x0 + m, y0 + H - m), *self._ekran(x0 + W - m, y0 + m),
                                outline=k["arkusz"], dash=(3, 3), tags=tag)
             c.create_rectangle(*self._ekran(x0 + zak[0], y0 + zak[3]), *self._ekran(x0 + W, y0 + zak[1]),
@@ -263,6 +351,10 @@ class PodgladPZT(tk.Toplevel):
             for t in self.plotno.gettags(item):
                 if t.startswith("ark") and t != "ark":
                     self._drag = (int(t[3:]), e.x, e.y)
+                    self._przesuniety = False
+                    if self.zaznaczony != int(t[3:]):
+                        self.zaznaczony = int(t[3:])
+                        self._rysuj()
                     self.plotno.tag_raise(t)
                     self.plotno.configure(cursor="fleur")
                     return
@@ -276,13 +368,15 @@ class PodgladPZT(tk.Toplevel):
         p[0] += (e.x - lx) / self.s
         p[1] -= (e.y - ly) / self.s
         self._drag = (i, e.x, e.y)
+        self._przesuniety = True
 
     def _pusc(self, _e):
         if self._drag:
             self._drag = None
-            self.zmiany = True
             self.plotno.configure(cursor="crosshair")
-            self._rysuj_luki()
+            if self._przesuniety:
+                self.zmiany = True
+                self._rysuj_luki()
 
     def _przesun_widok(self, e):
         if self._pan:
@@ -303,6 +397,10 @@ class PodgladPZT(tk.Toplevel):
     # ------------------------------------------------------------------ zapis / zamknięcie
     def _zapisz(self):
         wynik = dict(self.zapisany)
+        for nr in self.biezacy:
+            self._uporzadkuj(nr)                           # numeracja arkuszy wzdłuż trasy
+        self.zaznaczony = None
+        self._rysuj()
         for nr, pts in self.biezacy.items():
             if [list(p) for p in self.auto.get(nr, [])] == pts:
                 wynik.pop(nr, None)                       # równe automatycznemu - nie trzeba zapisywać
