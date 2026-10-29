@@ -50,6 +50,8 @@ class PodgladPZT(tk.Toplevel):
         self._drag = None              # (indeks arkusza, ostatnie x, y ekranu)
         self._przesuniety = False      # czy podczas przeciągania arkusz się ruszył
         self.zaznaczony = None         # indeks zaznaczonego arkusza (do usunięcia)
+        self.podklady = {}             # nr -> (obraz PIL, xmin, ymax, rozdzielczość [m/px]) - podkład OSM
+        self._foto = None              # bieżący obraz podkładu na płótnie (referencja dla Tk)
         self._pan = None
         self.s, self.cx, self.cy = 1.0, 0.0, 0.0      # skala [px/m] i środek widoku [m]
 
@@ -78,6 +80,9 @@ class PodgladPZT(tk.Toplevel):
         self.btn_auto.pack(fill="x", pady=2)
         self.btn_dopasuj = ttk.Button(panel, text="Dopasuj widok", command=self._dopasuj)
         self.btn_dopasuj.pack(fill="x", pady=2)
+        self.podklad_on = tk.BooleanVar(value=False)
+        ttk.Checkbutton(panel, text="Podkład mapowy (OSM, internet)", variable=self.podklad_on,
+                        command=self._przelacz_podklad).pack(anchor="w", pady=(8, 2))
         self.btn_zapisz = ttk.Button(panel, text="Zapisz układ", command=self._zapisz, style="Accent.TButton")
         self.btn_zapisz.pack(fill="x", pady=(12, 2))
         ttk.Button(panel, text="Zamknij", command=self._zamknij).pack(fill="x", pady=2)
@@ -189,6 +194,8 @@ class PodgladPZT(tk.Toplevel):
             self.biezacy[nr] = [list(p) for p in zrodlo]
         self._ustaw_przyciski(True)
         self._dopasuj()
+        if self.podklad_on.get() and nr not in self.podklady:
+            self._pobierz_podklad(nr)
 
     def _przywroc(self):
         if self.nr in self.auto:
@@ -273,6 +280,79 @@ class PodgladPZT(tk.Toplevel):
             return len(probki)
         self.biezacy[nr].sort(key=pierwsza)
 
+    # ------------------------------------------------------------------ podkład mapowy (na żądanie)
+    def _przelacz_podklad(self):
+        if self.podklad_on.get() and self.nr in self.biezacy and self.nr not in self.podklady:
+            self._pobierz_podklad(self.nr)
+        else:
+            self._rysuj()
+
+    def _pobierz_podklad(self, nr):
+        """Pobiera podkład OSM dla obszaru stacji (w tle; kafle zapamiętywane na dysku)."""
+        try:
+            from PIL import Image  # noqa: F401
+        except ImportError:
+            self.podklad_on.set(False)
+            messagebox.showwarning("Podgląd arkuszy PZT", "Podkład mapowy wymaga biblioteki Pillow.", parent=self)
+            return
+        st = self.stacje[nr]
+        W, H = self.we.wzor_okno
+        pts = [p for poly in st.poligony for p in poly]
+        for x0, y0 in self.biezacy[nr]:
+            pts += [(x0, y0), (x0 + W, y0 + H)]
+        xs, ys = [p[0] for p in pts], [p[1] for p in pts]
+        marg = 0.15 * max(max(xs) - min(xs), max(ys) - min(ys))
+        bbox = (min(xs) - marg, min(ys) - marg, max(xs) + marg, max(ys) + marg)
+        # rozdzielczość tak, by obraz miał najwyżej ~2500 px - szybko i wystarczająco ostro
+        res = max(0.5, max(bbox[2] - bbox[0], bbox[3] - bbox[1]) / 2500)
+
+        def pobierz():
+            from pathlib import Path
+
+            from PIL import Image
+
+            from . import orientacje as o
+            cache = o.default_cache_dir(Path(__file__).parent)
+            prov = o.BasemapProvider(cache, o.resolve_sources(o.DEFAULT_SOURCE_ORDER), log=lambda *_: None)
+            plik = cache / "podglad_pzt" / f"{nr}.png"
+            info = prov.render(bbox, o.pl2000_zone_from_easting(bbox[0]), plik,
+                               zoom=17 if res < 1.5 else 16, resolution=res)
+            with Image.open(info["path"]) as im:
+                obraz = im.convert("RGB")
+            return obraz, info["xmin"], info["ymin"] + info["height"] * info["resolution"], info["resolution"], \
+                info["source"].name
+
+        def po(wynik):
+            obraz, xmin, ymax, r, zrodlo = wynik
+            self.podklady[nr] = (obraz, xmin, ymax, r)
+            self.status.configure(text=f"Podkład: {zrodlo}")
+            if nr == self.nr:
+                self._rysuj()
+        self._w_tle(pobierz, po, "Pobieram podkład mapowy…")
+
+    def _rysuj_podklad(self):
+        """Widoczny fragment podkładu przeskalowany do bieżącego widoku."""
+        if not self.podklad_on.get() or self.nr not in self.podklady:
+            return
+        from PIL import Image, ImageTk
+        obraz, xmin, ymax, r = self.podklady[self.nr]
+        w, h = self.plotno.winfo_width(), self.plotno.winfo_height()
+        # widoczny prostokąt świata -> piksele obrazu
+        wx0, wy1 = self._swiat(0, 0)
+        wx1, wy0 = self._swiat(w, h)
+        px0, py0 = (wx0 - xmin) / r, (ymax - wy1) / r
+        px1, py1 = (wx1 - xmin) / r, (ymax - wy0) / r
+        ox0, oy0 = max(0, px0), max(0, py0)
+        ox1, oy1 = min(obraz.width, px1), min(obraz.height, py1)
+        if ox1 <= ox0 or oy1 <= oy0:
+            return
+        wycinek = obraz.crop((int(ox0), int(oy0), int(ox1) + 1, int(oy1) + 1))
+        sx0, sy0 = (ox0 - px0) * w / (px1 - px0), (oy0 - py0) * h / (py1 - py0)
+        sx1, sy1 = (ox1 - px0) * w / (px1 - px0), (oy1 - py0) * h / (py1 - py0)
+        rozm = (max(1, int(sx1 - sx0)), max(1, int(sy1 - sy0)))
+        self._foto = ImageTk.PhotoImage(wycinek.resize(rozm, Image.BILINEAR), master=self)
+        self.plotno.create_image(sx0, sy0, image=self._foto, anchor="nw")
+
     # ------------------------------------------------------------------ geometria widoku
     def _ekran(self, x, y):
         w, h = self.plotno.winfo_width(), self.plotno.winfo_height()
@@ -306,9 +386,11 @@ class PodgladPZT(tk.Toplevel):
         W, H = self.we.wzor_okno
         zak = self.we.wzor_zakazane
         m = pzt.MARGINES_MM
+        self._rysuj_podklad()
+        z_podkladem = self.podklad_on.get() and self.nr in self.podklady
         for poly in st.poligony:
-            c.create_polygon([v for p in poly for v in self._ekran(*p)], fill=k["zasieg"],
-                             outline=k["zasieg_obrys"], dash=(6, 4), width=1.5)
+            c.create_polygon([v for p in poly for v in self._ekran(*p)], fill="" if z_podkladem else k["zasieg"],
+                             outline=k["zasieg_obrys"], dash=(6, 4), width=2 if z_podkladem else 1.5)
         for ln in st.linie:
             c.create_line([v for p in ln for v in self._ekran(*p)], fill=k["trasa"], width=2)
         for i, (x0, y0) in enumerate(self.biezacy[self.nr]):
