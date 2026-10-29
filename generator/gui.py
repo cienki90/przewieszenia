@@ -245,6 +245,58 @@ class Aplikacja:
         if not lista:
             self.menu_ostatnie.add_command(label="(brak)", state="disabled")
 
+    def _sprawdz_plan(self):
+        """Szybka kontrola planu (warstwy, bloki, opisy, layout „a”) i gotowość modułów."""
+        if self.pracuje:
+            return
+        kandydaci = [self.we.get(self._wybrana.get(), tk.StringVar()).get().strip()]
+        kandydaci += [self.we[k].get().strip() for k in ("numeracja", "przewieszenia", "zestawienie",
+                                                          "obliczenia", "pzt")]
+        plan = next((p for p in kandydaci if p and os.path.isfile(p) and p.lower().endswith((".dxf", ".dwg"))),
+                    None)
+        if not plan:
+            plan = filedialog.askopenfilename(parent=self.root, title="Plan DXF/DWG do sprawdzenia",
+                                              filetypes=DXF_TYPY)
+            if not plan:
+                return
+        self.log.configure(state="normal")
+        self.log.delete("1.0", "end")
+        self.log.configure(state="disabled")
+        self.status.configure(text=f"Sprawdzam plan: {os.path.basename(plan)}…")
+        self.root.configure(cursor="watch")
+
+        def praca():
+            from . import dwg, sprawdz_plan
+            wej = dwg.Wejscia(log=lambda *_: None)
+            try:
+                raport = sprawdz_plan.sprawdz(wej.dxf(plan))
+                raport.plik = plan
+                self._kolejka_spr.put(raport)
+            except BaseException as ex:  # noqa: BLE001
+                self._kolejka_spr.put(ex)
+            finally:
+                wej.sprzatnij()
+
+        self._kolejka_spr = queue.Queue()
+        threading.Thread(target=praca, daemon=True).start()
+        self.root.after(80, self._odbierz_sprawdzenie)
+
+    def _odbierz_sprawdzenie(self):
+        try:
+            wynik = self._kolejka_spr.get_nowait()
+        except queue.Empty:
+            self.root.after(80, self._odbierz_sprawdzenie)
+            return
+        self.root.configure(cursor="")
+        if isinstance(wynik, BaseException):
+            self._pisz(f"BŁĄD sprawdzania planu: {wynik}")
+            self.status.configure(text="Nie udało się sprawdzić planu — szczegóły w oknie „Przebieg”.")
+            return
+        self._pisz(wynik.tekst())
+        niegotowe = [n for n, gotowy, _ in wynik.moduly if not gotowy]
+        self.status.configure(text=("Plan gotowy dla wszystkich modułów." if not niegotowe else
+                                    f"Plan: brakuje danych dla: {', '.join(niegotowe)} — szczegóły w „Przebiegu”."))
+
     def _projekt_przy_uruchomieniu(self, plik):
         """Brak projektu - zakłada go w folderze planu (pierwszy plik DXF/DWG modułów)."""
         if self.projekt.get():
@@ -391,6 +443,7 @@ class Aplikacja:
         mb.configure(menu=self.menu_ostatnie)
         mb.grid(row=0, column=3, padx=2)
         ttk.Button(pasek, text="Nowy", command=self._nowy_projekt).grid(row=0, column=4, padx=(2, 0))
+        ttk.Button(pasek, text="✔ Sprawdź plan", command=self._sprawdz_plan).grid(row=0, column=5, padx=(12, 0))
         self.projekt.trace_add("write", lambda *_: self._opis_projektu.set(
             self.projekt.get() or "brak — założy się sam w folderze planu przy pierwszym uruchomieniu modułu"))
         self.projekt.set(self.projekt.get())
