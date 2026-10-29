@@ -2,7 +2,7 @@ name: Buduj program GeneratorNN.exe
 
 on:
   push:
-    branches: [program-polaczony]
+    branches: [PGE_MAKER_CLAUDE]   # gałąź rozwijana - każde wypchnięcie buduje aktualny .exe
   workflow_dispatch:
 
 permissions:
