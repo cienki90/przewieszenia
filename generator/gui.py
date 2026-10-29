@@ -146,6 +146,59 @@ class Aplikacja:
         ostatni = self.ust.get("projekt_ostatni")
         if ostatni and os.path.isfile(projekt.sciezka(ostatni)):
             self._otworz_projekt(ostatni, cicho=True)
+        # przeciąganie plików z Eksploratora na okno (Windows)
+        from . import upusc
+        upusc.wlacz(root, self._upuszczono)
+
+    # ================================================================= przeciąganie plików
+    def _upuszczono(self, pliki, x, y):
+        """Pliki upuszczone na okno: na pole - do tego pola; gdzie indziej - pole dobrane po typie
+        pliku i bieżącej zakładce; plik projektu - otwarcie projektu."""
+        zmienne = {str(v): v for v in self._pola_projektu().values()}
+        pod = self.root.winfo_containing(x, y)
+        try:
+            nazwa_zm = str(pod.cget("textvariable")) if pod is not None else ""
+        except tk.TclError:
+            nazwa_zm = ""
+        wskazane = zmienne.get(nazwa_zm)
+        for p in pliki:
+            p = os.path.normpath(p)
+            if os.path.basename(p).lower() == projekt.NAZWA_PLIKU.lower() or (
+                    os.path.isdir(p) and os.path.isfile(projekt.sciezka(p))):
+                self._otworz_projekt(p)
+                continue
+            cel = wskazane if (wskazane is not None and len(pliki) == 1) else self._pole_dla(p)
+            if cel is None:
+                self.status.configure(text=f"Nie wiem, gdzie wpisać „{os.path.basename(p)}” na tej zakładce — "
+                                           "upuść plik bezpośrednio na pole.")
+                continue
+            cel.set(p)
+            self._podpiete.pop(str(cel), None)            # wybór użytkownika - nie nadpisuj wynikami
+            self.status.configure(text=f"Wpisano: {os.path.basename(p)}")
+
+    def _pole_dla(self, p):
+        """Pole dla upuszczonego pliku wg rozszerzenia i bieżącej zakładki (albo None)."""
+        strona = self._wybrana.get()
+        nazwa = os.path.basename(p).lower()
+        ext = os.path.splitext(nazwa)[1]
+        if os.path.isdir(p):
+            return self.katalog
+        if ext in (".dxf", ".dwg"):
+            if strona in ("numeracja", "przewieszenia", "zestawienie", "obliczenia", "pzt"):
+                return self.we[strona]
+            if strona == "orientacje":
+                return self.orient_zasiegi if "pzt" in nazwa else self.we["orientacje"]
+            if strona == "ppw":
+                return self.ppw_renumer_dxf
+        if ext in (".xlsx", ".xls"):
+            return {"obliczenia": self.obl_zestawienie,
+                    "opisy": self.opisy_obliczenia if nazwa.startswith("obliczenia") else self.opisy_zestawienie,
+                    "ppw": self.ppw_zestawienie_stacji if "zestawienie_stacji" in nazwa else self.ppw_zestawienie,
+                    "zakladki": self.zakladki_zestawienie,
+                    "pzt": self.wt_plik, "orientacje": self.wt_plik}.get(strona)
+        if ext == ".docx":
+            return {"opisy": self.opisy_szablon, "ppw": self.ppw_szablon}.get(strona)
+        return None
 
     # ================================================================= projekt
     def _pola_projektu(self) -> dict:
