@@ -50,12 +50,12 @@ def _kierunek_tele(model, p, tol=3.0):
     wprost z odcinka trasy, a NIE z grafu połączeń (ten zawiera też wymiary biegnące w poprzek,
     co ustawiało część numerów pod złym kątem, nawet prostopadle do linii).
 
-    W słupie NAROŻNYM (wierzchołek, w którym schodzą się dwa odcinki tej samej polilinii)
-    zwracamy DWUSIECZNĄ obu kierunków - numer odsunięty prostopadle do niej trafia do środka
-    (albo na zewnątrz) narożnika, a nie wzdłuż jednego z ramion."""
-    odcinki = []                                 # (odległość, nr polilinii, nr odcinka, kierunek jedn.)
-    for k, pts in enumerate(getattr(model.rys, "sieci", [])):
-        for s, (a, b) in enumerate(zip(pts, pts[1:])):
+    W słupie NAROŻNYM (schodzą się dwa ramiona trasy - jednej polilinii albo dwóch osobnych)
+    zwracamy kierunek „średni” obu ramion: prostopadła do niego to dwusieczna narożnika, więc
+    numer trafia do środka albo na zewnątrz narożnika, a nie wzdłuż jednego z ramion."""
+    odcinki = []                                 # (odległość, kierunek jedn., kierunek OD słupa)
+    for pts in getattr(model.rys, "sieci", []):
+        for a, b in zip(pts, pts[1:]):
             dx, dy = b[0] - a[0], b[1] - a[1]
             L2 = dx * dx + dy * dy
             if L2 == 0:
@@ -63,18 +63,28 @@ def _kierunek_tele(model, p, tol=3.0):
             t = max(0.0, min(1.0, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / L2))
             d = math.hypot(p[0] - (a[0] + t * dx), p[1] - (a[1] + t * dy))
             ln = math.sqrt(L2)
-            odcinki.append((d, k, s, (dx / ln, dy / ln)))
+            dal = b if math.dist(p, b) >= math.dist(p, a) else a          # koniec dalszy od słupa
+            lu = math.dist(p, dal)
+            od = ((dal[0] - p[0]) / lu, (dal[1] - p[1]) / lu) if lu > 1e-9 else (dx / ln, dy / ln)
+            odcinki.append((d, (dx / ln, dy / ln), od, t))
     if not odcinki:
         return None
-    d0, k0, s0, v0 = min(odcinki)
+    d0, v0, _od0, _t0 = min(odcinki, key=lambda o: o[0])
     if d0 > tol:
         return None
-    # sąsiedni odcinek tej samej polilinii, też przechodzący przez słup -> narożnik
-    sasiedzi = [v for d, k, s, v in odcinki if k == k0 and abs(s - s0) == 1 and d <= d0 + 0.5]
-    if sasiedzi:
-        sx, sy = v0[0] + sasiedzi[0][0], v0[1] + sasiedzi[0][1]
+    # ramiona wychodzące ze słupa: odcinki, których KONIEC leży przy słupie (t≈0 albo t≈1),
+    # o różnych kierunkach „od słupa” (z tej samej albo z różnych polilinii)
+    ramiona = []
+    for d, _v, od, t in sorted(odcinki, key=lambda o: o[0]):
+        if d > d0 + 0.5 or not (t < 1e-6 or t > 1 - 1e-6):
+            continue
+        if all(od[0] * r[0] + od[1] * r[1] < math.cos(math.radians(10)) for r in ramiona):
+            ramiona.append(od)
+    if len(ramiona) == 2:
+        (ax, ay), (bx, by) = ramiona
+        sx, sy = ax - bx, ay - by                # kierunek „przez słup” (z ramienia b do ramienia a)
         ln = math.hypot(sx, sy)
-        if ln > 1e-6:                            # (zawrócenie o 180° - zostaw kierunek odcinka)
+        if ln > 0.2:                             # nie dla zawrócenia o ~180°
             return (sx / ln, sy / ln)
     return v0
 
@@ -100,9 +110,8 @@ def _kierunek_przesla(model, i):
     return (vx / d, vy / d)
 
 
-def _cel_wymiaru(model, i):
-    """Pozycja NAJBLIŻSZEGO tekstu wymiaru (text_midpoint) przyczepionego do słupa i,
-    albo None. To jest punkt, w którego stronę ma iść numer (po stronie wymiarowania)."""
+def _wymiar_slupa(model, i):
+    """NAJBLIŻSZY wymiar przyczepiony do słupa i: (p1, p2, text_midpoint) albo None."""
     p = model.slupy[i]['p']
     najl = None
     for L, p1, p2, nadpis, mid in model.wymiary:
@@ -113,8 +122,32 @@ def _cel_wymiaru(model, i):
             continue
         d_mid = math.dist(p, mid)
         if najl is None or d_mid < najl[0]:
-            najl = (d_mid, mid)
+            najl = (d_mid, (p1, p2, mid))
     return najl[1] if najl else None
+
+
+def _cel_wymiaru(model, i):
+    """Pozycja tekstu najbliższego wymiaru słupa i (albo None)."""
+    w = _wymiar_slupa(model, i)
+    return w[2] if w else None
+
+
+def _strona_wymiaru(model, i):
+    """Jednostkowa normalna LINII BAZOWEJ najbliższego wymiaru słupa i, skierowana w stronę jego
+    tekstu (albo None). Stronę liczymy względem przęsła, które ten wymiar mierzy - rzut tekstu
+    na kierunek INNEGO przęsła (w słupie narożnym) dawał złą stronę."""
+    w = _wymiar_slupa(model, i)
+    if w is None:
+        return None
+    (x1, y1), (x2, y2), (mx, my) = w
+    dx, dy = x2 - x1, y2 - y1
+    ln = math.hypot(dx, dy)
+    if ln < 1e-9:
+        return None
+    nx, ny = -dy / ln, dx / ln
+    if (mx - x1) * nx + (my - y1) * ny < 0:
+        nx, ny = -nx, -ny
+    return nx, ny
 
 
 def _kierunek_odsuniecia(model, i):
@@ -127,9 +160,9 @@ def _kierunek_odsuniecia(model, i):
     p = model.slupy[i]['p']
     kx, ky = _kierunek_przesla(model, i)
     nx, ny = -ky, kx                      # jedna z dwóch normalnych
-    cel = _cel_wymiaru(model, i)
-    if cel is not None:
-        rzut = (cel[0] - p[0]) * nx + (cel[1] - p[1]) * ny
+    sw = _strona_wymiaru(model, i)
+    if sw is not None:
+        rzut = sw[0] * nx + sw[1] * ny
     else:
         st = model.stacja_slupa.get(i)
         sp = next((s['p'] for s in model.stacje if s['nr'] == st), None)
@@ -158,9 +191,9 @@ def _rozmieszczenie(model, i, ref):
     p = model.slupy[i]['p']
     kx, ky = _kierunek_przesla(model, i)
     nx, ny = -ky, kx                              # normalna do linii w słupie
-    cel = _cel_wymiaru(model, i)
-    if cel is not None:
-        rzut = (cel[0] - p[0]) * nx + (cel[1] - p[1]) * ny
+    sw = _strona_wymiaru(model, i)                # strona wymiaru względem JEGO przęsła
+    if sw is not None:
+        rzut = sw[0] * nx + sw[1] * ny
     else:
         rzut = ref[0] * nx + ref[1] * ny
     if abs(rzut) < 1e-9:                          # brak wskazania - strona przeciwna do stacji
