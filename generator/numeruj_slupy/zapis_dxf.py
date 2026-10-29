@@ -44,27 +44,39 @@ def _nazwa_warstwy(prefix, stacja, obwod):
 
 
 def _kierunek_tele(model, p, tol=3.0):
-    """Jednostkowy kierunek NAJBLIŻSZEGO odcinka polilinii !tele do punktu p (albo None).
+    """Jednostkowy kierunek linii !tele w punkcie p (albo None).
 
     Numer ma leżeć RÓWNOLEGLE do linii !tele, przy której stoi słup - dlatego kąt bierzemy
     wprost z odcinka trasy, a NIE z grafu połączeń (ten zawiera też wymiary biegnące w poprzek,
-    co ustawiało część numerów pod złym kątem, nawet prostopadle do linii)."""
-    best = None
-    for pts in getattr(model.rys, "sieci", []):
-        for a, b in zip(pts, pts[1:]):
+    co ustawiało część numerów pod złym kątem, nawet prostopadle do linii).
+
+    W słupie NAROŻNYM (wierzchołek, w którym schodzą się dwa odcinki tej samej polilinii)
+    zwracamy DWUSIECZNĄ obu kierunków - numer odsunięty prostopadle do niej trafia do środka
+    (albo na zewnątrz) narożnika, a nie wzdłuż jednego z ramion."""
+    odcinki = []                                 # (odległość, nr polilinii, nr odcinka, kierunek jedn.)
+    for k, pts in enumerate(getattr(model.rys, "sieci", [])):
+        for s, (a, b) in enumerate(zip(pts, pts[1:])):
             dx, dy = b[0] - a[0], b[1] - a[1]
             L2 = dx * dx + dy * dy
             if L2 == 0:
                 continue
             t = max(0.0, min(1.0, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / L2))
-            q = (a[0] + t * dx, a[1] + t * dy)
-            d = math.hypot(p[0] - q[0], p[1] - q[1])
-            if best is None or d < best[0]:
-                best = (d, (dx, dy), math.hypot(dx, dy))
-    if best is None or best[0] > tol:
+            d = math.hypot(p[0] - (a[0] + t * dx), p[1] - (a[1] + t * dy))
+            ln = math.sqrt(L2)
+            odcinki.append((d, k, s, (dx / ln, dy / ln)))
+    if not odcinki:
         return None
-    _d, (vx, vy), ln = best
-    return (vx / ln, vy / ln) if ln else None
+    d0, k0, s0, v0 = min(odcinki)
+    if d0 > tol:
+        return None
+    # sąsiedni odcinek tej samej polilinii, też przechodzący przez słup -> narożnik
+    sasiedzi = [v for d, k, s, v in odcinki if k == k0 and abs(s - s0) == 1 and d <= d0 + 0.5]
+    if sasiedzi:
+        sx, sy = v0[0] + sasiedzi[0][0], v0[1] + sasiedzi[0][1]
+        ln = math.hypot(sx, sy)
+        if ln > 1e-6:                            # (zawrócenie o 180° - zostaw kierunek odcinka)
+            return (sx / ln, sy / ln)
+    return v0
 
 
 def _kierunek_przesla(model, i):
@@ -136,15 +148,24 @@ def _ma_wymiar(model, i):
 
 def _rozmieszczenie(model, i, ref):
     """Zwraca (punkt_srodka, kąt_tekstu_deg) dla numeru słupa i.
-    Numer: obrócony zgodnie z kierunkiem linii !tele (czytelny), odsunięty od linii
-    wzdłuż `ref` (uśredniona strona wymiarowania całego obwodu). Zwracany punkt to
-    ŚRODEK cyfry (wyrównanie MIDDLE_CENTER) - leży o (ODSTEP + pół wysokości) od słupa,
-    więc cała cyfra jest po stronie `ref`, a jej krawędź bliższa linii ~ODSTEP od linii.
-    Dzięki użyciu środka wynik NIE zależy od zwrotu przęsła (brak znikania pod linią)."""
+
+    Numer: obrócony zgodnie z kierunkiem linii !tele (czytelny), odsunięty od słupa
+    PROSTOPADLE do linii - dzięki temu stoi równo „pod” słupem, a nie przesunięty wzdłuż
+    przęsła. Strona: ta sama co wymiar TEGO słupa (najbliższy tekst wymiaru); dla słupa bez
+    wymiaru - strona `ref` (uśredniona strona wymiarowania obwodu). Zwracany punkt to ŚRODEK
+    cyfry (wyrównanie MIDDLE_CENTER) - leży o (ODSTEP + pół wysokości) od słupa, więc cała
+    cyfra jest po właściwej stronie, a jej krawędź bliższa linii ~ODSTEP od linii."""
     p = model.slupy[i]['p']
     kx, ky = _kierunek_przesla(model, i)
-    rn = math.hypot(ref[0], ref[1])
-    ux, uy = (ref[0] / rn, ref[1] / rn) if rn > 0 else (-ky, kx)
+    nx, ny = -ky, kx                              # normalna do linii w słupie
+    cel = _cel_wymiaru(model, i)
+    if cel is not None:
+        rzut = (cel[0] - p[0]) * nx + (cel[1] - p[1]) * ny
+    else:
+        rzut = ref[0] * nx + ref[1] * ny
+    if abs(rzut) < 1e-9:                          # brak wskazania - strona przeciwna do stacji
+        rzut = _kierunek_odsuniecia(model, i)[0] * nx + _kierunek_odsuniecia(model, i)[1] * ny
+    ux, uy = (nx, ny) if rzut >= 0 else (-nx, -ny)
     off = ODSTEP_OD_LINII + WYS_TEKSTU / 2.0     # środek cyfry: ODSTEP od linii + pół wys.
     px = p[0] + ux * off
     py = p[1] + uy * off
