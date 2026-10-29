@@ -38,6 +38,8 @@ except ImportError:          # motyw opcjonalny - bez niego okno używa „clam�
 TYTUL = "Generator projektów nN"
 PODTYTUL = "przewieszenia · zestawienie · obliczenia · rysunki stałe · PZT · opisy"
 
+PLIK_DZIENNIKA = "dziennik GeneratorNN.txt"        # przebieg uruchomień (w katalogu wyników)
+
 DXF_TYPY = [("Rysunek DXF / DWG", "*.dxf *.dwg"), ("Rysunek DXF", "*.dxf"), ("Rysunek DWG", "*.dwg"),
             ("Wszystkie pliki", "*.*")]
 DOCX_TYPY = [("Dokument Word", "*.docx"), ("Wszystkie pliki", "*.*")]
@@ -130,6 +132,7 @@ class Aplikacja:
         # (tylko w pamięci - nowa sesja programu zaczyna od pustych pól)
         self._podpiete: dict[str, str] = {}
         self._watek = None                                 # wątek roboczy bieżącego modułu
+        self._kroki_biezace = ()                           # moduł(y) bieżącego uruchomienia (do dziennika)
 
         self._przyciski = []                               # przyciski "Generuj" do blokowania
         self._strony = {}                                  # klucz -> ramka strony modułu
@@ -643,6 +646,7 @@ class Aplikacja:
         self.btn_otworz = ttk.Button(akcja, text="Otwórz folder wyniku",
                                      command=self._otworz_folder, state="disabled")
         self.btn_otworz.grid(row=0, column=1, padx=(10, 0))
+        ttk.Button(akcja, text="Kopiuj dziennik", command=self._kopiuj_dziennik).grid(row=0, column=2, padx=(6, 0))
 
         box = ttk.Frame(dol)
         box.grid(row=3, column=0, sticky="nsew", pady=(2, 0))
@@ -688,6 +692,29 @@ class Aplikacja:
         self.log.insert("end", tekst + "\n")
         self.log.see("end")
         self.log.configure(state="disabled")
+
+    def _kopiuj_dziennik(self):
+        tekst = self.log.get("1.0", "end").strip()
+        self.root.clipboard_clear()
+        self.root.clipboard_append(tekst)
+        self.status.configure(text="Skopiowano dziennik do schowka." if tekst else "Dziennik jest pusty.")
+
+    def _zapisz_dziennik(self):
+        """Dopisuje przebieg uruchomienia do „dziennik GeneratorNN.txt” w katalogu wyników - w wersji
+        okienkowej komunikaty modułów nie trafiają nigdzie indziej (ważne przy diagnozie błędów)."""
+        katalog = self._ostatni_katalog
+        if not katalog or not os.path.isdir(katalog):
+            return None
+        import datetime
+        sciezka = os.path.join(katalog, PLIK_DZIENNIKA)
+        naglowek = (f"===== {datetime.datetime.now():%Y-%m-%d %H:%M:%S} · {', '.join(self._kroki_biezace)} "
+                    f"· wersja {wersja()} =====")
+        try:
+            with open(sciezka, "a", encoding="utf-8") as f:
+                f.write(naglowek + "\n" + self.log.get("1.0", "end").strip() + "\n\n")
+            return sciezka
+        except OSError:
+            return None
 
     def _domyslny_katalog(self, plik):
         return self.katalog.get().strip() or (os.path.dirname(os.path.abspath(plik)) if plik else "")
@@ -742,6 +769,7 @@ class Aplikacja:
             self.root.after_cancel(self._zapis_id)
         self._zapisz_ustawienia(do_historii=wt)
         katalog = self._domyslny_katalog(plik)
+        self._kroki_biezace = tuple(kroki)
         self.pracuje = True
         for b in self._przyciski:
             b.configure(state="disabled")
@@ -871,6 +899,7 @@ class Aplikacja:
             b.configure(state="normal")
         self._ostatni_wynik = wynik
         if wynik is None:
+            self._zapisz_dziennik()
             self.status.configure(text="Wystąpił błąd — szczegóły w oknie „Przebieg”.")
             messagebox.showerror(TYTUL, "Nie udało się ukończyć pracy. Szczegóły w oknie „Przebieg”.",
                                  parent=self.root)
@@ -882,6 +911,9 @@ class Aplikacja:
         for k in wynik.kroki:
             self._pisz(f"  [{'OK' if k.ok else 'BŁĄD'}] {k.nazwa} — {k.wyjscie or k.blad or ''}")
         self._podepnij_wyniki(udane)
+        dziennik = self._zapisz_dziennik()
+        if dziennik:
+            self._pisz(f"\nDziennik zapisano: {dziennik}")
         self.btn_otworz.configure(state="normal" if udane else "disabled")
         if not nieudane:
             self.status.configure(text=f"Gotowe — utworzono {len(udane)} wynik(ów).")
