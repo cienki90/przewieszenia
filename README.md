@@ -19,7 +19,24 @@ w wierszu poleceń) — program nie ma łańcucha „wszystko naraz”:
 > (z marginesem i strefą tabelki). Arkusze przeciąga się myszą; niepokryte odcinki trasy świecą na
 > czerwono. Rozkład stacji liczony jest w tle dopiero po jej wybraniu. Zapisany układ trafia do
 > `<plan> - arkusze PZT.json` obok planu, a generowanie PZT używa go zamiast rozkładu automatycznego
-> (z ostrzeżeniem, gdy ręczny układ nie pokrywa całej trasy).
+> (z ostrzeżeniem, gdy ręczny układ nie pokrywa całej trasy). Podwójne kliknięcie dodaje arkusz, Delete
+> usuwa zaznaczony, „Domknij dziury” dokłada arkusze na niepokrytej trasie, a pole „Podkład mapowy”
+> pokazuje pod spodem mapę OSM (pobieraną na żądanie, kafle zapamiętywane na dysku).
+
+## Udogodnienia okna
+
+- **Projekt** — pasek „Projekt” w nagłówku. Pliki i opcje wszystkich modułów zapisują się w
+  `projekt GeneratorNN.json` w folderze planu (projekt zakłada się sam przy pierwszym uruchomieniu
+  modułu); ostatni projekt wraca przy starcie, „Ostatnie” przełącza między projektami.
+- **Sprawdź plan** — szybka kontrola planu (trasa, zasięgi, odnośniki stacji, słupy, numery, opisy
+  obwodów, zaznaczenia przewieszeń, layout „a”) i lista gotowości każdego modułu — przed generowaniem.
+- **Dziennik** — przebieg każdego uruchomienia dopisywany do `dziennik GeneratorNN.txt` w katalogu
+  wyników; przycisk „Kopiuj dziennik”.
+- **Nazwy miejscowości…** (Rysunki stałe, Arkusze PZT) — ręczna poprawka nazw stacji (np. gdy
+  geokodowanie dało „????”). Zapis do `nazwy miejscowości.csv` w folderze projektu i od razu do
+  `zestawienie_stacji.xlsx`; poprawki mają pierwszeństwo przed WT i geokodowaniem.
+- **Przeciąganie plików** z Eksploratora na okno — na pole albo w dowolne miejsce zakładki (pole
+  dobierane po typie pliku); plik projektu otwiera projekt.
 
 > **Opisy techniczne** (z repo `generator_opisow`): dla każdej stacji z zestawienia tworzy opis
 > `.docx` z szablonu Word (kontrolki `trafo`, `miejscowosc`, `wt`). Zestawienie można **podpiąć
@@ -272,7 +289,10 @@ Wyłączenie: `--bez-ramki`.
 
 Środek znacznika (PUWG 2000) jest przeliczany na WGS84 i program pobiera najbliższy adres z
 GUGiK UUG, a gdy się nie uda — z OpenStreetMap. Adresy trafiają do pamięci podręcznej
-`<plan>_adresy.json`. Bez internetu program działa normalnie (opcja „bez internetu” / `--adresy brak`).
+wspólnej dla wszystkich planów: `%LOCALAPPDATA%\GeneratorNN\cachedresy.json` (dawne pliki
+`<plan>_adresy.json` są nadal czytane). Bez internetu program działa normalnie (opcja „bez internetu” /
+`--adresy brak`). Ręczne poprawki nazw (okno „Nazwy miejscowości…”) uzupełniają miejscowość, gdy
+geokodowanie jej nie ustaliło.
 
 ### Zestawienie — kontrola poprawności
 
