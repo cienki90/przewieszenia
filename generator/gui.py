@@ -641,6 +641,7 @@ class Aplikacja:
         box = self._sekcja(f, "Opcje")
         ttk.Checkbutton(box, text="Pobieraj podkład mapowy (OSM/Geoportal; wymaga internetu i biblioteki Pillow)",
                         variable=self.orient_podklad).pack(anchor="w", pady=4)
+        ttk.Button(f, text="Nazwy miejscowości…", command=self._nazwy_miejscowosci).pack(anchor="w", pady=(10, 0))
         self._przycisk_generuj(f, "Utwórz rysunki stałe", lambda: self._start_modul("orientacje"))
 
     def _zakladka_pzt(self):
@@ -668,7 +669,38 @@ class Aplikacja:
         ttk.Button(podglad, text="Podgląd i przesuwanie arkuszy…", command=self._podglad_pzt).pack(side="left")
         ttk.Label(podglad, text="  (mapa poglądowa wybranej stacji; zapisany układ jest używany przy generowaniu)",
                   style="Hint.TLabel").pack(side="left")
+        ttk.Button(f, text="Nazwy miejscowości…", command=self._nazwy_miejscowosci).pack(anchor="w", pady=(10, 0))
         self._przycisk_generuj(f, "Utwórz arkusze PZT", lambda: self._start_modul("pzt"))
+
+    # ---- ręczne poprawki nazw miejscowości (okno „Nazwy miejscowości…”) ----
+    def _plik_nazw(self):
+        """„nazwy miejscowości.csv” w folderze projektu (albo planu, gdy projektu jeszcze nie ma)."""
+        folder = self.projekt.get()
+        if not folder:
+            for k in ("pzt", "numeracja", "przewieszenia", "zestawienie", "obliczenia"):
+                p = self.we[k].get().strip()
+                if p and os.path.isfile(p):
+                    folder = os.path.dirname(os.path.abspath(p))
+                    break
+            folder = folder or (os.path.dirname(os.path.abspath(self.orient_zasiegi.get().strip()))
+                                if self.orient_zasiegi.get().strip() else "")
+        from . import nazwy
+        return os.path.join(folder, nazwy.NAZWA_PLIKU) if folder else None
+
+    def _nazwy_miejscowosci(self):
+        csv_nazw = self._plik_nazw()
+        if not csv_nazw:
+            messagebox.showwarning(TYTUL, "Najpierw wskaż plan (albo otwórz projekt) - poprawki nazw "
+                                          "zapisuję w folderze projektu.", parent=self.root)
+            return
+        self._projekt_przy_uruchomieniu("")
+        kandydaci = [self.opisy_zestawienie.get(), self.zakladki_zestawienie.get(), self.ppw_zestawienie_stacji.get()]
+        for kat in (self.katalog.get(), os.path.dirname(csv_nazw)):
+            if kat:
+                kandydaci.append(os.path.join(kat, "rysunki stałe", "zestawienie_stacji.xlsx"))
+        zest = next((p.strip() for p in kandydaci if p and os.path.isfile(p.strip())), None)
+        from .okno_nazw import OknoNazw
+        OknoNazw(self.root, csv_nazw, zest, log=self._pisz)
 
     def _podglad_pzt(self):
         """Okno podglądu układu arkuszy - otwierane tylko na żądanie (liczenie rozkładu w tle)."""
@@ -1001,6 +1033,7 @@ class Aplikacja:
             zakladki_format=(self.zakladki_format.get().strip() or "docx"),
             zakladki_wt=self.zakladki_wt.get().strip(),
             eksport_dwg=self.eksport_dwg.get(),
+            nazwy_plik=self._plik_nazw() if os.path.isfile(self._plik_nazw() or "") else None,
             log=lambda t="": self._kolejka.put(("log", t)),
         )
         self._watek = threading.Thread(target=self._praca, args=(opcje,), daemon=True)

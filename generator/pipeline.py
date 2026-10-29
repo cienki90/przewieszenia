@@ -22,6 +22,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import dataclass, field, replace
 
 from . import dwg as mod_dwg
+from . import nazwy as mod_nazwy
 from . import obliczenia as mod_obliczenia
 from . import opisy as mod_opisy
 from . import orientacje as mod_orientacje
@@ -66,6 +67,7 @@ class Opcje:
     pzt_wzorzec: str | None = None               # plik z layoutem-wzorcem "a" (None = plan wejściowy)
     pzt_zaklad: float = 50.0                     # wspólny odcinek trasy sąsiednich arkuszy [m]
     pzt_uklad: str | None = None                 # ręczny układ arkuszy (JSON z podglądu); None = obok planu
+    nazwy_plik: str | None = None                # ręczne poprawki nazw miejscowości (CSV, okno „Nazwy…”)
     # Warunki Techniczne (WT) - źródło miejscowości słupów wg zasięgu stacji (zamiast geokodowania)
     wt_plik: str | None = None                   # plik WT (.xls/.xlsx); None = geokodowanie
     # opisy techniczne (.docx)
@@ -474,9 +476,19 @@ def _krok_orientacje(szablon: str, wyjscie_dir: str, opcje: Opcje, plan_slupow=N
     nazwy_csv = None
     if opcje.wt_plik and plan_slupow:
         nazwy_csv = _nazwy_csv_z_wt(plan_slupow, opcje.wt_plik, wyjscie_dir, log=opcje.log)
-        if nazwy_csv:
-            argv += ["--nazwy", nazwy_csv]
+    # ręczne poprawki nazw (okno „Nazwy miejscowości…”) mają pierwszeństwo przed WT i geokodowaniem
+    reczne = mod_nazwy.wczytaj(opcje.nazwy_plik) if opcje.nazwy_plik else {}
+    if reczne:
+        polaczone = {nr: n for nr, n in (mod_nazwy.wczytaj(nazwy_csv) if nazwy_csv else {}).items()}
+        polaczone.update(reczne)
+        nazwy_csv = os.path.join(wyjscie_dir, "_nazwy_polaczone.csv")
+        mod_nazwy.zapisz(nazwy_csv, polaczone)
+        opcje.log(f"Ręczne poprawki nazw miejscowości: {len(reczne)} stacji.")
+    if nazwy_csv:
+        argv += ["--nazwy", nazwy_csv]
     kod, raport = _przechwyc(mod_orientacje.main, argv)
+    if reczne and nazwy_csv and os.path.exists(nazwy_csv):
+        os.remove(nazwy_csv)
     # sukces: powstało zestawienie_stacji.xlsx albo przynajmniej jeden plik .dxf
     zest = os.path.join(wyjscie_dir, "zestawienie_stacji.xlsx")
     pliki_dxf = [f for f in os.listdir(wyjscie_dir)] if os.path.isdir(wyjscie_dir) else []
@@ -493,7 +505,9 @@ def _krok_pzt(dxf: str, wyjscie: str, opcje: Opcje) -> WynikKroku:
     def uruchom():
         return mod_pzt.przetworz(dxf, wyjscie, wzorzec=opcje.pzt_wzorzec,
                                  adresy=opcje.adresy, wt_plik=opcje.wt_plik,
-                                 zaklad=opcje.pzt_zaklad, uklad=opcje.pzt_uklad, log=print)
+                                 zaklad=opcje.pzt_zaklad, uklad=opcje.pzt_uklad,
+                                 nazwy_reczne=mod_nazwy.wczytaj(opcje.nazwy_plik) if opcje.nazwy_plik else None,
+                                 log=print)
     (wynik, raport) = _przechwyc(uruchom)
     plik = wynik[0] if isinstance(wynik, tuple) else wyjscie
     ok = os.path.exists(plik)

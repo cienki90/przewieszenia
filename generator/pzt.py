@@ -1360,7 +1360,8 @@ def _ustal_miejscowosci(dxf, wt_plik, adresy, cache_dir, log):
 
 
 def przetworz(dxf, wyjscie=None, wzorzec=None, tylko=None, miejscowosci_stacji=None,
-              adresy="uug,osm", cache_dir=None, wt_plik=None, zaklad=ZAKLAD, uklad=None, log=print):
+              adresy="uug,osm", cache_dir=None, wt_plik=None, zaklad=ZAKLAD, uklad=None, nazwy_reczne=None,
+              log=print):
     """Tworzy arkusze PZT z pliku DXF. Zwraca (ścieżka_wyniku, liczba_arkuszy, ostrzeżenia).
 
     Miejscowość w tabelce każdego arkusza ustalana jest wg zasięgu stacji trafo:
@@ -1380,6 +1381,12 @@ def przetworz(dxf, wyjscie=None, wzorzec=None, tylko=None, miejscowosci_stacji=N
     norm_tylko = {_norm_nr(s) for s in tylko} if tylko else None
     if miejscowosci_stacji is None:
         miejscowosci_stacji = _ustal_miejscowosci(dxf, wt_plik, adresy, cache_dir, log)
+    if nazwy_reczne:
+        # ręczne poprawki nazw ({nr: miejscowość}) mają pierwszeństwo przed WT i geokodowaniem
+        miejscowosci_stacji = dict(miejscowosci_stacji or {})
+        for nr, nazwa in nazwy_reczne.items():
+            miejscowosci_stacji[_norm_nr(str(nr))] = [nazwa]
+        log(f"Ręczne poprawki nazw miejscowości: {len(nazwy_reczne)} stacji.")
     reczny = {}
     if uklad is not False:
         plik_ukladu = uklad or sciezka_ukladu(dxf)
