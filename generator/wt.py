@@ -16,7 +16,9 @@ Odczyt .xls/.xlsx bez bibliotek zewnętrznych - przez czytniki z modułu oblicze
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+import os
+from collections import defaultdict
+from dataclasses import dataclass, field
 
 try:
     from . import obliczenia as _obl
@@ -216,6 +218,54 @@ def _strefa_z_lon(lon):
 
 
 # ---------------------------------------------------------------------------
+# Wspólne: rysunek (trasa !tele, zasięgi !trafo) i szukanie słupów WT
+# ---------------------------------------------------------------------------
+def _modul_pzt():
+    try:
+        from . import pzt as _pzt
+    except ImportError:
+        import pzt as _pzt
+    return _pzt
+
+
+def _szukacz(punkty, tol):
+    """Funkcja pt -> najbliższy obiekt z `punkty` (mających .x, .y) w promieniu `tol` albo None.
+    Indeks w siatce o boku ~tol - szybkie szukanie także dla tysięcy słupów."""
+    siatka = defaultdict(list)
+    bok = max(tol, 1.0)
+    for s in punkty:
+        siatka[(round(s.x / bok), round(s.y / bok))].append(s)
+
+    def najblizszy(pt):
+        gx, gy = round(pt[0] / bok), round(pt[1] / bok)
+        best, bd = None, tol
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                for s in siatka.get((gx + dx, gy + dy), ()):
+                    d = math.hypot(s.x - pt[0], s.y - pt[1])
+                    if d <= bd:
+                        best, bd = s, d
+        return best
+    return najblizszy
+
+
+def _poligony_stacji(we, ostrzezenia):
+    """({nr stacji: [poligony !trafo]}, {nr: pełne oznaczenie}) - numer z nazwy warstwy
+    !trafo_<nr> albo z opisu STACJA TRAFO leżącego w poligonie."""
+    _pzt = _modul_pzt()
+    oznaczenia = {_pzt._norm_nr(nr): nr for nr, _ in we.stacje}
+    poligony_stacji = defaultdict(list)
+    for nazwa_warstwy, pts, _uchwyt in we.poligony:
+        nr = _pzt._norm_nr(nazwa_warstwy) if nazwa_warstwy else None
+        if not nr:
+            nr = _pzt._numer_poligonu(pts, we.stacje, oznaczenia, ostrzezenia)
+            nr = _pzt._norm_nr(nr) if nr else None
+        if nr:
+            poligony_stacji[nr].append(pts)
+    return poligony_stacji, oznaczenia
+
+
+# ---------------------------------------------------------------------------
 # Miejscowości stacji z WT (przypisanie przez !tele w zasięgu !trafo)
 # ---------------------------------------------------------------------------
 def miejscowosci_stacji_z_wt(dxf_path, wt_path, tol=3.0, log=print):
@@ -231,42 +281,14 @@ def miejscowosci_stacji_z_wt(dxf_path, wt_path, tol=3.0, log=print):
     if not slupy_wt:
         raise ValueError(f"Plik WT „{wt_path}” nie zawiera słupów ze współrzędnymi.")
 
-    # poligony !trafo i trasy !tele z DXF (ten sam parser co PZT)
-    try:
-        from . import pzt as _pzt
-    except ImportError:
-        import pzt as _pzt
-    we = _pzt.wczytaj(dxf_path)
-    oznaczenia = {_pzt._norm_nr(nr): nr for nr, _ in we.stacje}
-
-    # indeks słupów WT w siatce ~tol do szybkiego szukania najbliższego
-    from collections import defaultdict
-    siatka = defaultdict(list)
-    bok = max(tol, 1.0)
-    for s in slupy_wt:
-        siatka[(round(s.x / bok), round(s.y / bok))].append(s)
-
-    def najblizszy_slup(pt):
-        gx, gy = round(pt[0] / bok), round(pt[1] / bok)
-        best, bd = None, tol
-        for dx in (-1, 0, 1):
-            for dy in (-1, 0, 1):
-                for s in siatka.get((gx + dx, gy + dy), ()):
-                    d = math.hypot(s.x - pt[0], s.y - pt[1])
-                    if d <= bd:
-                        best, bd = s, d
-        return best
+    # poligony !trafo i trasy !tele z DXF (ten sam parser co PZT; layout-wzorzec „a” niepotrzebny)
+    _pzt = _modul_pzt()
+    we = _pzt.wczytaj(dxf_path, wzorzec=False)
+    najblizszy_slup = _szukacz(slupy_wt, tol)
 
     # poligony per stacja (po numerze z nazwy warstwy !trafo_<nr> albo z opisu STACJA TRAFO)
     ostrzezenia = []
-    poligony_stacji = defaultdict(list)
-    for nazwa_warstwy, pts, _uchwyt in we.poligony:
-        nr = _pzt._norm_nr(nazwa_warstwy) if nazwa_warstwy else None
-        if not nr:
-            nr = _pzt._numer_poligonu(pts, we.stacje, oznaczenia, ostrzezenia)
-            nr = _pzt._norm_nr(nr) if nr else None
-        if nr:
-            poligony_stacji[nr].append(pts)
+    poligony_stacji, oznaczenia = _poligony_stacji(we, ostrzezenia)
 
     wynik = {}
     for nr, polys in poligony_stacji.items():
@@ -289,3 +311,114 @@ def miejscowosci_stacji_z_wt(dxf_path, wt_path, tol=3.0, log=print):
                 f"Stacja {ozn}: NIE dopasowano żadnego słupa z WT do wierzchołków !tele w jej zasięgu "
                 f"(tolerancja {tol:.0f} m) - sprawdź układ współrzędnych w WT i zasięg !trafo.")
     return wynik, ostrzezenia
+
+
+# ---------------------------------------------------------------------------
+# Kontrola zakresu: czy słupy z WT to słupy tego planu
+# ---------------------------------------------------------------------------
+PROG_PLANU = 0.8        # min. część słupów planu, które mają odpowiednik w WT
+PROG_WT_POZA = 0.1      # maks. część słupów WT, które mogą leżeć poza trasą planu
+POZA_ZASIEGAMI = "(poza zasięgami !trafo)"
+
+
+@dataclass
+class _Pkt:
+    x: float
+    y: float
+    stacja: str | None = None
+
+
+@dataclass
+class PokrycieWT:
+    """Porównanie słupów planu (wierzchołki !tele) ze słupami z pliku WT.
+
+    Kilka słupów planu bez WT jest normalne (np. słupy wyłączone z numeracji WT); niezgodność
+    zgłaszamy, gdy WT obejmuje wyraźnie mniej niż plan, ma słupy poza trasą planu albo cała
+    stacja nie ma żadnego słupa w WT - typowo WT z innego projektu albo plan zmieniony po WT."""
+    plik_wt: str
+    tol: float
+    slupy_planu: int = 0
+    dopasowane: int = 0
+    bez_wt: list = field(default_factory=list)      # [(x, y, oznaczenie stacji|None)] słupy planu bez WT
+    slupy_wt: int = 0
+    wt_poza: list = field(default_factory=list)     # [SlupWT] słupy WT daleko od trasy planu
+    stacje: dict = field(default_factory=dict)      # {oznaczenie stacji: (słupów w planie, w tym w WT)}
+
+    @property
+    def udzial_planu(self) -> float:
+        return self.dopasowane / self.slupy_planu if self.slupy_planu else 0.0
+
+    @property
+    def udzial_wt_poza(self) -> float:
+        return len(self.wt_poza) / self.slupy_wt if self.slupy_wt else 0.0
+
+    @property
+    def stacje_bez_wt(self) -> list:
+        return [s for s, (n, d) in self.stacje.items() if s != POZA_ZASIEGAMI and n >= 3 and d == 0]
+
+    @property
+    def niezgodne(self) -> bool:
+        if not self.slupy_planu:
+            return False
+        return (self.udzial_planu < PROG_PLANU or self.udzial_wt_poza > PROG_WT_POZA
+                or bool(self.stacje_bez_wt))
+
+    def opis(self, maks: int = 10) -> str:
+        nazwa = os.path.basename(self.plik_wt)
+        if not self.slupy_planu:
+            return f"Zakres WT ({nazwa}): w planie nie ma tras !tele - nie sprawdzono."
+        linie = [("UWAGA: zakres warunków technicznych (WT) NIE pokrywa się z planem"
+                  if self.niezgodne else "Zakres warunków technicznych (WT) zgodny z planem")
+                 + f" - {nazwa} (tolerancja {self.tol:g} m):",
+                 f"  słupy planu znalezione w WT: {self.dopasowane} z {self.slupy_planu} "
+                 f"({self.udzial_planu:.0%})",
+                 f"  słupy z WT poza trasą planu: {len(self.wt_poza)} z {self.slupy_wt}"]
+        if any(s != POZA_ZASIEGAMI for s in self.stacje):
+            st = [f"{s}: {d}/{n}" + (" - BRAK w WT" if s in self.stacje_bez_wt else "")
+                  for s, (n, d) in sorted(self.stacje.items(), key=lambda kv: (kv[0] == POZA_ZASIEGAMI, kv[0]))]
+            linie.append("  stacje (słupy w WT / w planie): " + ", ".join(st))
+        if self.bez_wt:
+            pk = [f"x={x:.1f} y={y:.1f}" + (f" (st. {s})" if s else "") for x, y, s in self.bez_wt[:maks]]
+            linie.append("  słupy planu bez WT: " + "; ".join(pk) + ("; …" if len(self.bez_wt) > maks else ""))
+        if self.wt_poza:
+            pk = [f"nr {s.nr or '?'}" + (f" {s.miejscowosc}" if s.miejscowosc else "") for s in self.wt_poza[:maks]]
+            linie.append("  słupy WT poza planem: " + "; ".join(pk) + ("; …" if len(self.wt_poza) > maks else ""))
+        return "\n".join(linie)
+
+
+def pokrycie_wt(dxf_path, wt_path, tol=5.0) -> PokrycieWT:
+    """Porównuje słupy planu (wierzchołki polilinii !tele) ze słupami z pliku WT.
+
+    Słup planu ma odpowiednik w WT, gdy słup WT leży w promieniu `tol` m (5 m - jak scalanie
+    błędnych klików w Generatorze WT). Słupy planu są przypisywane do stacji po zasięgach !trafo."""
+    slupy_wt = wczytaj_wt(wt_path)
+    _pzt = _modul_pzt()
+    we = _pzt.wczytaj(dxf_path, wzorzec=False)
+    wynik = PokrycieWT(wt_path, tol, slupy_wt=len(slupy_wt))
+    unikalne = {}
+    for pts in we.trasy:
+        for x, y in pts:                     # wspólne wierzchołki polilinii liczone raz
+            unikalne.setdefault((round(x, 1), round(y, 1)), _Pkt(x, y))
+    slupy = list(unikalne.values())
+    if not slupy:
+        return wynik
+    poligony, oznaczenia = _poligony_stacji(we, [])
+    for s in slupy:
+        for nr, polys in poligony.items():
+            if any(_pzt.w_poligonie((s.x, s.y), p) for p in polys):
+                s.stacja = oznaczenia.get(nr, nr)
+                break
+    w_wt = _szukacz(slupy_wt, tol)
+    for s in slupy:
+        jest = w_wt((s.x, s.y)) is not None
+        klucz = s.stacja or POZA_ZASIEGAMI
+        n, d = wynik.stacje.get(klucz, (0, 0))
+        wynik.stacje[klucz] = (n + 1, d + (1 if jest else 0))
+        if jest:
+            wynik.dopasowane += 1
+        else:
+            wynik.bez_wt.append((s.x, s.y, s.stacja))
+    wynik.slupy_planu = len(slupy)
+    w_planie = _szukacz(slupy, tol)
+    wynik.wt_poza = [s for s in slupy_wt if w_planie((s.x, s.y)) is None]
+    return wynik

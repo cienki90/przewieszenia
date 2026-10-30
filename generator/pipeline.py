@@ -92,6 +92,13 @@ class Opcje:
     # DWG: pliki wejściowe .dwg są wczytywane zawsze (konwersja do DXF); eksport wyników - opcja
     eksport_dwg: bool = True                     # rysunki wynikowe zapisuj jako .dwg (bez ODA - .dxf)
     log: object = print                          # funkcja logowania (podmieniana w GUI)
+    # pytanie tak/nie do użytkownika: pytaj(tytuł, tekst) -> bool (GUI); None = bez pytań (CLI -
+    # ostrzeżenia trafiają tylko do logu, praca idzie dalej)
+    pytaj: object = None
+
+
+class _Przerwano(Exception):
+    """Krok przerwany przez użytkownika (np. po ostrzeżeniu o niezgodnym zakresie WT)."""
 
 
 @dataclass
@@ -304,6 +311,7 @@ def _uruchom_kroki(opcje: Opcje) -> Wynik:
         kroki.insert(kroki.index("zakladki"), "orientacje")
 
     wynik = Wynik()
+    sprawdzone_wt: set = set()                  # (plan, WT) już porównane w tym uruchomieniu
 
     for krok in kroki:
         tymczasowy = zestawienie_tymczasowe and krok == "zestawienie"
@@ -334,8 +342,11 @@ def _uruchom_kroki(opcje: Opcje) -> Wynik:
                     # szablon rysunków stałych jest innym plikiem niż plan tras ze słupami ->
                     # miejscowości ustal ze słupów planu i powiąż z szablonem po NUMERZE stacji
                     plan_slupow = plan
+                if plan_slupow:                       # WT daje nazwy tylko przy planie ze słupami
+                    _sprawdz_zakres_wt(plan_slupow, opcje, sprawdzone_wt)
                 r = _krok_orientacje(szablon, wyj["orientacje"], opcje, plan_slupow)
             elif krok == "pzt":
+                _sprawdz_zakres_wt(plan, opcje, sprawdzone_wt)
                 r = _krok_pzt(plan, wyj["pzt"], opcje)
             elif krok == "opisy":
                 r = _krok_opisy(opcje, wyj["opisy"], orient_zest)
@@ -352,6 +363,9 @@ def _uruchom_kroki(opcje: Opcje) -> Wynik:
             if krok == "orientacje" and r.ok and r.wyjscie:
                 zc = os.path.join(r.wyjscie, "zestawienie_stacji.xlsx")
                 orient_zest = zc if os.path.exists(zc) else orient_zest
+        except _Przerwano as ex:
+            r = WynikKroku(krok, ok=False, blad=str(ex))
+            log(str(ex))
         except (Exception, SystemExit) as ex:  # noqa: BLE001 - raport trafia do użytkownika
             # moduły sygnalizują część błędów przez SystemExit (np. plik wynikowy otwarty w Excelu)
             opis = str(ex)
@@ -441,6 +455,35 @@ def _krok_obliczenia(zestawienie_plik: str, wyjscie: str, opcje: Opcje) -> Wynik
     ok = os.path.exists(plik)
     return WynikKroku("obliczenia", ok=ok, wyjscie=plik if ok else None, raport=tekst,
                       blad=None if ok else "Nie udało się wykonać obliczeń.")
+
+
+def _sprawdz_zakres_wt(plan_slupow: str, opcje: Opcje, sprawdzone: set):
+    """Przed krokiem korzystającym z WT (arkusze PZT, rysunki stałe): czy słupy z pliku WT to słupy
+    tego planu. Wynik idzie do logu; przy wyraźnej niezgodności (np. WT z innego projektu) GUI pyta,
+    czy kontynuować - „Nie” przerywa krok. Ten sam plan i WT są sprawdzane raz na uruchomienie."""
+    if not (opcje.wt_plik and plan_slupow):
+        return
+    klucz = (os.path.normcase(os.path.abspath(plan_slupow)), os.path.normcase(os.path.abspath(opcje.wt_plik)))
+    if klucz in sprawdzone:
+        return
+    sprawdzone.add(klucz)
+    log = opcje.log or (lambda *_: None)
+    try:
+        from . import wt as mod_wt
+    except ImportError:
+        import wt as mod_wt
+    try:
+        pokrycie = mod_wt.pokrycie_wt(plan_slupow, opcje.wt_plik)
+    except Exception as ex:  # noqa: BLE001 - kontrola nie blokuje pracy; błąd odczytu WT zgłosi też krok
+        log(f"UWAGA: nie udało się sprawdzić zakresu WT ({ex}).")
+        return
+    log(pokrycie.opis())
+    if pokrycie.niezgodne and opcje.pytaj and not opcje.pytaj(
+            "Zakres WT nie pokrywa się z planem",
+            pokrycie.opis(maks=6) + "\n\nCzy to na pewno warunki techniczne tego projektu?\n"
+            "Kontynuować mimo to?"):
+        raise _Przerwano("Przerwano: zakres warunków technicznych (WT) nie pokrywa się z planem - "
+                         "wskaż plik WT tego projektu.")
 
 
 def _nazwy_csv_z_wt(plan_slupow: str, wt_plik: str, wyjscie_dir: str, log=print):

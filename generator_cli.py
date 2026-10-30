@@ -2,8 +2,8 @@
 """Wersja wiersza poleceń zunifikowanego generatora.
 
 Przykłady:
-    python generator_cli.py "przewieszenia plan.dxf"
-    python generator_cli.py "przewieszenia plan.dxf" --tylko zestawienie,obliczenia -o wyniki
+    python generator_cli.py "przyklady/przewieszenia plan.dxf"
+    python generator_cli.py "przyklady/przewieszenia plan.dxf" --tylko zestawienie,obliczenia -o wyniki
 """
 from __future__ import annotations
 

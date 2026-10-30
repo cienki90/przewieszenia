@@ -303,6 +303,7 @@ class Aplikacja:
                 if hasattr(self, "log"):
                     self._pisz(f"ODPIĘTO (plik z innego projektu): {k} ← {os.path.basename(wart)}")
         self.root.after_idle(self._podepnij_pzt_orient)
+        self.root.after(300, self._odswiez_stan_projektu)
 
     def _wybierz_projekt(self):
         p = filedialog.askopenfilename(parent=self.root, title="Otwórz projekt (plik projektu albo plan w folderze)",
@@ -345,6 +346,43 @@ class Aplikacja:
         if not lista:
             self.menu_ostatnie.add_command(label="(brak)", state="disabled")
 
+    # ---- okno „Stan projektu” ----
+    def _pola_modulow(self):
+        """[(klucz strony, nazwa modułu, [(etykieta pola, zmienna)])] - pliki wejściowe modułów."""
+        return [
+            ("wt", "1. Generator WT", [("Warunki techniczne (.xls)", self.wt_plik)]),
+            ("numeracja", "Numeracja słupów", [("Plik planu", self.we["numeracja"])]),
+            ("zestawienie", "Zestawienie", [("Plik planu", self.we["zestawienie"])]),
+            ("obliczenia", "Obliczenia", [("Plik planu", self.we["obliczenia"]),
+                                          ("Własne zestawienie", self.obl_zestawienie)]),
+            ("pzt", "Arkusze PZT", [("Plik planu", self.we["pzt"]), ("Plik ze wzorcem „a”", self.pzt_wzorzec),
+                                    ("Warunki techniczne (.xls)", self.wt_plik)]),
+            ("orientacje", "Rysunki stałe", [("Szablon", self.we["orientacje"]), ("Plik PZT", self.orient_zasiegi),
+                                             ("Folder na PDF", self.pdf_folder)]),
+            ("opisy", "Opisy techniczne", [("Zestawienie", self.opisy_zestawienie),
+                                           ("Szablon opisu", self.opisy_szablon),
+                                           ("Obliczenia", self.opisy_obliczenia)]),
+            ("przewieszenia", "Przewieszenia", [("Plik planu", self.we["przewieszenia"])]),
+            ("ppw", "PPW", [("Zestawienie", self.ppw_zestawienie), ("Miejscowości", self.ppw_zestawienie_stacji),
+                            ("Szablon PPW", self.ppw_szablon), ("Plik do renumeracji", self.ppw_renumer_dxf)]),
+            ("zakladki", "Zakładki", [("Zestawienie", self.zakladki_zestawienie)]),
+        ]
+
+    def _pokaz_stan_projektu(self):
+        okno = getattr(self, "_okno_stanu", None)
+        if okno is not None and okno.winfo_exists():
+            okno.odswiez()
+            okno.deiconify()
+            okno.lift()
+            return
+        from .stan_projektu import OknoStanu
+        self._okno_stanu = OknoStanu(self)
+
+    def _odswiez_stan_projektu(self):
+        okno = getattr(self, "_okno_stanu", None)
+        if okno is not None and okno.winfo_exists():
+            okno.odswiez()
+
     def _sprawdz_plan(self):
         """Szybka kontrola planu (warstwy, bloki, opisy, layout „a”) i gotowość modułów."""
         if self.pracuje:
@@ -364,13 +402,23 @@ class Aplikacja:
         self.log.configure(state="disabled")
         self.status.configure(text=f"Sprawdzam plan: {os.path.basename(plan)}…")
         self.root.configure(cursor="watch")
+        wt_plik = self.wt_plik.get().strip()
 
         def praca():
             from . import dwg, sprawdz_plan
             wej = dwg.Wejscia(log=lambda *_: None)
             try:
-                raport = sprawdz_plan.sprawdz(wej.dxf(plan))
+                dxf = wej.dxf(plan)
+                raport = sprawdz_plan.sprawdz(dxf)
                 raport.plik = plan
+                raport.zakres_wt, raport.zakres_wt_zly = None, False
+                if wt_plik and os.path.isfile(wt_plik):    # czy plik WT jest od tego planu
+                    from . import wt
+                    try:
+                        pokrycie = wt.pokrycie_wt(dxf, wt_plik)
+                        raport.zakres_wt, raport.zakres_wt_zly = pokrycie.opis(), pokrycie.niezgodne
+                    except Exception as ex:  # noqa: BLE001 - kontrola dodatkowa
+                        raport.zakres_wt = f"Zakres WT: nie udało się sprawdzić ({ex})."
                 self._kolejka_spr.put(raport)
             except BaseException as ex:  # noqa: BLE001
                 self._kolejka_spr.put(ex)
@@ -393,9 +441,14 @@ class Aplikacja:
             self.status.configure(text="Nie udało się sprawdzić planu — szczegóły w oknie „Przebieg”.")
             return
         self._pisz(wynik.tekst())
+        if getattr(wynik, "zakres_wt", None):
+            self._pisz("\n" + wynik.zakres_wt)
         niegotowe = [n for n, gotowy, _ in wynik.moduly if not gotowy]
-        self.status.configure(text=("Plan gotowy dla wszystkich modułów." if not niegotowe else
-                                    f"Plan: brakuje danych dla: {', '.join(niegotowe)} — szczegóły w „Przebiegu”."))
+        tekst = ("Plan gotowy dla wszystkich modułów." if not niegotowe else
+                 f"Plan: brakuje danych dla: {', '.join(niegotowe)} — szczegóły w „Przebiegu”.")
+        if getattr(wynik, "zakres_wt_zly", False):
+            tekst += " UWAGA: plik WT nie pasuje do planu — szczegóły w „Przebiegu”."
+        self.status.configure(text=tekst)
 
     def _projekt_przy_uruchomieniu(self, plik):
         """Brak projektu - zakłada go w folderze planu (pierwszy plik DXF/DWG modułów)."""
@@ -546,6 +599,7 @@ class Aplikacja:
         mb.grid(row=0, column=3, padx=2)
         ttk.Button(pasek, text="Nowy", command=self._nowy_projekt).grid(row=0, column=4, padx=(2, 0))
         ttk.Button(pasek, text="✔ Sprawdź plan", command=self._sprawdz_plan).grid(row=0, column=5, padx=(12, 0))
+        ttk.Button(pasek, text="Stan projektu", command=self._pokaz_stan_projektu).grid(row=0, column=6, padx=(6, 0))
         self.projekt.trace_add("write", lambda *_: self._opis_projektu.set(
             self.projekt.get() or "brak — założy się sam w folderze planu przy pierwszym uruchomieniu modułu"))
         self.projekt.set(self.projekt.get())
@@ -1350,6 +1404,7 @@ class Aplikacja:
             eksport_dwg=self.eksport_dwg.get(),
             nazwy_plik=self._plik_nazw() if os.path.isfile(self._plik_nazw() or "") else None,
             log=lambda t="": self._kolejka.put(("log", t)),
+            pytaj=self._pytaj_z_watku,
         )
         self._watek = threading.Thread(target=self._praca, args=(opcje,), daemon=True)
         self._watek.start()
@@ -1366,12 +1421,28 @@ class Aplikacja:
             self._kolejka.put(("log", traceback.format_exc()))
             self._kolejka.put(("koniec", None))
 
+    def _pytaj_z_watku(self, tytul, tekst) -> bool:
+        """Pytanie tak/nie zadawane z wątku pracy (np. ostrzeżenie o zakresie WT): okno pyta
+        w wątku głównym (przez kolejkę), a wątek pracy czeka na odpowiedź."""
+        odp = {"tak": False}
+        gotowe = threading.Event()
+        self._kolejka.put(("pytanie", (tytul, tekst, odp, gotowe)))
+        gotowe.wait()
+        return odp["tak"]
+
     def _pompuj(self):
         try:
             while True:
                 typ, dane = self._kolejka.get_nowait()
                 if typ == "log":
                     self._pisz(dane)
+                elif typ == "pytanie":
+                    tytul, tekst, odp, gotowe = dane
+                    try:
+                        odp["tak"] = messagebox.askyesno(tytul, tekst, icon="warning", default="no",
+                                                         parent=self.root)
+                    finally:
+                        gotowe.set()
                 elif typ == "koniec":
                     self._zakoncz(dane)
                     return
@@ -1453,6 +1524,7 @@ class Aplikacja:
             self._pisz(f"  [{'OK' if k.ok else 'BŁĄD'}] {k.nazwa} — {k.wyjscie or k.blad or ''}")
         self._podepnij_wyniki(udane)
         self._zapisz_projekt()                             # podpięte wyniki zostają w projekcie
+        self._odswiez_stan_projektu()
         dziennik = self._zapisz_dziennik()
         if dziennik:
             self._pisz(f"\nDziennik zapisano: {dziennik}")

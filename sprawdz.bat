@@ -2,7 +2,7 @@
 chcp 65001 >nul
 rem ==========================================================================
 rem  sprawdz.bat - test poprawnosci: uruchamia kolejno moduly na pliku
-rem  przykladowym "przewieszenia plan.dxf" (bez internetu) i sprawdza,
+rem  przykladowym "przyklady\przewieszenia plan.dxf" (bez internetu) i sprawdza,
 rem  czy powstaly wszystkie trzy pliki wynikowe w katalogu _test.
 rem ==========================================================================
 setlocal enabledelayedexpansion
@@ -11,7 +11,7 @@ cd /d "%~dp0"
 call :find_python
 if errorlevel 1 goto :nopython
 
-set "PLAN=przewieszenia plan.dxf"
+set "PLAN=przyklady\przewieszenia plan.dxf"
 if not exist "%PLAN%" (
   echo Nie znaleziono pliku przykladowego "%PLAN%".
   pause
@@ -35,7 +35,7 @@ if defined BLAD (
 echo.
 echo Sprawdzam pliki wynikowe...
 set "OK=1"
-call :check "_test\przewieszenia plan - przewieszenia.dxf"
+call :check "_test\*Przewieszenia przewieszenia plan.dxf"
 call :check "_test\zestawienie przewieszenia plan.xlsx"
 call :check "_test\Obliczenia - zestawienie przewieszenia plan.xlsx"
 

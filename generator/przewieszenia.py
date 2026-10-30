@@ -2,7 +2,7 @@
 """Generator rysunków przewieszeń (zwisów) linii nN z projektowanym światłowodem.
 
 Użycie:
-    python przewieszenia.py "przewieszenia plan.dxf" -o "przewieszenia wynik.dxf"
+    python przewieszenia.py "przyklady/przewieszenia plan.dxf" -o "przewieszenia wynik.dxf"
             [--baza "przewieszenia baza.dxf"] [--opisy opisy.csv]
 
 1. Z planu odczytywane są okręgi z warstwy _PRZEWIESZENIA - każdy okrąg wskazuje przęsło.
