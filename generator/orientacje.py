@@ -1702,6 +1702,17 @@ def load_names_csv(path: Path) -> dict:
     return out
 
 
+def _linia_ciagla(doc: DxfDocument, ent: Entity) -> None:
+    """Ustawia encji typ linii Continuous (grupa 6) - niezależnie od typu linii jej warstwy."""
+    idx = ent.tag_indices(6)
+    if idx:
+        doc.set_value(idx[0], "Continuous")
+        return
+    warstwa = ent.tag_indices(8)
+    if warstwa:                                        # nowa grupa 6 zaraz po warstwie (8)
+        doc.inserts.setdefault(warstwa[0] + 1, []).append([6, "  6", "Continuous"])
+
+
 def _safe_filename(s: str) -> str:
     return re.sub(r'[<>:"/\\|?*]+', "_", s).strip()
 
@@ -1934,6 +1945,11 @@ class Generator:
                     targets.append(H(ent))
             for w in doc.delete_entities(targets):
                 st.notes.append(f"pozostawione odwołanie: {w}")
+
+        # zasięg stacji linią CIĄGŁĄ - kreskowany typ linii z warstwy (DASHED / ISO03W100) przy
+        # wydruku w innej skali robił się nieczytelny
+        if st.zone_poly is not None and st.zone_poly.handle and st.zone_poly.handle.upper() in doc.by_handle:
+            _linia_ciagla(doc, H(st.zone_poly))
 
         # 4) podkład mapowy
         base = opt.template.stem

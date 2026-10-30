@@ -62,6 +62,7 @@ class Opcje:
     # orientacje (rysunki stałe)
     orient_podklad: bool = True                  # pobierać podkład mapowy (wymaga internetu + Pillow)
     orient_pdf: bool = False                     # rysunki stałe: osobny PDF dla każdej stacji
+    pdf_folder: str | None = None                # folder na PDF (None = obok rysunków)
     orient_szablon: str | None = None            # szablon rysunków stałych (gdy inny niż plan; None = dołączony)
     orient_plan_slupow: str | None = None        # plan ze słupami - źródło miejscowości (wiązanie po nr stacji)
     orient_zasiegi: str | None = None            # plik z zasięgami stacji (np. PZT) - szablon bez stacji
@@ -506,7 +507,9 @@ def _krok_orientacje(szablon: str, wyjscie_dir: str, opcje: Opcje, plan_slupow=N
                          if f.lower().endswith(".dxf") and os.path.getmtime(os.path.join(wyjscie_dir, f)) >= start)
         linie = ["PDF dla stacji:"]
         try:
-            udane, bledy = mod_dxf2pdf.konwertuj_pliki(rysunki, log=linie.append)
+            if opcje.pdf_folder:
+                os.makedirs(opcje.pdf_folder, exist_ok=True)
+            udane, bledy = mod_dxf2pdf.konwertuj_pliki(rysunki, opcje.pdf_folder, log=linie.append)
             linie.append(f"PDF: {len(udane)} plików" + (f", błędy: {len(bledy)}" if bledy else ""))
         except ImportError as ex:
             linie.append(f"UWAGA: {ex}")
@@ -521,8 +524,9 @@ def _krok_orientacje(szablon: str, wyjscie_dir: str, opcje: Opcje, plan_slupow=N
 
 
 def _krok_pdf(folder: str, opcje: Opcje) -> WynikKroku:
-    """PDF z gotowych rysunków: każdy DXF/DWG z folderu -> PDF obok niego (strona na arkusz).
-    Pliki DWG są najpierw zamieniane na tymczasowy DXF (PDF dostaje nazwę oryginału)."""
+    """PDF z gotowych rysunków: każdy DXF/DWG z folderu -> PDF (strona na arkusz), w folderze
+    opcje.pdf_folder albo obok rysunku. Pliki DWG są najpierw zamieniane na tymczasowy DXF
+    (PDF dostaje nazwę oryginału, podkład szukany w folderze oryginału)."""
     pliki = sorted(os.path.join(folder, f) for f in os.listdir(folder)
                    if f.lower().endswith((".dxf", ".dwg")))
     # ten sam rysunek w DXF i DWG - wystarczy jeden (DXF)
@@ -531,13 +535,15 @@ def _krok_pdf(folder: str, opcje: Opcje) -> WynikKroku:
     if not pliki:
         return WynikKroku("pdf", ok=False, blad=f"W folderze nie ma rysunków DXF/DWG: {folder}")
     linie = [f"PDF z rysunków w folderze: {folder}"]
+    folder_pdf = opcje.pdf_folder or folder
+    os.makedirs(folder_pdf, exist_ok=True)
     wejscia = mod_dwg.Wejscia(log=linie.append)
     try:
         udane, bledy = [], []
         for p in pliki:
             dxf = wejscia.dxf(p)
-            pdf = os.path.splitext(p)[0] + ".pdf"
-            u, b = mod_dxf2pdf.konwertuj_pliki([dxf], log=linie.append) if dxf == p else                 _pdf_do(dxf, pdf, linie)
+            pdf = os.path.join(folder_pdf, os.path.splitext(os.path.basename(p))[0] + ".pdf")
+            u, b = _pdf_do(dxf, pdf, linie, folder_obrazow=folder)
             udane += u
             bledy += b
     except ImportError as ex:
@@ -545,14 +551,14 @@ def _krok_pdf(folder: str, opcje: Opcje) -> WynikKroku:
     finally:
         wejscia.sprzatnij()
     linie.append(f"PDF: {len(udane)} plików" + (f", błędy: {len(bledy)}" if bledy else ""))
-    return WynikKroku("pdf", ok=bool(udane), wyjscie=folder if udane else None, raport="\n".join(linie),
+    return WynikKroku("pdf", ok=bool(udane), wyjscie=folder_pdf if udane else None, raport="\n".join(linie),
                       blad=None if udane else "Nie powstał żaden PDF.")
 
 
-def _pdf_do(dxf: str, pdf: str, linie: list):
+def _pdf_do(dxf: str, pdf: str, linie: list, folder_obrazow: str | None = None):
     """DXF (np. tymczasowy z DWG) -> PDF pod wskazaną nazwą."""
     try:
-        _, stron = mod_dxf2pdf.dxf_do_pdf(dxf, pdf, folder_obrazow=os.path.dirname(pdf))
+        _, stron = mod_dxf2pdf.dxf_do_pdf(dxf, pdf, folder_obrazow=folder_obrazow)
         linie.append(f"  OK   {os.path.basename(pdf)}  ({stron} ark.)")
         return [pdf], []
     except ImportError:
@@ -731,6 +737,7 @@ def main(argv=None):
                     help="rysunki stałe (orientacje) bez pobierania podkładu mapowego z internetu")
     ap.add_argument("--pdf-stacji", action="store_true",
                     help="rysunki stałe: osobny PDF dla każdej stacji (strona na arkusz)")
+    ap.add_argument("--folder-pdf", default=None, help="folder na pliki PDF (domyślnie obok rysunków)")
     ap.add_argument("--szablon-orientacji", default=None,
                     help="plik szablonu DXF dla rysunków stałych (domyślnie dołączony 'szablon.dxf')")
     ap.add_argument("--plan-slupow", default=None,
@@ -787,7 +794,7 @@ def main(argv=None):
     opcje = Opcje(plan=a.plan, katalog=a.katalog, kroki=wybrane, adresy=a.adresy,
                   obrot_od=a.obrot_od, zostaw_puste_arkusze=a.zostaw_puste_arkusze,
                   seed=a.seed, kabel=a.kabel, obliczenia_zestawienie=a.obliczenia_zestawienie,
-                  orient_podklad=not a.bez_podkladu, orient_pdf=a.pdf_stacji,
+                  orient_podklad=not a.bez_podkladu, orient_pdf=a.pdf_stacji, pdf_folder=a.folder_pdf,
                   orient_szablon=a.szablon_orientacji, orient_plan_slupow=a.plan_slupow,
                   orient_zasiegi=a.zasiegi,
                   pzt_wzorzec=a.pzt_wzorzec, pzt_zaklad=a.pzt_zaklad, wt_plik=a.wt,

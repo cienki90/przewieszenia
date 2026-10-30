@@ -100,6 +100,7 @@ class Aplikacja:
         self.orient_zasiegi = tk.StringVar()               # plik PZT: zasięgi stacji + słupy (miejscowości)
         self.orient_podklad = tk.BooleanVar(value=True)
         self.orient_pdf = tk.BooleanVar(value=True)       # osobny PDF dla każdej stacji
+        self.pdf_folder = tk.StringVar()                   # folder na PDF (puste = obok rysunków)
         # opcje arkuszy PZT
         self.pzt_wzorzec = tk.StringVar()                  # plik z layoutem-wzorcem "a" (puste = plan)
         self.pzt_zaklad = tk.StringVar(value="50")
@@ -206,7 +207,7 @@ class Aplikacja:
         """Pola okna zapisywane w projekcie: klucz -> zmienna tk."""
         pola = {f"plik_{k}": v for k, v in self.we.items()}
         for nazwa in ("katalog", "pw_obrot", "obl_seed", "obl_kabel", "obl_zestawienie", "orient_szablon",
-                      "orient_zasiegi", "orient_podklad", "orient_pdf", "pzt_wzorzec", "pzt_zaklad", "wt_plik",
+                      "orient_zasiegi", "orient_podklad", "orient_pdf", "pdf_folder", "pzt_wzorzec", "pzt_zaklad", "wt_plik",
                       "opisy_szablon", "opisy_zestawienie", "opisy_obliczenia", "ppw_szablon", "ppw_zestawienie",
                       "ppw_zestawienie_stacji", "ppw_renumer_dxf", "zakladki_zestawienie", "zakladki_format",
                       "adresy_on"):
@@ -606,6 +607,19 @@ class Aplikacja:
         ttk.Button(f, text="Wybierz…",
                    command=lambda: _wybierz_plik(self.root, var, tytul, typy)).pack(side="left")
 
+    def _pole_folderu(self, ramka, etykieta, var, tytul):
+        """Pole z wyborem FOLDERU (jak „Katalog zapisu”)."""
+        f = ttk.Frame(ramka)
+        f.pack(fill="x", pady=4)
+        ttk.Label(f, text=etykieta, width=24).pack(side="left")
+        ttk.Entry(f, textvariable=var).pack(side="left", fill="x", expand=True, padx=6)
+        ttk.Button(f, text="Wybierz…", command=lambda: self._wybierz_folder(var, tytul)).pack(side="left")
+
+    def _wybierz_folder(self, var, tytul):
+        p = filedialog.askdirectory(parent=self.root, title=tytul, initialdir=var.get() or self.projekt.get() or None)
+        if p:
+            var.set(os.path.normpath(p))
+
     def _pole_wt(self, ramka, var, przyklad):
         """Pole numeru WT: lista rozwijana z historią wcześniej użytych numerów."""
         r = ttk.Frame(ramka)
@@ -697,10 +711,12 @@ class Aplikacja:
                         variable=self.orient_podklad).pack(anchor="w", pady=4)
         ttk.Checkbutton(box, text="Twórz PDF dla każdej stacji (osobny plik, strona na arkusz)",
                         variable=self.orient_pdf).pack(anchor="w", pady=(0, 4))
+        self._pole_folderu(box, "Folder na PDF:", self.pdf_folder, "Folder na pliki PDF")
+        self._podpowiedz(box, "(puste = PDF obok rysunków; dotyczy też „PDF z gotowych rysunków”)")
         rp = ttk.Frame(box)
         rp.pack(fill="x", pady=(2, 4))
         ttk.Button(rp, text="PDF z gotowych rysunków…", command=self._pdf_z_gotowych).pack(side="left")
-        ttk.Label(rp, text="  (folder z rysunkami DXF/DWG — PDF powstaje obok każdego rysunku)",
+        ttk.Label(rp, text="  (wskaż folder z rysunkami DXF/DWG — PDF do „Folderu na PDF” albo obok rysunków)",
                   style="Hint.TLabel").pack(side="left")
         ttk.Button(f, text="Nazwy miejscowości…", command=self._nazwy_miejscowosci).pack(anchor="w", pady=(10, 0))
         self._przycisk_generuj(f, "Utwórz rysunki stałe", lambda: self._start_modul("orientacje"))
@@ -1089,6 +1105,7 @@ class Aplikacja:
             obliczenia_zestawienie=(self.obl_zestawienie.get().strip() or None),
             orient_podklad=self.orient_podklad.get(),
             orient_pdf=self.orient_pdf.get(),
+            pdf_folder=(self.pdf_folder.get().strip() or None),
             orient_szablon=orient_szablon or (self.orient_szablon.get().strip() or None),
             orient_zasiegi=(self.orient_zasiegi.get().strip() or None),   # też źródło słupów
             pzt_wzorzec=(self.pzt_wzorzec.get().strip() or None),
