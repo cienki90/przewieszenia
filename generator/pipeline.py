@@ -24,6 +24,7 @@ from dataclasses import dataclass, field, replace
 from . import dwg as mod_dwg
 from . import dxf2pdf as mod_dxf2pdf
 from . import nazwy as mod_nazwy
+from . import nazwy_plikow as mod_np
 from . import obliczenia as mod_obliczenia
 from . import opisy as mod_opisy
 from . import orientacje as mod_orientacje
@@ -36,7 +37,7 @@ from . import zestawienie as mod_zestawienie
 # numeracja słupów (ezdxf, ~0,25 s importu) ładowana dopiero w swoim kroku - patrz _krok_numeracja
 
 # nazwy kroków (kolejność ma znaczenie) - „numeracja” jako pierwszy (projektant najpierw
-# numeruje słupy w planie, potem robi resztę; krok tworzy osobny plik „… - ponumerowane.dxf”)
+# numeruje słupy w planie, potem robi resztę; krok tworzy osobny plik „!ponumerowany <plan>.dxf”)
 KROKI = ("numeracja", "przewieszenia", "zestawienie", "obliczenia", "orientacje", "pzt", "opisy",
          "ppw", "zakladki", "ppw_renumer", "pdf")
 # moduły wybierane w CLI przez --tylko (jeden na uruchomienie); „ppw_renumer” to osobna
@@ -120,7 +121,8 @@ class Wynik:
 
 # ---------------------------------------------------------------------------
 def _bazowa_nazwa(plan: str) -> str:
-    return os.path.splitext(os.path.basename(plan))[0]
+    """Nazwa planu bez rozszerzenia i bez przedrostków wyników („!ponumerowany X” -> „X”)."""
+    return mod_np.rdzen(plan)
 
 
 def domyslne_wyjscia(plan: str, katalog: str | None = None) -> dict:
@@ -128,16 +130,16 @@ def domyslne_wyjscia(plan: str, katalog: str | None = None) -> dict:
     kat = katalog or os.path.dirname(os.path.abspath(plan))
     baza = _bazowa_nazwa(plan)
     return {
-        "numeracja": os.path.join(kat, f"{baza} - ponumerowane.dxf"),
-        "przewieszenia": os.path.join(kat, f"{baza} - przewieszenia.dxf"),
+        "numeracja": mod_np.wynik(mod_np.PONUMEROWANY, plan, kat),       # „!ponumerowany <plan>.dxf”
+        "przewieszenia": mod_np.wynik(mod_np.PRZEWIESZENIA, plan, kat),  # „!Przewieszenia <plan>.dxf”
         "zestawienie": os.path.join(kat, f"zestawienie {baza}.xlsx"),
         "obliczenia": os.path.join(kat, f"Obliczenia - zestawienie {baza}.xlsx"),
         "orientacje": os.path.join(kat, "rysunki stałe"),   # podfolder z planami stacji + zestawieniem
-        "pzt": os.path.join(kat, f"{baza} - PZT.dxf"),       # kopia planu z arkuszami PZT
+        "pzt": mod_np.wynik(mod_np.PZT, plan, kat),          # kopia planu z arkuszami PZT: „!PZT <plan>.dxf”
         "opisy": os.path.join(kat, "opisy"),                 # podfolder z opisami .docx
         "ppw": os.path.join(kat, "PPW.docx"),                # zbiorczy opis techniczny .docx
         "zakladki": os.path.join(kat, "zakladki.docx"),      # strony-przekładki (docx/pdf wg formatu)
-        "ppw_renumer": mod_ppw.nazwa_powykonawcza(plan, kat),   # renumeracja rysunków: „PPW <nazwa>.dxf”
+        "ppw_renumer": mod_ppw.nazwa_powykonawcza(plan, kat),   # renumeracja rysunków: „!PPW <nazwa>.dxf”
     }
 
 
@@ -378,7 +380,7 @@ def _uruchom_kroki(opcje: Opcje) -> Wynik:
 # ---------------------------------------------------------------------------
 def _krok_numeracja(plan: str, wyjscie: str) -> WynikKroku:
     """Numeracja słupów nN: z planu z zaznaczonymi słupami „1” i „2” każdego obwodu
-    tworzy „… - ponumerowane.dxf” z numerami i obrysami kontrolnymi (wymaga ezdxf)."""
+    tworzy „!ponumerowany <plan>.dxf” z numerami i obrysami kontrolnymi (wymaga ezdxf)."""
     def uruchom():
         from .numeruj_slupy import przetworz as _numeruj_slupy
         return _numeruj_slupy(plan, wyjscie)   # zwraca (ścieżka_wyniku, raport_tekstowy)
@@ -690,7 +692,7 @@ def _krok_ppw_renumer(opcje: Opcje, plan: str, wyjscie: str) -> WynikKroku:
     """Renumeracja numerów rysunku w tabelkach arkuszy DXF (STACJA-ARKUSZ) + „Projekt
     wykonawczy”->„Projekt powykonawczy”. Działa na pliku opcje.ppw_renumer_dxf (lub planie)."""
     dxf = opcje.ppw_renumer_dxf or plan
-    # nazwa wyniku w katalogu wyników: „PPW <nazwa>.dxf”
+    # nazwa wyniku w katalogu wyników: „!PPW <nazwa>.dxf”
     if opcje.ppw_renumer_dxf:
         wyjscie = mod_ppw.nazwa_powykonawcza(opcje.ppw_renumer_dxf, os.path.dirname(wyjscie))
 
