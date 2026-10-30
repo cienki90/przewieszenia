@@ -27,7 +27,7 @@ import tkinter as tk
 import traceback
 from tkinter import filedialog, messagebox, ttk
 
-from . import pipeline, projekt, ustawienia
+from . import nazwy_plikow, pipeline, projekt, ustawienia
 from .wersja import wersja
 
 try:
@@ -818,7 +818,7 @@ class Aplikacja:
                          "Automatyczna numeracja słupów nN. W planie zaznacz ręcznie numery „1” i „2” "
                          "dwóch pierwszych słupów każdego obwodu (warstwa _numery) oraz opis „obw. nr X” "
                          "(grot na pierwszym przęśle). Program ponumeruje resztę i utworzy "
-                         "„… - ponumerowane.dxf” z numerami i obrysami kontrolnymi. Wymaga biblioteki ezdxf.")
+                         "„!ponumerowany <plan>.dxf” z numerami i obrysami kontrolnymi. Wymaga biblioteki ezdxf.")
         self._pole_pliku(f, "Plik planu DXF/DWG:", self.we["numeracja"], "Wybierz plik planu (DXF/DWG)")
         self._przycisk_generuj(f, "Ponumeruj słupy", lambda: self._start_modul("numeracja"))
 
@@ -875,7 +875,7 @@ class Aplikacja:
         self._podpowiedz(f, "(zasięgi i odnośniki „STACJA TRAFO” stacji, których nie ma w szablonie, są brane "
                             "z tego pliku — dla każdej stacji powstaje osobny rysunek; słupy z tego pliku służą "
                             "do nazw miejscowości. Może to być też zwykły plan ze słupami. Wypełnia się samo "
-                            "po module „Arkusze PZT” albo najnowszym plikiem „… - PZT.dxf” z folderu projektu "
+                            "po module „Arkusze PZT” albo najnowszym plikiem „!PZT <plan>.dxf” z folderu projektu "
                             "szablonu; puste = stacje i słupy z samego szablonu)")
         box = self._sekcja(f, "Opcje")
         ttk.Checkbutton(box, text="Pobieraj podkład mapowy (OSM/Geoportal; wymaga internetu i biblioteki Pillow)",
@@ -1035,7 +1035,7 @@ class Aplikacja:
         ren = self._sekcja(f, "Renumeracja numerów rysunku (DXF/DWG)")
         self._podpowiedz(ren, "Dla arkuszy STACJA-ARKUSZ (np. 112-1) nadaje numery rysunku w tabelkach "
                               "(112→1, wiele arkuszy → 1.1, 1.2; jeden → bez kropki) i zamienia „Projekt "
-                              "wykonawczy” → „Projekt powykonawczy”. Tworzy „PPW <nazwa pliku>.dxf”.")
+                              "wykonawczy” → „Projekt powykonawczy”. Tworzy „!PPW <nazwa pliku>.dxf”.")
         self._pole_pliku(ren, "Plik DXF/DWG (PZT/arkusze):", self.ppw_renumer_dxf,
                          "Wybierz plik (DXF/DWG) z arkuszami STACJA-ARKUSZ")
         self._przycisk_generuj(ren, "Renumeruj rysunki", self._start_renumer)
@@ -1253,14 +1253,14 @@ class Aplikacja:
 
     @staticmethod
     def _znajdz_pzt(folder, glebokosc=3):
-        """Najnowszy wynik modułu „Arkusze PZT” („<plan> - PZT.dxf/.dwg”) w folderze i podfolderach."""
+        """Najnowszy wynik modułu „Arkusze PZT” („!PZT <plan>.dxf/.dwg”, też starsze „<plan> - PZT.dxf”)
+        w folderze i podfolderach."""
         najnowszy = None
         for kat, podkat, pliki in os.walk(folder):
             if kat[len(folder):].count(os.sep) >= glebokosc:
                 podkat[:] = []
             for n in pliki:
-                nl = n.lower()
-                if nl.endswith((" - pzt.dxf", " - pzt.dwg")) and not nl.startswith("ppw "):
+                if nazwy_plikow.czy_pzt(n):
                     p = os.path.join(kat, n)
                     try:
                         t = os.path.getmtime(p)

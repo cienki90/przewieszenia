@@ -6,11 +6,11 @@ w wierszu poleceń) — program nie ma łańcucha „wszystko naraz”:
 
 | Krok | Co powstaje | Plik |
 |---|---|---|
-| **Przewieszenia** | rysunki zwisów (profile przęseł) linii nN ze światłowodem | `<plan> - przewieszenia.dxf` |
+| **Przewieszenia** | rysunki zwisów (profile przęseł) linii nN ze światłowodem | `!Przewieszenia <plan>.dxf` |
 | **Zestawienie** | zestawienie słupów nN w podziale na stacje transformatorowe | `zestawienie <plan>.xlsx` |
 | **Obliczenia** | obliczenia nośności słupów na podstawie zestawienia | `Obliczenia - zestawienie <plan>.xlsx` |
 | **Rysunki stałe** | osobny plan orientacyjny DXF dla każdej stacji trafo + zestawienie | `rysunki stałe/<nr>.dxf`, `rysunki stałe/zestawienie_stacji.xlsx` |
-| **Arkusze PZT** | komplet arkuszy A3 1:1000 dla każdej stacji (minimalna liczba, zakład 50 m) | `<plan> - PZT.dxf` |
+| **Arkusze PZT** | komplet arkuszy A3 1:1000 dla każdej stacji (minimalna liczba, zakład 50 m) | `!PZT <plan>.dxf` |
 | **Opisy techniczne** | osobny opis techniczny `.docx` dla każdej stacji (z szablonu Word) | `opisy/<nr>.docx` |
 | **Zakładki** | strony-przekładki (nr stacji / miejscowość / WT) dla każdej stacji | `zakladki.docx` lub `zakladki.pdf` |
 
@@ -173,12 +173,12 @@ pasek postępu i dziennik przebiegu.
 > `1.1, 1.2…`; jeden arkusz → bez kropki) i zamienia „Projekt wykonawczy” → „Projekt
 > powykonawczy”. Pole numeru rozpoznawane uniwersalnie (MTEXT wys. 2.0, treść `N`/`N.N`; styl
 > `LEGENDA` preferowany, ale niewymagany). Działa na czystym Pythonie (bez `ezdxf`), tworzy
-> nieniszcząco plik `PPW <nazwa>.dxf`. CLI: `--ppw-renumeruj plik.dxf`.
+> nieniszcząco plik `!PPW <nazwa>.dxf`. CLI: `--ppw-renumeruj plik.dxf`.
 
 > **Numeracja słupów** (z repo gałęzi `numeracja-slupow`): automatycznie numeruje słupy nN.
 > W planie zaznacz ręcznie numery „1” i „2” dwóch pierwszych słupów każdego obwodu (warstwa
 > `_numery`) oraz opis „obw. nr X” (grot na pierwszym przęśle); program numeruje resztę
-> (magistrala „na wprost”, odgałęzienia `x.1, x.2…` od lewej) i tworzy `… - ponumerowane.dxf`
+> (magistrala „na wprost”, odgałęzienia `x.1, x.2…` od lewej) i tworzy `!ponumerowany <plan>.dxf`
 > z numerami na warstwach `_numery_<stacja>_<obwod>` oraz obrysami kontrolnymi. Wymaga biblioteki
 > **ezdxf** (w `.exe` wbudowana).
 

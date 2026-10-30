@@ -29,7 +29,7 @@ jobs:
           for m in przewieszenia zestawienie obliczenia; do
             python generator_cli.py --dxf "przewieszenia plan.dxf" -o _test --tylko $m --adresy brak --seed 1
           done
-          test -s "_test/przewieszenia plan - przewieszenia.dxf"
+          test -s "_test/!Przewieszenia przewieszenia plan.dxf"
           test -s "_test/zestawienie przewieszenia plan.xlsx"
           test -s "_test/Obliczenia - zestawienie przewieszenia plan.xlsx"
           python generator_cli.py --dxf "szablon.dxf" -o _test_orient --tylko orientacje --bez-podkladu
@@ -37,11 +37,11 @@ jobs:
           python generator_cli.py --dxf "_test_orient/rysunki stałe" --tylko pdf
           test -s "_test_orient/rysunki stałe/494.pdf"
           python generator_cli.py --dxf "pw.dxf" -o _test_num --tylko numeracja
-          test -s "_test_num/pw - ponumerowane.dxf"
+          test -s "_test_num/!ponumerowany pw.dxf"
           python generator_cli.py --dxf "przewieszenia plan.dxf" -o _test_ppw --tylko ppw --bez-podkladu --adresy brak --ppw-wt "WT/1"
           test -s "_test_ppw/PPW.docx"
           python generator_cli.py --dxf dummy --ppw-renumeruj "pw_final2 - ponumerowane - PZT.dxf"
-          test -s "PPW pw_final2 - ponumerowane - PZT.dxf"
+          test -s "!PPW pw_final2 - ponumerowane - PZT.dxf"
           python generator_cli.py --dxf "szablon.dxf" -o _test_zak --tylko zakladki --zakladki-zestawienie "_test_orient/rysunki stałe/zestawienie_stacji.xlsx" --zakladki-format pdf --zakladki-wt "WT/1"
           test -s "_test_zak/zakladki.pdf"
 

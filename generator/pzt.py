@@ -1401,8 +1401,11 @@ def przetworz(dxf, wyjscie=None, wzorzec=None, tylko=None, miejscowosci_stacji=N
         raise ValueError("Nie powstał żaden arkusz (brak trasy w zakresach stacji?).")
     if not wyjscie:
         import os
-        baza = os.path.splitext(os.path.basename(dxf))[0]
-        wyjscie = os.path.join(os.path.dirname(os.path.abspath(dxf)), f"{baza} - PZT.dxf")
+        try:
+            from .nazwy_plikow import PZT, wynik
+        except ImportError:  # bezpośrednie uruchomienie
+            from nazwy_plikow import PZT, wynik
+        wyjscie = wynik(PZT, dxf)
     zapisz_arkusze(dxf, wyjscie, arkusze, wzorzec_sciezka=wzorzec,
                    poligony_stacji=poligony_stacji, log=log)
     for o in ostrzezenia:
@@ -1420,7 +1423,7 @@ def main(argv=None):
             pass
     ap = argparse.ArgumentParser(description="Arkusze PZT (A3 1:1000) dla zakresów stacji trafo z pliku DXF.")
     ap.add_argument("dxf", help="plik DXF z trasą !tele, poligonami !trafo i layoutem-wzorcem „a”")
-    ap.add_argument("-o", "--wyjscie", default=None, help="plik wynikowy DXF (domyślnie '<plik> - PZT.dxf')")
+    ap.add_argument("-o", "--wyjscie", default=None, help="plik wynikowy DXF (domyślnie '!PZT <plik>.dxf')")
     ap.add_argument("--wzorzec", default=None, help="osobny plik DXF z layoutem-wzorcem „a”")
     ap.add_argument("--stacje", default=None, help="tylko wybrane stacje, po przecinku (np. 494,541)")
     ap.add_argument("--zaklad", type=float, default=ZAKLAD, help="wspólny odcinek trasy sąsiednich arkuszy [m]")

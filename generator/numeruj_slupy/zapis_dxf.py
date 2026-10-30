@@ -16,7 +16,7 @@ Zapis DOPISUJE tylko nowe encje (numery + obrysy) i nowe warstwy do ORYGINALNEGO
 pliku DXF - reszta (multileadery z opisami słupów/stacji/obwodów, style, bloki) zostaje
 BAJT W BAJT jak w oryginale. Dzięki temu żaden element nie znika w CAD (ezdxf saveas
 potrafił psuć render multileaderów przy przepisywaniu całego pliku). Oryginał nie jest
-modyfikowany - wynik to nowy plik (domyślnie "<nazwa> - ponumerowane.dxf").
+modyfikowany - wynik to nowy plik (domyślnie "!ponumerowany <nazwa>.dxf").
 """
 import math
 import os
@@ -335,8 +335,8 @@ def zapisz(model, obwody, sciezka_wej, sciezka_wyj=None):
         raise ImportError("Moduł numeracji słupów wymaga biblioteki ezdxf "
                           "(zainstaluj: pip install ezdxf).")
     if sciezka_wyj is None:
-        baza, _ = os.path.splitext(sciezka_wej)
-        sciezka_wyj = baza + ' - ponumerowane.dxf'
+        folder, nazwa = os.path.split(os.path.splitext(sciezka_wej)[0])
+        sciezka_wyj = os.path.join(folder, '!ponumerowany ' + nazwa + '.dxf')
 
     tekst, enc = _czytaj_tekst_dxf(sciezka_wej)
     H = _Handles(_max_handle(tekst))

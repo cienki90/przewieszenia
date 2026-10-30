@@ -29,8 +29,10 @@ import re
 
 try:
     from . import dxfio as _dxf
+    from . import nazwy_plikow as _np
 except ImportError:  # bezpośrednie uruchomienie
     import dxfio as _dxf
+    import nazwy_plikow as _np
 
 # openpyxl / python-docx - opcjonalne, ładowane leniwie (jak w module opisy)
 openpyxl = None
@@ -446,16 +448,19 @@ def _ustaw_numer_w_encjach(ents, nalezy, nowy):
 
 
 def nazwa_powykonawcza(sciezka: str, katalog: str | None = None) -> str:
-    """Ścieżka pliku powykonawczego: „PPW <nazwa>.dxf” (w ``katalog`` albo obok pliku wejściowego).
+    """Ścieżka pliku powykonawczego: „!PPW <nazwa>.dxf” (w ``katalog`` albo obok pliku wejściowego).
 
-    Przedrostek nie jest dublowany, gdy nazwa już zaczyna się od „PPW” - chyba że wynik trafiłby
-    w sam plik wejściowy (ten sam folder): wtedy zawsze dopisujemy „PPW ”, żeby nie nadpisać oryginału."""
+    <nazwa> to nazwa pliku bez przedrostków wyników („!PZT X.dxf” -> „!PPW X.dxf”) i bez starszego
+    „PPW ”. Gdy wynik trafiłby w sam plik wejściowy (ten sam folder), przedrostek jest dopisywany
+    do pełnej nazwy, żeby nie nadpisać oryginału."""
     nazwa = os.path.splitext(os.path.basename(sciezka))[0]
     folder = katalog if katalog is not None else os.path.dirname(sciezka)
-    wynik = os.path.join(folder, nazwa + ".dxf")
-    if not nazwa.upper().startswith("PPW") or os.path.normcase(os.path.abspath(wynik)) == \
-            os.path.normcase(os.path.abspath(sciezka)):
-        wynik = os.path.join(folder, "PPW " + nazwa + ".dxf")
+    rdzen = _np.rdzen(sciezka)
+    if rdzen.upper().startswith("PPW ") and len(rdzen) > 4:
+        rdzen = rdzen[4:]
+    wynik = os.path.join(folder, f"{_np.PPW} {rdzen}.dxf")
+    if os.path.normcase(os.path.abspath(wynik)) == os.path.normcase(os.path.abspath(sciezka)):
+        wynik = os.path.join(folder, f"{_np.PPW} {nazwa}.dxf")
     return wynik
 
 
