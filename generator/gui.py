@@ -63,6 +63,15 @@ def _wybierz_plik(parent, var, tytul, typy=DXF_TYPY):
         var.set(os.path.normpath(p))
 
 
+def _w_folderze(plik, folder) -> bool:
+    """Czy plik leży w folderze (albo jego podfolderach)."""
+    try:
+        f = os.path.normcase(os.path.abspath(folder))
+        return os.path.commonpath([os.path.normcase(os.path.abspath(plik)), f]) == f
+    except ValueError:                                     # inne dyski
+        return False
+
+
 def _czcionka_ui():
     return "Segoe UI" if sys.platform.startswith("win") else "TkDefaultFont"
 
@@ -280,6 +289,24 @@ class Aplikacja:
         self._ustaw_projekt(projekt.folder(projekt.sciezka(folder_lub_plik)))
         if hasattr(self, "log"):
             self._pisz(f"Projekt: {self.projekt.get()}")
+        self._odepnij_obce()
+
+    def _odepnij_obce(self):
+        """Pola wypełnione automatycznie plikami spoza folderu projektu (np. wyniki poprzedniego projektu,
+        które przeszły do nowego) są czyszczone - inaczej moduł pracowałby na planie innego projektu.
+        Pliki wybrane ręcznie zostają; plik PZT Rysunków stałych dobiera się z projektu szablonu."""
+        proj = self.projekt.get().strip()
+        if not proj:
+            return
+        for k, v in self._pola_projektu().items():
+            wart = str(v.get()).strip() if isinstance(v, tk.StringVar) else ""
+            if (wart and wart == self._podpiete.get(str(v)) and os.path.isabs(wart)
+                    and not _w_folderze(wart, proj)):
+                v.set("")
+                self._podpiete.pop(str(v), None)
+                if hasattr(self, "log"):
+                    self._pisz(f"ODPIĘTO (plik z innego projektu): {k} ← {os.path.basename(wart)}")
+        self.root.after_idle(self._podepnij_pzt_orient)
 
     def _wybierz_projekt(self):
         p = filedialog.askopenfilename(parent=self.root, title="Otwórz projekt (plik projektu albo plan w folderze)",
@@ -382,9 +409,11 @@ class Aplikacja:
             p = self.we[k].get().strip()
             if p and os.path.isfile(p):
                 self._ustaw_projekt(os.path.dirname(os.path.abspath(p)))
+                self._odepnij_obce()
                 return
         if plik and os.path.isfile(plik):
             self._ustaw_projekt(os.path.dirname(os.path.abspath(plik)))
+            self._odepnij_obce()
 
     # ================================================================= ustawienia
     def _historia_wt(self) -> list:
@@ -583,6 +612,8 @@ class Aplikacja:
     def _pokaz(self, klucz):
         """Pokazuje stronę modułu (tylko jedna w kontenerze - przewijanie dopasowane do niej)."""
         self._wybrana.set(klucz)
+        if klucz == "orientacje":
+            self.root.after_idle(self._podepnij_pzt_orient)
         for k, f in self._strony.items():
             if k == klucz:
                 f.grid(row=0, column=0, sticky="nsew")
@@ -836,13 +867,16 @@ class Aplikacja:
                          "zestawienie. Nazwa miejscowości w tabelce jest ustalana z położenia słupów stacji "
                          "(wg zestawienia).")
         self._pole_pliku(f, "Szablon rysunków stałych:", self.we["orientacje"], "Wybierz szablon (DXF/DWG)")
+        # nowy szablon (np. z innego projektu) -> plik PZT z jego projektu
+        self.we["orientacje"].trace_add("write", lambda *_: self.root.after(300, self._podepnij_pzt_orient))
         self._podpowiedz(f, "(puste = dołączony szablon.dxf)")
         self._pole_pliku(f, "Plik PZT (stacje i słupy):", self.orient_zasiegi,
                          "Wybierz plik PZT (zasięgi stacji !trafo_<nr> + słupy)")
         self._podpowiedz(f, "(zasięgi i odnośniki „STACJA TRAFO” stacji, których nie ma w szablonie, są brane "
                             "z tego pliku — dla każdej stacji powstaje osobny rysunek; słupy z tego pliku służą "
                             "do nazw miejscowości. Może to być też zwykły plan ze słupami. Wypełnia się samo "
-                            "po module „Arkusze PZT”; puste = stacje i słupy z samego szablonu)")
+                            "po module „Arkusze PZT” albo najnowszym plikiem „… - PZT.dxf” z folderu projektu "
+                            "szablonu; puste = stacje i słupy z samego szablonu)")
         box = self._sekcja(f, "Opcje")
         ttk.Checkbutton(box, text="Pobieraj podkład mapowy (OSM/Geoportal; wymaga internetu i biblioteki Pillow)",
                         variable=self.orient_podklad).pack(anchor="w", pady=4)
@@ -1176,9 +1210,16 @@ class Aplikacja:
         if krok == "orientacje" and plik and not os.path.isfile(plik):
             messagebox.showwarning(TYTUL, "Wskazany szablon nie istnieje.", parent=self.root)
             return
+        if krok == "orientacje":
+            self._podepnij_pzt_orient()
         zas = self.orient_zasiegi.get().strip()
         if krok == "orientacje" and zas and not os.path.isfile(zas):
             messagebox.showwarning(TYTUL, "Wskazany plik z zasięgami stacji (PZT) nie istnieje.", parent=self.root)
+            return
+        folder = self._folder_orient() if krok == "orientacje" else None
+        if zas and folder and not _w_folderze(zas, folder) and not messagebox.askyesno(
+                TYTUL, f"Plik PZT jest z innego folderu niż szablon rysunków stałych:\n\n{zas}\n\n"
+                       f"Folder projektu szablonu:\n{folder}\n\nUżyć mimo to tego pliku PZT?", parent=self.root):
             return
         # dla orientacji bez pliku: użyj dołączonego szablonu jako wejścia
         wejscie = plik
@@ -1192,6 +1233,61 @@ class Aplikacja:
                                        parent=self.root)
                 return
         self._uruchom(wejscie, (krok,), orient_szablon=orient_szablon)
+
+    # ---- Rysunki stałe: plik PZT z tego samego projektu co szablon ----
+    def _folder_orient(self):
+        """Folder projektu, do którego należy szablon rysunków stałych (bez szablonu - otwarty projekt):
+        folder z plikiem projektu powyżej szablonu, otwarty projekt zawierający szablon, a bez nich -
+        folder nad podfolderem „rysunki stałe” (struktura projektów) albo folder szablonu."""
+        szab = self.we["orientacje"].get().strip()
+        proj = self.projekt.get().strip()
+        if not szab or not os.path.isfile(szab):
+            return proj if proj and os.path.isdir(proj) else None
+        if proj and _w_folderze(szab, proj):
+            return proj
+        d = os.path.dirname(os.path.abspath(szab))
+        for kat in (d, os.path.dirname(d), os.path.dirname(os.path.dirname(d))):
+            if os.path.isfile(projekt.sciezka(kat)):
+                return kat
+        return os.path.dirname(d) if os.path.basename(d).lower().startswith(("rysunki", "szablon")) else d
+
+    @staticmethod
+    def _znajdz_pzt(folder, glebokosc=3):
+        """Najnowszy wynik modułu „Arkusze PZT” („<plan> - PZT.dxf/.dwg”) w folderze i podfolderach."""
+        najnowszy = None
+        for kat, podkat, pliki in os.walk(folder):
+            if kat[len(folder):].count(os.sep) >= glebokosc:
+                podkat[:] = []
+            for n in pliki:
+                nl = n.lower()
+                if nl.endswith((" - pzt.dxf", " - pzt.dwg")) and not nl.startswith("ppw "):
+                    p = os.path.join(kat, n)
+                    try:
+                        t = os.path.getmtime(p)
+                    except OSError:
+                        continue
+                    if najnowszy is None or t > najnowszy[0]:
+                        najnowszy = (t, p)
+        return najnowszy[1] if najnowszy else None
+
+    def _podepnij_pzt_orient(self):
+        """Wpisuje do Rysunków stałych wcześniej wygenerowany plik PZT z projektu szablonu, gdy pole jest
+        puste, wskazuje nieistniejący plik albo plik z innego projektu. Plik wybrany ręcznie w tym samym
+        projekcie zostaje."""
+        v = self.orient_zasiegi
+        teraz = v.get().strip()
+        folder = self._folder_orient()
+        if not folder or (teraz and os.path.isfile(teraz) and _w_folderze(teraz, folder)):
+            return
+        pzt = self._znajdz_pzt(folder)
+        if not pzt or os.path.normcase(pzt) == os.path.normcase(teraz):
+            return
+        pzt = os.path.normpath(pzt)
+        v.set(pzt)
+        self._podpiete[str(v)] = pzt
+        if hasattr(self, "log"):
+            self._pisz(f"PODPIĘTO: Rysunki stałe (plik PZT) ← {os.path.basename(pzt)}"
+                       + (" (poprzedni plik był z innego projektu)" if teraz else ""))
 
     # ---- uruchomienie: Obliczenia (plik DXF albo własne zestawienie) ----
     def _start_obliczenia(self):
@@ -1335,8 +1431,10 @@ class Aplikacja:
             plik = os.path.normpath(plik)
             for modul, pole, var in odbiorcy:
                 teraz = var.get().strip()
-                if teraz and teraz != self._podpiete.get(str(var)):
-                    continue                        # wybrane ręcznie - zostaw
+                proj = self.projekt.get().strip()
+                z_innego = bool(proj) and _w_folderze(plik, proj) and not _w_folderze(teraz, proj)
+                if teraz and teraz != self._podpiete.get(str(var)) and os.path.exists(teraz) and not z_innego:
+                    continue                        # wybrane ręcznie w tym projekcie - zostaw
                 var.set(plik)
                 self._podpiete[str(var)] = plik
                 podpiete.append(f"  {modul} ({pole}) ← {os.path.basename(plik)}")
