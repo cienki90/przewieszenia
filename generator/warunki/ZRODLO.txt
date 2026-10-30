@@ -1,0 +1,14 @@
+Rdzeń Generatora WT przeniesiony do programu (natywne scalenie, moduł nr 1).
+
+Źródło: https://github.com/cienki90/GENERATOR_WT.git
+Gałąź:  Generator_WT_PGE-CLAUDE
+Commit: 9f031db97116ab7b1f562faca3616ca8e6e76229  (2026-10-29)
+
+Pliki .py (oprócz config.py) są kopią 1:1 - przy aktualizacji z repozytorium Generatora WT
+wystarczy skopiować je ponownie. Pominięte: gui.py (okno Qt - zastąpione zakładką w
+generator/gui.py), web/, aktualizacje.py, autotest.py.
+
+Zmiany względem oryginału:
+  config.py - ścieżki: szablony w generator/warunki/szablony, dane użytkownika (słowniki
+              operatorów/rejonów, pamięć kafli i dróg) w %LOCALAPPDATA%\GeneratorNN\warunki.
+  geocoder.py - pamięć adresów (CACHE) w tym samym folderze danych użytkownika.

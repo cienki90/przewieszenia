@@ -11,3 +11,10 @@ openpyxl>=3.1
 ezdxf>=1.1
 sv-ttk>=2.6
 pymupdf>=1.24
+# moduł nr 1 „Warunki techniczne” (rdzeń Generatora WT, generator/warunki):
+shapely>=2.0
+pyproj>=3.6
+numpy>=1.26
+requests>=2.31
+xlrd>=2.0
+xlwt>=1.3

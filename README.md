@@ -23,15 +23,20 @@ w wierszu poleceń) — program nie ma łańcucha „wszystko naraz”:
 > usuwa zaznaczony, „Domknij dziury” dokłada arkusze na niepokrytej trasie, a pole „Podkład mapowy”
 > pokazuje pod spodem mapę OSM (pobieraną na żądanie, kafle zapamiętywane na dysku).
 
-## Moduł nr 1: Generator WT
+## Moduł nr 1: Warunki techniczne (Generator WT)
 
-Zakładka „1. Generator WT” uruchamia osobny program **Generator WT** (etap warunków technicznych:
-numeracja, pismo o dostęp do słupów, zestawienia, arkusze) w jego własnym oknie. Program jest
-znajdowany sam (folder `GENERATOR_WT*` obok programu lub w `GOTOWE PROJEKTY`) albo wskazywany
-przyciskiem „Wskaż…” (folder z `uruchom.pyw` lub `Generator WT.exe`). Po zamknięciu Generatora WT
-(albo przyciskiem „Podepnij wyniki WT”) jego wyniki z folderu projektu są wypisywane w „Przebiegu”,
-a zestawienie uproszczone `*_uproszczona.xls` trafia do pola „Warunki techniczne” (PZT, Rysunki
-stałe, Opisy). Generator WT działa jako osobny proces - ma własne biblioteki (PySide6).
+Zakładka „1. Warunki techniczne” to **natywnie scalony Generator WT**: rdzeń programu (repo
+`GENERATOR_WT`, opis wersji w `generator/warunki/ZRODLO.txt`) w podpakiecie `generator/warunki`
+i okno w tkinterze (`generator/zakladka_wt.py`) zamiast okna Qt. Kolejno: plik DXF/DWG i ustawienia
+numeracji → „Analizuj” (adresy GUGiK, sprawdzenie ulic, plan, arkusze) → „Wykaz słupów” (poprawki
+i wyłączanie słupów, zapamiętywane w `<projekt>.wt.json`) → „Kontrola projektu” → zlecenie (operator,
+rejon, daty) → „Numeruj i generuj dokumenty” (numeracja + arkusze, pismo, zestawienia, tabela
+projektowa, plan orientacyjny, PDF). Dokumenty są identyczne jak z samodzielnego Generatora WT.
+Zestawienie uproszczone `.xls` podpina się do pola „Warunki techniczne” (PZT, Rysunki stałe, Opisy).
+Listy operatorów i rejonów oraz pamięć adresów leżą w `%LOCALAPPDATA%\GeneratorNN\warunki`
+(przy pierwszym uruchomieniu przenoszone z dotychczasowego Generatora WT). Funkcje jeszcze
+nieprzeniesione (mapa z wykluczaniem słupów, podgląd arkuszy, dodawanie operatora po NIP) są
+dostępne w pełnym Generatorze WT uruchamianym z dołu zakładki.
 
 ## Udogodnienia okna
 

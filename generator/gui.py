@@ -195,6 +195,8 @@ class Aplikacja:
                 return self.orient_zasiegi if "pzt" in nazwa else self.we["orientacje"]
             if strona == "ppw":
                 return self.ppw_renumer_dxf
+            if strona == "wt" and hasattr(self, "zakladka_wt"):
+                return self.zakladka_wt.plik
         if ext in (".xlsx", ".xls"):
             return {"obliczenia": self.obl_zestawienie,
                     "opisy": self.opisy_obliczenia if nazwa.startswith("obliczenia") else self.opisy_zestawienie,
@@ -217,6 +219,8 @@ class Aplikacja:
             pola[nazwa] = getattr(self, nazwa)
         for m, v in self.wt.items():
             pola[f"wt_{m}"] = v
+        if hasattr(self, "zakladka_wt"):
+            pola["wt_plan"] = self.zakladka_wt.plik        # plan warunków technicznych (moduł nr 1)
         return pola
 
     def _zapisz_projekt(self):
@@ -295,7 +299,7 @@ class Aplikacja:
         # czyszczone są pola plików; opcje i numery WT zostają jak były
         pliki = ("katalog", "obl_zestawienie", "orient_szablon", "orient_zasiegi", "pzt_wzorzec", "wt_plik",
                  "opisy_szablon", "opisy_zestawienie", "opisy_obliczenia", "ppw_szablon", "ppw_zestawienie",
-                 "ppw_zestawienie_stacji", "ppw_renumer_dxf", "zakladki_zestawienie", "pdf_folder")
+                 "ppw_zestawienie_stacji", "ppw_renumer_dxf", "zakladki_zestawienie", "pdf_folder", "wt_plan")
         for k, v in self._pola_projektu().items():
             if k.startswith("plik_") or k in pliki:
                 v.set("")
@@ -667,27 +671,34 @@ class Aplikacja:
     # ---------------------------------------------------------------- moduł nr 1: Generator WT
     def _zakladka_generator_wt(self):
         from . import generator_wt_start as gwt
-        f = self._strona("wt", "1. Generator WT", "Generator WT (warunki techniczne)",
-                         "Etap warunków technicznych - osobny program: analiza planu, numeracja słupów, pismo "
-                         "„Zapytanie o możliwość dostępu do słupów”, zestawienia (uproszczone .xls, rozbudowane, "
-                         "tabela projektowa) i arkusze. Uruchamia się w osobnym oknie; po jego zamknięciu wyniki "
-                         "z folderu projektu są podpinane do dalszych modułów.")
+        from .zakladka_wt import ZakladkaWT
+        f = self._strona("wt", "1. Warunki techniczne", "Warunki techniczne (Generator WT)",
+                         "Etap warunków technicznych: analiza planu, numeracja słupów, pismo „Zapytanie o możliwość "
+                         "dostępu do słupów”, zestawienia (uproszczone .xls, rozbudowane, tabela projektowa), "
+                         "arkusze 1:1000 i plan orientacyjny. Zestawienie uproszczone podpina się do dalszych modułów.")
         if not gwt.czy_generator_wt(self.wt_program.get()):
             znaleziony = gwt.znajdz_generator_wt([self.projekt.get()])
             if znaleziony:
                 self.wt_program.set(znaleziony)
-        r = ttk.Frame(f)
+        # natywne okno Generatora WT (rdzeń generator.warunki ładowany dopiero przy użyciu)
+        self.zakladka_wt = ZakladkaWT(self, f)
+
+        # pełny Generator WT w osobnym oknie - na funkcje jeszcze nieprzeniesione (mapa z wykluczaniem
+        # słupów, podgląd arkuszy, dodawanie operatora po NIP)
+        box = self._sekcja(f, "Pełny Generator WT (osobne okno)")
+        self._podpowiedz(box, "(mapa z wykluczaniem słupów, podgląd arkuszy, „Dodaj operatora po NIP” - do czasu "
+                              "przeniesienia tych funkcji tutaj)")
+        r = ttk.Frame(box)
         r.pack(fill="x", pady=4)
         ttk.Label(r, text="Program Generator WT:", width=24).pack(side="left")
         ttk.Entry(r, textvariable=self.wt_program).pack(side="left", fill="x", expand=True, padx=6)
         ttk.Button(r, text="Wskaż…", command=self._wskaz_generator_wt).pack(side="left")
-        self._podpowiedz(f, "(folder z „uruchom.pyw” albo plik „Generator WT.exe”; znajdowany sam obok programu)")
-        b = ttk.Button(f, text="▶  Uruchom Generator WT", command=self._uruchom_generator_wt,
-                       style="Accent.TButton")
-        b.pack(anchor="w", pady=(14, 6))
-        self._przyciski.append(b)
-        ttk.Button(f, text="Podepnij wyniki WT z folderu projektu", command=lambda: self._podepnij_wt(0.0)).pack(
-            anchor="w", pady=(2, 4))
+        r = ttk.Frame(box)
+        r.pack(fill="x", pady=(4, 2))
+        ttk.Button(r, text="Uruchom pełny Generator WT", command=self._uruchom_generator_wt).pack(side="left")
+        ttk.Button(r, text="Podepnij wyniki WT z folderu projektu",
+                   command=lambda: self._podepnij_wt(0.0)).pack(side="left", padx=6)
+        f = box
         self._podpowiedz(f, "(zestawienie uproszczone *_uproszczona.xls trafia do pola „Warunki techniczne” - "
                             "korzystają z niego Arkusze PZT, Rysunki stałe i Opisy; pozostałe wyniki są wypisywane "
                             "w „Przebiegu”)")
