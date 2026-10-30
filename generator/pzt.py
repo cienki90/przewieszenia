@@ -386,9 +386,10 @@ class Wejscie:
     wzor_zakazane: tuple              # (x0,y0,x1,y1) tabelka+legenda wzgl. lewego dolnego rogu rzutni
 
 
-def wczytaj(sciezka, wzorzec_sciezka=None):
+def wczytaj(sciezka, wzorzec_sciezka=None, wzorzec=True):
     """Czyta trasę, poligony i stacje z `sciezka`, a wzorzec (okno + strefa tabelki)
-    z `wzorzec_sciezka` (gdy None - z tego samego pliku)."""
+    z `wzorzec_sciezka` (gdy None - z tego samego pliku). `wzorzec=False` - bez wzorca (sama trasa,
+    zasięgi i stacje, np. do porównania z WT; plik nie musi mieć layoutu „a”)."""
     secs = dict(split_sections(read_tags(sciezka)))
     ents = split_entities(secs.get("ENTITIES", []))
 
@@ -413,6 +414,8 @@ def wczytaj(sciezka, wzorzec_sciezka=None):
                     # zachowaj PEŁNE oznaczenie (np. '05-0244') - potrzebne do tabelki
                     stacje.append((m.group(1).strip(), grot))
 
+    if not wzorzec:
+        return Wejscie(trasy, poligony, stacje, (0.0, 0.0), (0.0, 0.0, 0.0, 0.0))
     W, H, zak = _wczytaj_wzorzec(sciezka if wzorzec_sciezka is None else wzorzec_sciezka)
     return Wejscie(trasy, poligony, stacje, (W, H), zak)
 

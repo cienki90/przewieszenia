@@ -28,3 +28,14 @@ pw - kontrola.dxf
 *- PZT.dxf
 _fix*.dxf
 opisy/
+
+# testy CI uruchamiane lokalnie (katalogi _test, _test_orient, _test_num, _test_ppw, _test_zak...)
+_test*/
+# wyniki uruchomień na plikach z przyklady/ (wyniki z przedrostkiem „!”, pomocnicze)
+przyklady/!*
+przyklady/* - kontrola.dxf
+przyklady/zestawienie przewieszenia plan.xlsx
+przyklady/Obliczenia - zestawienie *.xlsx
+przyklady/rysunki stałe/
+przyklady/opisy/
+przyklady/*.dwg

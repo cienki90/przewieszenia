@@ -1810,16 +1810,22 @@ class Generator:
             for (x, y) in pts:
                 g = (round(x / komorka), round(y / komorka))
                 grupy.setdefault(g, []).append((x, y))
+            nieudane, ostatni_blad = 0, None
             for g, lista in grupy.items():
                 x, y = lista[0]   # jeden reprezentant grupy
                 lat, lon = pl2000_to_wgs84(x, y, pl2000_zone_from_easting(x))
                 try:
                     r = self.geocoder.resolve(lat, lon, x, y, self.zone)
-                except Exception:  # noqa: BLE001 - pojedyncza grupa nie wywraca całości
+                except Exception as exc:  # noqa: BLE001 - pojedyncza grupa nie wywraca całości
+                    nieudane, ostatni_blad = nieudane + 1, exc
                     continue
                 nazwa = (r.get("miejscowosc") or "").strip()
                 if nazwa:
                     liczby[nazwa] = liczby.get(nazwa, 0) + len(lista)   # waga = liczba słupów w grupie
+            if nieudane:   # bez tego brak nazwy (albo nazwa z części słupów) przechodził bez śladu
+                self.log(f"Uwaga: stacja {st.number}: nie ustalono miejscowości dla {nieudane} z {len(grupy)} "
+                         f"grup słupów ({ostatni_blad})"
+                         + (" - nazwa z pozostałych grup." if liczby else " - brak nazwy z położenia słupów."))
         wynik = sorted(liczby.items(), key=lambda kv: (-kv[1], kv[0]))
         self.miejscowosci_stacji[klucz] = wynik
         return wynik
@@ -1881,8 +1887,8 @@ class Generator:
                     r = self.geocoder.resolve(lat, lon, gx, gy, self.zone)
                     for k in ("gmina", "powiat", "wojewodztwo"):
                         st.place[k] = r.get(k, "")
-                except Exception:  # noqa: BLE001
-                    pass
+                except Exception as exc:  # noqa: BLE001 - nazwa miejscowości już jest; braki do raportu
+                    st.notes.append(f"gmina/powiat/województwo nieustalone ({exc})")
         elif self.geocoder:
             # 2) brak słupów (np. sam szablon) - jak dawniej: geokoduj punkt reprezentatywny
             if (gx, gy) != (st.x, st.y):

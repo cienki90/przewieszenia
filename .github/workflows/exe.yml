@@ -1,15 +1,62 @@
-name: Buduj program GeneratorNN.exe
+name: Testy (budowa GeneratorNN.exe tylko na żądanie)
 
+# Każde wypchnięcie gałęzi PGE_MAKER_CLAUDE uruchamia TYLKO testy.
+# Budowa .exe jest wyłączona do odwołania (decyzja z 2026-10-30) - zadanie „exe” rusza wyłącznie
+# po ręcznym uruchomieniu (Actions -> „Run workflow”) z zaznaczonym „Zbuduj GeneratorNN.exe”.
 on:
   push:
-    branches: [PGE_MAKER_CLAUDE]   # gałąź rozwijana - każde wypchnięcie buduje aktualny .exe
+    branches: [PGE_MAKER_CLAUDE]
   workflow_dispatch:
+    inputs:
+      zbuduj_exe:
+        description: "Zbuduj GeneratorNN.exe i opublikuj w Releases"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
 
 jobs:
+  testy:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalacja zależności
+        run: python -m pip install --upgrade pip pillow python-docx openpyxl ezdxf sv-ttk pymupdf
+
+      - name: Testy jednostkowe (nazwy plików, zakres WT, logika okna)
+        run: python -m unittest discover -s testy -v
+
+      - name: Test wiersza poleceń (moduły osobno, bez internetu)
+        shell: bash
+        run: |
+          for m in przewieszenia zestawienie obliczenia; do
+            python generator_cli.py --dxf "przyklady/przewieszenia plan.dxf" -o _test --tylko $m --adresy brak --seed 1
+          done
+          test -s "_test/!Przewieszenia przewieszenia plan.dxf"
+          test -s "_test/zestawienie przewieszenia plan.xlsx"
+          test -s "_test/Obliczenia - zestawienie przewieszenia plan.xlsx"
+          python generator_cli.py --dxf "szablon.dxf" -o _test_orient --tylko orientacje --bez-podkladu
+          test -s "_test_orient/rysunki stałe/zestawienie_stacji.xlsx"
+          python generator_cli.py --dxf "_test_orient/rysunki stałe" --tylko pdf
+          test -s "_test_orient/rysunki stałe/494.pdf"
+          python generator_cli.py --dxf "przyklady/pw.dxf" -o _test_num --tylko numeracja
+          test -s "_test_num/!ponumerowany pw.dxf"
+          python generator_cli.py --dxf "przyklady/przewieszenia plan.dxf" -o _test_ppw --tylko ppw --bez-podkladu --adresy brak --ppw-wt "WT/1"
+          test -s "_test_ppw/PPW.docx"
+          python generator_cli.py --dxf dummy --ppw-renumeruj "przyklady/pw_final2 - ponumerowane - PZT.dxf"
+          test -s "przyklady/!PPW pw_final2.dxf"
+          python generator_cli.py --dxf "szablon.dxf" -o _test_zak --tylko zakladki --zakladki-zestawienie "_test_orient/rysunki stałe/zestawienie_stacji.xlsx" --zakladki-format pdf --zakladki-wt "WT/1"
+          test -s "_test_zak/zakladki.pdf"
+
   exe:
+    needs: testy
+    if: github.event_name == 'workflow_dispatch' && inputs.zbuduj_exe
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,28 +69,6 @@ jobs:
 
       - name: Instalacja zależności
         run: python -m pip install --upgrade pip pyinstaller pillow python-docx openpyxl ezdxf sv-ttk pymupdf shapely pyproj numpy requests xlrd xlwt
-
-      - name: Test wiersza poleceń (moduły osobno, bez internetu)
-        shell: bash
-        run: |
-          for m in przewieszenia zestawienie obliczenia; do
-            python generator_cli.py --dxf "przewieszenia plan.dxf" -o _test --tylko $m --adresy brak --seed 1
-          done
-          test -s "_test/!Przewieszenia przewieszenia plan.dxf"
-          test -s "_test/zestawienie przewieszenia plan.xlsx"
-          test -s "_test/Obliczenia - zestawienie przewieszenia plan.xlsx"
-          python generator_cli.py --dxf "szablon.dxf" -o _test_orient --tylko orientacje --bez-podkladu
-          test -s "_test_orient/rysunki stałe/zestawienie_stacji.xlsx"
-          python generator_cli.py --dxf "_test_orient/rysunki stałe" --tylko pdf
-          test -s "_test_orient/rysunki stałe/494.pdf"
-          python generator_cli.py --dxf "pw.dxf" -o _test_num --tylko numeracja
-          test -s "_test_num/!ponumerowany pw.dxf"
-          python generator_cli.py --dxf "przewieszenia plan.dxf" -o _test_ppw --tylko ppw --bez-podkladu --adresy brak --ppw-wt "WT/1"
-          test -s "_test_ppw/PPW.docx"
-          python generator_cli.py --dxf dummy --ppw-renumeruj "pw_final2 - ponumerowane - PZT.dxf"
-          test -s "!PPW pw_final2 - ponumerowane - PZT.dxf"
-          python generator_cli.py --dxf "szablon.dxf" -o _test_zak --tylko zakladki --zakladki-zestawienie "_test_orient/rysunki stałe/zestawienie_stacji.xlsx" --zakladki-format pdf --zakladki-wt "WT/1"
-          test -s "_test_zak/zakladki.pdf"
 
       - name: Numer wersji do programu
         shell: bash

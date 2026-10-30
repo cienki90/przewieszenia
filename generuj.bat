@@ -3,7 +3,7 @@ chcp 65001 >nul
 rem ==========================================================================
 rem  generuj.bat - wersja wiersza polecen (jeden modul na uruchomienie).
 rem  Przeciagnij plik planu DXF na ten plik .bat albo podaj argumenty:
-rem      generuj.bat "przewieszenia plan.dxf" przewieszenia
+rem      generuj.bat "przyklady\przewieszenia plan.dxf" przewieszenia
 rem  Brakujacy plik lub modul program zapyta z klawiatury.
 rem  Moduly: numeracja przewieszenia zestawienie obliczenia orientacje pzt
 rem          opisy ppw zakladki

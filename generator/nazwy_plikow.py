@@ -6,8 +6,9 @@ na górze folderu projektu (Eksplorator sortuje „!” przed literami):
   !PZT <plan>.dxf            - arkusze PZT
   !PPW <plan>.dxf            - plik powykonawczy (renumeracja rysunków)
 
-Rdzeń nazwy to nazwa planu bez przedrostków wyników, więc z „!ponumerowany X.dxf” powstaje
-„!PZT X.dxf”, a z niego „!PPW X.dxf” (bez nawarstwiania przedrostków).
+Rdzeń nazwy to nazwa planu bez przedrostków wyników (i bez końcówek starszych nazw, np.
+„X - ponumerowane - PZT.dxf”), więc z „!ponumerowany X.dxf” powstaje „!PZT X.dxf”, a z niego
+„!PPW X.dxf” (bez nawarstwiania przedrostków).
 """
 from __future__ import annotations
 
@@ -18,10 +19,13 @@ PRZEWIESZENIA = "!Przewieszenia"
 PZT = "!PZT"
 PPW = "!PPW"
 PRZEDROSTKI = (PONUMEROWANY, PRZEWIESZENIA, PZT, PPW)
+# końcówki nazw wyników sprzed wersji z przedrostkami („<plan> - ponumerowane.dxf” itd.)
+STARE_KONCOWKI = (" - ponumerowane", " - przewieszenia", " - PZT")
 
 
 def rdzen(sciezka: str) -> str:
-    """Nazwa pliku bez rozszerzenia i bez przedrostków wyników programu."""
+    """Nazwa pliku bez rozszerzenia, bez przedrostków wyników programu i bez końcówek starszych nazw
+    („!PZT X”, „X - ponumerowane - PZT” -> „X”)."""
     nazwa = os.path.splitext(os.path.basename(sciezka))[0]
     zmiana = True
     while zmiana:
@@ -29,6 +33,10 @@ def rdzen(sciezka: str) -> str:
         for p in PRZEDROSTKI:
             if nazwa.lower().startswith(p.lower() + " ") and len(nazwa) > len(p) + 1:
                 nazwa = nazwa[len(p) + 1:].lstrip()
+                zmiana = True
+        for k in STARE_KONCOWKI:
+            if nazwa.lower().endswith(k.lower()) and len(nazwa) > len(k):
+                nazwa = nazwa[:-len(k)].rstrip()
                 zmiana = True
     return nazwa
 

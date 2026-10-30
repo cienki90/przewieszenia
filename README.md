@@ -47,6 +47,16 @@ ponownej analizie) oraz „Dodaj operatora po NIP…” (GUS / biała lista MF +
   modułu); ostatni projekt wraca przy starcie, „Ostatnie” przełącza między projektami.
 - **Sprawdź plan** — szybka kontrola planu (trasa, zasięgi, odnośniki stacji, słupy, numery, opisy
   obwodów, zaznaczenia przewieszeń, layout „a”) i lista gotowości każdego modułu — przed generowaniem.
+  Gdy wskazano plik warunków technicznych, także **zakres WT** (patrz niżej).
+- **Stan projektu** — jedno okno z plikami wejściowymi wszystkich modułów (czy istnieją, czy leżą
+  w folderze projektu, czy wpisał je program) i z najnowszymi wynikami w folderze projektu.
+  Pola z plikami innego projektu są wyróżnione; „Wyczyść pola spoza projektu” opróżnia je za
+  potwierdzeniem. Przy otwarciu projektu pola wypełnione przez program plikami spoza jego folderu
+  są odpinane same (wpis „ODPIĘTO” w „Przebiegu”).
+- **Kontrola zakresu WT** — przed Arkuszami PZT i Rysunkami stałymi program porównuje słupy planu
+  (wierzchołki `!tele`) ze słupami z pliku WT (tolerancja 5 m): ile słupów planu jest w WT, ile
+  słupów WT leży poza trasą i jak wygląda to dla każdej stacji. Przy wyraźnej niezgodności (np. WT
+  z innego projektu) okno pyta, czy kontynuować; w wierszu poleceń jest tylko ostrzeżenie w logu.
 - **Dziennik** — przebieg każdego uruchomienia dopisywany do `dziennik GeneratorNN.txt` w katalogu
   wyników; przycisk „Kopiuj dziennik”.
 - **Nazwy miejscowości…** (Rysunki stałe, Arkusze PZT) — ręczna poprawka nazw stacji (np. gdy
@@ -200,9 +210,11 @@ na DXF jak dotąd.
 
 ## Program dla Windows (.exe)
 
-Plik `GeneratorNN.exe` jest budowany automatycznie przez GitHub Actions po każdej zmianie kodu
-(zakładka **Releases**). Uruchom go dwuklikiem — pliki bazy i arkuszy są wbudowane w program,
-nie trzeba niczego instalować.
+Plik `GeneratorNN.exe` buduje GitHub Actions (zakładka **Releases**). Uruchom go dwuklikiem — pliki
+bazy i arkuszy są wbudowane w program, nie trzeba niczego instalować.
+
+Obecnie każde wypchnięcie uruchamia **tylko testy**; budowa `.exe` jest wyłączona do odwołania
+i rusza wyłącznie ręcznie: Actions → „Run workflow” z zaznaczonym „Zbuduj GeneratorNN.exe”.
 
 ## Gotowy program (czysta kopia)
 
@@ -225,7 +237,9 @@ z repozytorium znikają też z kopii; własne pliki w katalogu kopii (np. wyniki
 - `generuj.bat "plan.dxf" przewieszenia` — wersja **wiersza poleceń**, jeden moduł (można przeciągnąć
   plik DXF na `.bat` — wtedy program zapyta o moduł),
 - `sprawdz.bat` — test: uruchamia kolejno moduły przewieszenia, zestawienie i obliczenia na pliku
-  przykładowym i sprawdza wyniki.
+  przykładowym (`przyklady/`) i sprawdza wyniki,
+- `python -m unittest discover -s testy -v` — testy jednostkowe (nazwy plików, zakres WT, logika
+  okna: podpinanie plików między modułami); uruchamiane też w GitHub Actions.
 
 Pliki `.bat` obsługują polskie znaki (`chcp 65001`) i same wykrywają Pythona (`py -3` lub `python`).
 
@@ -236,10 +250,10 @@ Pliki `.bat` obsługują polskie znaki (`chcp 65001`) i same wykrywają Pythona 
 python -m generator            # albo: python generator_gui.py
 
 # wiersz poleceń - jeden moduł na uruchomienie
-python -m generator.pipeline "przewieszenia plan.dxf" --tylko przewieszenia
+python -m generator.pipeline "przyklady/przewieszenia plan.dxf" --tylko przewieszenia
 
 # tylko wybrane kroki, inny katalog zapisu
-python generator_cli.py "przewieszenia plan.dxf" --tylko obliczenia -o wyniki
+python generator_cli.py "przyklady/przewieszenia plan.dxf" --tylko obliczenia -o wyniki
 
 # rysunki stałe z wybranego szablonu, bez pobierania podkładu z internetu
 python generator_cli.py plan.dxf --tylko orientacje --szablon-orientacji szablon.dxf --bez-podkladu
