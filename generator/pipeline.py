@@ -22,6 +22,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import dataclass, field, replace
 
 from . import dwg as mod_dwg
+from . import dxf2pdf as mod_dxf2pdf
 from . import nazwy as mod_nazwy
 from . import obliczenia as mod_obliczenia
 from . import opisy as mod_opisy
@@ -37,7 +38,7 @@ from . import zestawienie as mod_zestawienie
 # nazwy kroków (kolejność ma znaczenie) - „numeracja” jako pierwszy (projektant najpierw
 # numeruje słupy w planie, potem robi resztę; krok tworzy osobny plik „… - ponumerowane.dxf”)
 KROKI = ("numeracja", "przewieszenia", "zestawienie", "obliczenia", "orientacje", "pzt", "opisy",
-         "ppw", "zakladki", "ppw_renumer")
+         "ppw", "zakladki", "ppw_renumer", "pdf")
 # moduły wybierane w CLI przez --tylko (jeden na uruchomienie); „ppw_renumer” to osobna
 # akcja wywoływana przez --ppw-renumeruj
 MODULY_CLI = tuple(k for k in KROKI if k != "ppw_renumer")
@@ -60,6 +61,7 @@ class Opcje:
     obliczenia_zestawienie: str | None = None    # własny plik zestawienia (.xls/.xlsx) - pomija budowanie z DXF
     # orientacje (rysunki stałe)
     orient_podklad: bool = True                  # pobierać podkład mapowy (wymaga internetu + Pillow)
+    orient_pdf: bool = False                     # rysunki stałe: osobny PDF dla każdej stacji
     orient_szablon: str | None = None            # szablon rysunków stałych (gdy inny niż plan; None = dołączony)
     orient_plan_slupow: str | None = None        # plan ze słupami - źródło miejscowości (wiązanie po nr stacji)
     orient_zasiegi: str | None = None            # plik z zasięgami stacji (np. PZT) - szablon bez stacji
@@ -239,6 +241,10 @@ def _uruchom_kroki(opcje: Opcje) -> Wynik:
     tylko_zakladki_z_zest = (set(kroki) <= {"zakladki"} and bool(opcje.zakladki_zestawienie))
     # renumeracja rysunków działa na własnym pliku DXF (ppw_renumer_dxf), nie na planie
     tylko_renumer = (set(kroki) <= {"ppw_renumer"} and bool(opcje.ppw_renumer_dxf))
+    # PDF z gotowych rysunków: „planem” jest FOLDER z rysunkami (PDF-y powstają obok nich)
+    tylko_pdf = set(kroki) <= {"pdf"} and os.path.isdir(plan)
+    if tylko_pdf:
+        return Wynik(kroki=[_krok_pdf(plan, opcje)])
     if not os.path.isfile(plan):
         if tylko_obliczenia_z_zest and os.path.isfile(opcje.obliczenia_zestawienie):
             plan = opcje.obliczenia_zestawienie
@@ -336,6 +342,8 @@ def _uruchom_kroki(opcje: Opcje) -> Wynik:
                 r = _krok_zakladki(opcje, wyj["zakladki"], orient_zest)
             elif krok == "ppw_renumer":
                 r = _krok_ppw_renumer(opcje, plan, wyj["ppw_renumer"])
+            elif krok == "pdf":
+                raise RuntimeError("PDF z rysunków: wskaż FOLDER z rysunkami (DXF/DWG), nie plik.")
             else:
                 continue
             if krok == "orientacje" and r.ok and r.wyjscie:
@@ -488,9 +496,21 @@ def _krok_orientacje(szablon: str, wyjscie_dir: str, opcje: Opcje, plan_slupow=N
         opcje.log(f"Ręczne poprawki nazw miejscowości: {len(reczne)} stacji.")
     if nazwy_csv:
         argv += ["--nazwy", nazwy_csv]
+    start = time.time() - 2
     kod, raport = _przechwyc(mod_orientacje.main, argv)
     if reczne and nazwy_csv and os.path.exists(nazwy_csv):
         os.remove(nazwy_csv)
+    if kod == 0 and opcje.orient_pdf:
+        # osobny PDF dla każdej stacji - teraz, póki są pliki DXF (zapis DWG usuwa je po kroku)
+        rysunki = sorted(os.path.join(wyjscie_dir, f) for f in os.listdir(wyjscie_dir)
+                         if f.lower().endswith(".dxf") and os.path.getmtime(os.path.join(wyjscie_dir, f)) >= start)
+        linie = ["PDF dla stacji:"]
+        try:
+            udane, bledy = mod_dxf2pdf.konwertuj_pliki(rysunki, log=linie.append)
+            linie.append(f"PDF: {len(udane)} plików" + (f", błędy: {len(bledy)}" if bledy else ""))
+        except ImportError as ex:
+            linie.append(f"UWAGA: {ex}")
+        raport = (raport.rstrip() + "\n" + "\n".join(linie)).strip()
     # sukces: powstało zestawienie_stacji.xlsx albo przynajmniej jeden plik .dxf
     zest = os.path.join(wyjscie_dir, "zestawienie_stacji.xlsx")
     pliki_dxf = [f for f in os.listdir(wyjscie_dir)] if os.path.isdir(wyjscie_dir) else []
@@ -498,6 +518,48 @@ def _krok_orientacje(szablon: str, wyjscie_dir: str, opcje: Opcje, plan_slupow=N
     return WynikKroku("orientacje", ok=ok, wyjscie=wyjscie_dir if ok else None, raport=raport,
                       blad=None if ok else "Nie udało się utworzyć rysunków stałych "
                                            "(czy rysunek zawiera opisy STACJA TRAFO i obrysy !trafo?).")
+
+
+def _krok_pdf(folder: str, opcje: Opcje) -> WynikKroku:
+    """PDF z gotowych rysunków: każdy DXF/DWG z folderu -> PDF obok niego (strona na arkusz).
+    Pliki DWG są najpierw zamieniane na tymczasowy DXF (PDF dostaje nazwę oryginału)."""
+    pliki = sorted(os.path.join(folder, f) for f in os.listdir(folder)
+                   if f.lower().endswith((".dxf", ".dwg")))
+    # ten sam rysunek w DXF i DWG - wystarczy jeden (DXF)
+    dxf_nazwy = {os.path.splitext(p)[0].lower() for p in pliki if p.lower().endswith(".dxf")}
+    pliki = [p for p in pliki if p.lower().endswith(".dxf") or os.path.splitext(p)[0].lower() not in dxf_nazwy]
+    if not pliki:
+        return WynikKroku("pdf", ok=False, blad=f"W folderze nie ma rysunków DXF/DWG: {folder}")
+    linie = [f"PDF z rysunków w folderze: {folder}"]
+    wejscia = mod_dwg.Wejscia(log=linie.append)
+    try:
+        udane, bledy = [], []
+        for p in pliki:
+            dxf = wejscia.dxf(p)
+            pdf = os.path.splitext(p)[0] + ".pdf"
+            u, b = mod_dxf2pdf.konwertuj_pliki([dxf], log=linie.append) if dxf == p else                 _pdf_do(dxf, pdf, linie)
+            udane += u
+            bledy += b
+    except ImportError as ex:
+        return WynikKroku("pdf", ok=False, raport="\n".join(linie), blad=str(ex))
+    finally:
+        wejscia.sprzatnij()
+    linie.append(f"PDF: {len(udane)} plików" + (f", błędy: {len(bledy)}" if bledy else ""))
+    return WynikKroku("pdf", ok=bool(udane), wyjscie=folder if udane else None, raport="\n".join(linie),
+                      blad=None if udane else "Nie powstał żaden PDF.")
+
+
+def _pdf_do(dxf: str, pdf: str, linie: list):
+    """DXF (np. tymczasowy z DWG) -> PDF pod wskazaną nazwą."""
+    try:
+        _, stron = mod_dxf2pdf.dxf_do_pdf(dxf, pdf, folder_obrazow=os.path.dirname(pdf))
+        linie.append(f"  OK   {os.path.basename(pdf)}  ({stron} ark.)")
+        return [pdf], []
+    except ImportError:
+        raise
+    except Exception as ex:  # noqa: BLE001
+        linie.append(f"  BŁĄD {os.path.basename(pdf)}: {ex}")
+        return [], [(dxf, str(ex))]
 
 
 def _krok_pzt(dxf: str, wyjscie: str, opcje: Opcje) -> WynikKroku:
@@ -667,6 +729,8 @@ def main(argv=None):
                     help="własny plik zestawienia (.xls/.xlsx) do obliczeń - zamiast budowania z planu DXF")
     ap.add_argument("--bez-podkladu", action="store_true",
                     help="rysunki stałe (orientacje) bez pobierania podkładu mapowego z internetu")
+    ap.add_argument("--pdf-stacji", action="store_true",
+                    help="rysunki stałe: osobny PDF dla każdej stacji (strona na arkusz)")
     ap.add_argument("--szablon-orientacji", default=None,
                     help="plik szablonu DXF dla rysunków stałych (domyślnie dołączony 'szablon.dxf')")
     ap.add_argument("--plan-slupow", default=None,
@@ -723,7 +787,7 @@ def main(argv=None):
     opcje = Opcje(plan=a.plan, katalog=a.katalog, kroki=wybrane, adresy=a.adresy,
                   obrot_od=a.obrot_od, zostaw_puste_arkusze=a.zostaw_puste_arkusze,
                   seed=a.seed, kabel=a.kabel, obliczenia_zestawienie=a.obliczenia_zestawienie,
-                  orient_podklad=not a.bez_podkladu,
+                  orient_podklad=not a.bez_podkladu, orient_pdf=a.pdf_stacji,
                   orient_szablon=a.szablon_orientacji, orient_plan_slupow=a.plan_slupow,
                   orient_zasiegi=a.zasiegi,
                   pzt_wzorzec=a.pzt_wzorzec, pzt_zaklad=a.pzt_zaklad, wt_plik=a.wt,

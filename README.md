@@ -66,6 +66,12 @@ w wierszu poleceń) — program nie ma łańcucha „wszystko naraz”:
 > (OSM / Geoportal) wymaga internetu i biblioteki **Pillow** — bez nich krok działa z opcją
 > „bez podkładu”. W pliku .exe Pillow i szablon są już wbudowane.
 >
+> **PDF dla każdej stacji.** Opcja „Twórz PDF dla każdej stacji” (CLI `--pdf-stacji`) tworzy obok
+> każdego rysunku `<nr>.pdf` — strona na każdy arkusz, warstwy niedrukowalne pominięte, podkład jako JPG
+> (odtworzenie programu DXF2PDF). Przycisk „PDF z gotowych rysunków…” (CLI `--tylko pdf <folder>`) robi
+> to samo dla istniejącego folderu rysunków DXF/DWG. W odróżnieniu od dawnego DXF2PDF rzutnie mapy
+> nie wychodzą puste (statusy rzutni i punkt celu widoku są poprawiane w pamięci).
+>
 > **Szablon bez stacji + zasięgi z pliku PZT.** Szablon rysunków stałych może zawierać sam podkład
 > i tabelkę — bez zasięgów i odnośników stacji. Wtedy wskaż **plik PZT** (pole „Plik PZT (stacje i słupy)”,
 > CLI `--zasiegi plik_PZT.dxf`): program przenosi z niego do szablonu zasięgi z warstw `!trafo_<nr>`

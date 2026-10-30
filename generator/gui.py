@@ -99,6 +99,7 @@ class Aplikacja:
         self.orient_szablon = tk.StringVar()
         self.orient_zasiegi = tk.StringVar()               # plik PZT: zasięgi stacji + słupy (miejscowości)
         self.orient_podklad = tk.BooleanVar(value=True)
+        self.orient_pdf = tk.BooleanVar(value=True)       # osobny PDF dla każdej stacji
         # opcje arkuszy PZT
         self.pzt_wzorzec = tk.StringVar()                  # plik z layoutem-wzorcem "a" (puste = plan)
         self.pzt_zaklad = tk.StringVar(value="50")
@@ -205,7 +206,7 @@ class Aplikacja:
         """Pola okna zapisywane w projekcie: klucz -> zmienna tk."""
         pola = {f"plik_{k}": v for k, v in self.we.items()}
         for nazwa in ("katalog", "pw_obrot", "obl_seed", "obl_kabel", "obl_zestawienie", "orient_szablon",
-                      "orient_zasiegi", "orient_podklad", "pzt_wzorzec", "pzt_zaklad", "wt_plik",
+                      "orient_zasiegi", "orient_podklad", "orient_pdf", "pzt_wzorzec", "pzt_zaklad", "wt_plik",
                       "opisy_szablon", "opisy_zestawienie", "opisy_obliczenia", "ppw_szablon", "ppw_zestawienie",
                       "ppw_zestawienie_stacji", "ppw_renumer_dxf", "zakladki_zestawienie", "zakladki_format",
                       "adresy_on"):
@@ -694,6 +695,13 @@ class Aplikacja:
         box = self._sekcja(f, "Opcje")
         ttk.Checkbutton(box, text="Pobieraj podkład mapowy (OSM/Geoportal; wymaga internetu i biblioteki Pillow)",
                         variable=self.orient_podklad).pack(anchor="w", pady=4)
+        ttk.Checkbutton(box, text="Twórz PDF dla każdej stacji (osobny plik, strona na arkusz)",
+                        variable=self.orient_pdf).pack(anchor="w", pady=(0, 4))
+        rp = ttk.Frame(box)
+        rp.pack(fill="x", pady=(2, 4))
+        ttk.Button(rp, text="PDF z gotowych rysunków…", command=self._pdf_z_gotowych).pack(side="left")
+        ttk.Label(rp, text="  (folder z rysunkami DXF/DWG — PDF powstaje obok każdego rysunku)",
+                  style="Hint.TLabel").pack(side="left")
         ttk.Button(f, text="Nazwy miejscowości…", command=self._nazwy_miejscowosci).pack(anchor="w", pady=(10, 0))
         self._przycisk_generuj(f, "Utwórz rysunki stałe", lambda: self._start_modul("orientacje"))
 
@@ -754,6 +762,16 @@ class Aplikacja:
         zest = next((p.strip() for p in kandydaci if p and os.path.isfile(p.strip())), None)
         from .okno_nazw import OknoNazw
         OknoNazw(self.root, csv_nazw, zest, log=self._pisz)
+
+    def _pdf_z_gotowych(self):
+        """PDF z istniejącego folderu rysunków (np. „rysunki stałe”) - bez generowania ich od nowa."""
+        start = next((p for p in (os.path.join(self.katalog.get(), "rysunki stałe") if self.katalog.get() else "",
+                                  os.path.join(self.projekt.get(), "rysunki stałe") if self.projekt.get() else "",
+                                  self.projekt.get()) if p and os.path.isdir(p)), None)
+        folder = filedialog.askdirectory(parent=self.root, title="Folder z rysunkami DXF/DWG",
+                                         initialdir=start)
+        if folder:
+            self._uruchom(os.path.normpath(folder), ("pdf",))
 
     def _podglad_pzt(self):
         """Okno podglądu układu arkuszy - otwierane tylko na żądanie (liczenie rozkładu w tle)."""
@@ -991,6 +1009,8 @@ class Aplikacja:
             return None
 
     def _domyslny_katalog(self, plik):
+        if plik and os.path.isdir(plik):                  # PDF z gotowych rysunków - wyniki w tym folderze
+            return plik
         return self.katalog.get().strip() or (os.path.dirname(os.path.abspath(plik)) if plik else "")
 
     # ---- uruchomienie: pojedynczy moduł z jego zakładki ----
@@ -1068,6 +1088,7 @@ class Aplikacja:
             kabel=_int(self.obl_kabel.get(), pipeline.mod_obliczenia.DOMYSLNY_KABEL),
             obliczenia_zestawienie=(self.obl_zestawienie.get().strip() or None),
             orient_podklad=self.orient_podklad.get(),
+            orient_pdf=self.orient_pdf.get(),
             orient_szablon=orient_szablon or (self.orient_szablon.get().strip() or None),
             orient_zasiegi=(self.orient_zasiegi.get().strip() or None),   # też źródło słupów
             pzt_wzorzec=(self.pzt_wzorzec.get().strip() or None),
