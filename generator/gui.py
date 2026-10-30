@@ -234,6 +234,20 @@ class Aplikacja:
         self.ust["projekty"] = projekt.dopisz_ostatni(self.ust.get("projekty") or [], folder)
         self._odswiez_ostatnie()
         self._zaplanuj_zapis()
+        self._sugeruj_folder_pdf()
+
+    def _sugeruj_folder_pdf(self):
+        """Podpowiedź folderu na PDF: „<folder projektu>\\PDF” (stała struktura projektów).
+        Wpisywana, gdy pole jest puste albo wypełnił je wcześniej program - wybór ręczny zostaje."""
+        folder = self.projekt.get()
+        if not folder:
+            return
+        teraz = self.pdf_folder.get().strip()
+        if teraz and teraz != self._podpiete.get(str(self.pdf_folder)):
+            return
+        sugestia = os.path.join(folder, "PDF")
+        self.pdf_folder.set(sugestia)
+        self._podpiete[str(self.pdf_folder)] = sugestia
 
     def _otworz_projekt(self, folder_lub_plik, cicho=False):
         dane = projekt.wczytaj(folder_lub_plik)
@@ -246,6 +260,7 @@ class Aplikacja:
             self._zapisz_projekt()                         # poprzedni projekt nie traci zmian
         pola = self._pola_projektu()
         self._podpiete.clear()
+        self.pdf_folder.set("")                          # brak w starszym projekcie -> podpowiedź
         for k, wartosc in (dane.get("pola") or {}).items():
             if k in pola:
                 try:
@@ -277,7 +292,7 @@ class Aplikacja:
         # czyszczone są pola plików; opcje i numery WT zostają jak były
         pliki = ("katalog", "obl_zestawienie", "orient_szablon", "orient_zasiegi", "pzt_wzorzec", "wt_plik",
                  "opisy_szablon", "opisy_zestawienie", "opisy_obliczenia", "ppw_szablon", "ppw_zestawienie",
-                 "ppw_zestawienie_stacji", "ppw_renumer_dxf", "zakladki_zestawienie")
+                 "ppw_zestawienie_stacji", "ppw_renumer_dxf", "zakladki_zestawienie", "pdf_folder")
         for k, v in self._pola_projektu().items():
             if k.startswith("plik_") or k in pliki:
                 v.set("")
@@ -712,7 +727,8 @@ class Aplikacja:
         ttk.Checkbutton(box, text="Twórz PDF dla każdej stacji (osobny plik, strona na arkusz)",
                         variable=self.orient_pdf).pack(anchor="w", pady=(0, 4))
         self._pole_folderu(box, "Folder na PDF:", self.pdf_folder, "Folder na pliki PDF")
-        self._podpowiedz(box, "(puste = PDF obok rysunków; dotyczy też „PDF z gotowych rysunków”)")
+        self._podpowiedz(box, "(podpowiadany folder „PDF” w folderze projektu — folder powstanie sam; "
+                              "puste = PDF obok rysunków; dotyczy też „PDF z gotowych rysunków”)")
         rp = ttk.Frame(box)
         rp.pack(fill="x", pady=(2, 4))
         ttk.Button(rp, text="PDF z gotowych rysunków…", command=self._pdf_z_gotowych).pack(side="left")
