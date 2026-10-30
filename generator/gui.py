@@ -106,6 +106,9 @@ class Aplikacja:
         self.pzt_zaklad = tk.StringVar(value="50")
         # Warunki Techniczne (WT) - źródło miejscowości słupów (wspólne dla PZT/orientacji/opisów)
         self.wt_plik = tk.StringVar()                      # plik WT (.xls/.xlsx); puste = geokodowanie
+        self.wt_program = tk.StringVar(value=self.ust.get("generator_wt", ""))   # folder/exe Generatora WT
+        self._wt_proces = None                             # uruchomiony Generator WT
+        self._wt_start = 0.0
         # opcje opisów technicznych (.docx)
         self.opisy_szablon = tk.StringVar()                # szablon .docx (puste = dołączony)
         self.opisy_zestawienie = tk.StringVar()            # xlsx (puste = z Rysunków stałych)
@@ -197,7 +200,7 @@ class Aplikacja:
                     "opisy": self.opisy_obliczenia if nazwa.startswith("obliczenia") else self.opisy_zestawienie,
                     "ppw": self.ppw_zestawienie_stacji if "zestawienie_stacji" in nazwa else self.ppw_zestawienie,
                     "zakladki": self.zakladki_zestawienie,
-                    "pzt": self.wt_plik, "orientacje": self.wt_plik}.get(strona)
+                    "pzt": self.wt_plik, "orientacje": self.wt_plik, "wt": self.wt_plik}.get(strona)
         if ext == ".docx":
             return {"opisy": self.opisy_szablon, "ppw": self.ppw_szablon}.get(strona)
         return None
@@ -545,6 +548,7 @@ class Aplikacja:
         self.plotno.bind_all("<MouseWheel>", self._kolko_myszy, add="+")
         self._srodek = srodek
 
+        self._zakladka_generator_wt()
         self._zakladka_numeracja()
         self._zakladka_zestawienie()
         self._zakladka_obliczenia()
@@ -660,6 +664,114 @@ class Aplikacja:
         return b
 
     # ---------------------------------------------------------------- strony modułów
+    # ---------------------------------------------------------------- moduł nr 1: Generator WT
+    def _zakladka_generator_wt(self):
+        from . import generator_wt_start as gwt
+        f = self._strona("wt", "1. Generator WT", "Generator WT (warunki techniczne)",
+                         "Etap warunków technicznych - osobny program: analiza planu, numeracja słupów, pismo "
+                         "„Zapytanie o możliwość dostępu do słupów”, zestawienia (uproszczone .xls, rozbudowane, "
+                         "tabela projektowa) i arkusze. Uruchamia się w osobnym oknie; po jego zamknięciu wyniki "
+                         "z folderu projektu są podpinane do dalszych modułów.")
+        if not gwt.czy_generator_wt(self.wt_program.get()):
+            znaleziony = gwt.znajdz_generator_wt([self.projekt.get()])
+            if znaleziony:
+                self.wt_program.set(znaleziony)
+        r = ttk.Frame(f)
+        r.pack(fill="x", pady=4)
+        ttk.Label(r, text="Program Generator WT:", width=24).pack(side="left")
+        ttk.Entry(r, textvariable=self.wt_program).pack(side="left", fill="x", expand=True, padx=6)
+        ttk.Button(r, text="Wskaż…", command=self._wskaz_generator_wt).pack(side="left")
+        self._podpowiedz(f, "(folder z „uruchom.pyw” albo plik „Generator WT.exe”; znajdowany sam obok programu)")
+        b = ttk.Button(f, text="▶  Uruchom Generator WT", command=self._uruchom_generator_wt,
+                       style="Accent.TButton")
+        b.pack(anchor="w", pady=(14, 6))
+        self._przyciski.append(b)
+        ttk.Button(f, text="Podepnij wyniki WT z folderu projektu", command=lambda: self._podepnij_wt(0.0)).pack(
+            anchor="w", pady=(2, 4))
+        self._podpowiedz(f, "(zestawienie uproszczone *_uproszczona.xls trafia do pola „Warunki techniczne” - "
+                            "korzystają z niego Arkusze PZT, Rysunki stałe i Opisy; pozostałe wyniki są wypisywane "
+                            "w „Przebiegu”)")
+        self.wt_stan = ttk.Label(f, text="", style="Hint.TLabel")
+        self.wt_stan.pack(anchor="w", pady=(6, 0))
+
+    def _wskaz_generator_wt(self):
+        from . import generator_wt_start as gwt
+        p = filedialog.askopenfilename(parent=self.root, title="Generator WT: uruchom.pyw albo Generator WT.exe",
+                                       filetypes=[("Generator WT", "uruchom.pyw *.exe"), ("Wszystkie pliki", "*.*")])
+        if not p:
+            return
+        sciezka = p if p.lower().endswith(".exe") else os.path.dirname(p)
+        if not gwt.czy_generator_wt(os.path.normpath(sciezka)):
+            messagebox.showwarning(TYTUL, "To nie wygląda na Generator WT (brak uruchom.pyw i folderu generator_wt).",
+                                   parent=self.root)
+            return
+        self.wt_program.set(os.path.normpath(sciezka))
+        self.ust["generator_wt"] = self.wt_program.get()
+        self._zaplanuj_zapis()
+
+    def _uruchom_generator_wt(self):
+        import time
+
+        from . import generator_wt_start as gwt
+        if self._wt_proces is not None and self._wt_proces.poll() is None:
+            self.status.configure(text="Generator WT jest już uruchomiony.")
+            return
+        sciezka = self.wt_program.get().strip()
+        if not gwt.czy_generator_wt(sciezka):
+            messagebox.showwarning(TYTUL, "Wskaż program Generator WT (przycisk „Wskaż…”).", parent=self.root)
+            return
+        try:
+            self._wt_proces = gwt.uruchom(sciezka)
+        except OSError as ex:
+            messagebox.showerror(TYTUL, f"Nie udało się uruchomić Generatora WT:\n{ex}", parent=self.root)
+            return
+        self.ust["generator_wt"] = sciezka
+        self._zaplanuj_zapis()
+        self._wt_start = time.time() - 2
+        self.wt_stan.configure(text="Generator WT działa w osobnym oknie - po jego zamknięciu wyniki zostaną podpięte.")
+        self.status.configure(text="Uruchomiono Generator WT.")
+        self.root.after(2000, self._czekaj_na_wt)
+
+    def _czekaj_na_wt(self):
+        if self._wt_proces is None:
+            return
+        if self._wt_proces.poll() is None:
+            self.root.after(2000, self._czekaj_na_wt)
+            return
+        self._wt_proces = None
+        self.wt_stan.configure(text="Generator WT zamknięty.")
+        self._podepnij_wt(self._wt_start)
+
+    def _podepnij_wt(self, od_czasu):
+        """Wyniki Generatora WT z folderu projektu: wypis w dzienniku, .xls do pola „Warunki techniczne”."""
+        from . import generator_wt_start as gwt
+        folder = self.projekt.get()
+        if not folder:
+            folder = filedialog.askdirectory(parent=self.root, title="Folder projektu (z wynikami Generatora WT)")
+            if not folder:
+                return
+            self._ustaw_projekt(folder)
+        wyniki = gwt.znajdz_wyniki(folder, od_czasu)
+        if not wyniki:
+            self._pisz("Generator WT: brak nowych wyników w folderze projektu." if od_czasu else
+                       "Generator WT: w folderze projektu nie ma jego wyników.")
+            return
+        self._pisz("WYNIKI GENERATORA WT:")
+        for przyrostek, opis in gwt.WYNIKI:
+            if przyrostek in wyniki:
+                self._pisz(f"  {opis}: {wyniki[przyrostek]}")
+        xls = wyniki.get("_uproszczona.xls")
+        if xls:
+            teraz = self.wt_plik.get().strip()
+            if not teraz or teraz == self._podpiete.get(str(self.wt_plik)):
+                self.wt_plik.set(os.path.normpath(xls))
+                self._podpiete[str(self.wt_plik)] = self.wt_plik.get()
+                self._pisz(f"  PODPIĘTO: Arkusze PZT / Rysunki stałe / Opisy (warunki techniczne) ← {os.path.basename(xls)}")
+            else:
+                self._pisz("  (pole „Warunki techniczne” ma plik wybrany ręcznie - nie zmieniono)")
+        self._zapisz_projekt()
+        self.status.configure(text=f"Generator WT: znaleziono {len(wyniki)} wynik(ów).")
+
     def _zakladka_numeracja(self):
         f = self._strona("numeracja", "Numeracja słupów", "Numeracja słupów",
                          "Automatyczna numeracja słupów nN. W planie zaznacz ręcznie numery „1” i „2” "

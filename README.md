@@ -23,6 +23,16 @@ w wierszu poleceń) — program nie ma łańcucha „wszystko naraz”:
 > usuwa zaznaczony, „Domknij dziury” dokłada arkusze na niepokrytej trasie, a pole „Podkład mapowy”
 > pokazuje pod spodem mapę OSM (pobieraną na żądanie, kafle zapamiętywane na dysku).
 
+## Moduł nr 1: Generator WT
+
+Zakładka „1. Generator WT” uruchamia osobny program **Generator WT** (etap warunków technicznych:
+numeracja, pismo o dostęp do słupów, zestawienia, arkusze) w jego własnym oknie. Program jest
+znajdowany sam (folder `GENERATOR_WT*` obok programu lub w `GOTOWE PROJEKTY`) albo wskazywany
+przyciskiem „Wskaż…” (folder z `uruchom.pyw` lub `Generator WT.exe`). Po zamknięciu Generatora WT
+(albo przyciskiem „Podepnij wyniki WT”) jego wyniki z folderu projektu są wypisywane w „Przebiegu”,
+a zestawienie uproszczone `*_uproszczona.xls` trafia do pola „Warunki techniczne” (PZT, Rysunki
+stałe, Opisy). Generator WT działa jako osobny proces - ma własne biblioteki (PySide6).
+
 ## Udogodnienia okna
 
 - **Projekt** — pasek „Projekt” w nagłówku. Pliki i opcje wszystkich modułów zapisują się w
