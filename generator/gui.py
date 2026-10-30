@@ -636,14 +636,14 @@ class Aplikacja:
                          "dwóch pierwszych słupów każdego obwodu (warstwa _numery) oraz opis „obw. nr X” "
                          "(grot na pierwszym przęśle). Program ponumeruje resztę i utworzy "
                          "„… - ponumerowane.dxf” z numerami i obrysami kontrolnymi. Wymaga biblioteki ezdxf.")
-        self._pole_pliku(f, "Plik planu DXF:", self.we["numeracja"], "Wybierz plik planu DXF")
+        self._pole_pliku(f, "Plik planu DXF/DWG:", self.we["numeracja"], "Wybierz plik planu (DXF/DWG)")
         self._przycisk_generuj(f, "Ponumeruj słupy", lambda: self._start_modul("numeracja"))
 
     def _zakladka_przewieszenia(self):
         f = self._strona("przewieszenia", "Przewieszenia", "Przewieszenia",
                          "Rysunki zwisów przęseł linii nN ze światłowodem. Dodatkowo powstaje kopia planu "
                          "z numerami przewieszeń (kontrola) i sprawdzane jest przypisanie stacji trafo.")
-        self._pole_pliku(f, "Plik planu DXF:", self.we["przewieszenia"], "Wybierz plik planu DXF")
+        self._pole_pliku(f, "Plik planu DXF/DWG:", self.we["przewieszenia"], "Wybierz plik planu (DXF/DWG)")
         box = self._sekcja(f, "Opcje")
         r = ttk.Frame(box)
         r.pack(fill="x", pady=4)
@@ -657,18 +657,18 @@ class Aplikacja:
         f = self._strona("zestawienie", "Zestawienie", "Zestawienie słupów",
                          "Zestawienie słupów nN w podziale na stacje transformatorowe (osobny arkusz na "
                          "stację, arkusz „kontrola” ze sprawdzeniem). Plik XLSX.")
-        self._pole_pliku(f, "Plik DXF:", self.we["zestawienie"], "Wybierz plik DXF")
+        self._pole_pliku(f, "Plik planu DXF/DWG:", self.we["zestawienie"], "Wybierz plik planu (DXF/DWG)")
         self._przycisk_generuj(f, "Utwórz zestawienie", lambda: self._start_modul("zestawienie"))
 
     def _zakladka_obliczenia(self):
         f = self._strona("obliczenia", "Obliczenia", "Obliczenia nośności",
-                         "Obliczenia nośności słupów. Podaj plik DXF (zestawienie powstanie automatycznie) "
-                         "ALBO wskaż własny plik zestawienia (.xls/.xlsx) — wtedy plik DXF nie jest potrzebny.")
-        self._pole_pliku(f, "Plik DXF:", self.we["obliczenia"], "Wybierz plik DXF")
+                         "Obliczenia nośności słupów. Podaj plan DXF/DWG (zestawienie powstanie automatycznie) "
+                         "ALBO wskaż własny plik zestawienia (.xls/.xlsx) — wtedy plan nie jest potrzebny.")
+        self._pole_pliku(f, "Plik planu DXF/DWG:", self.we["obliczenia"], "Wybierz plik planu (DXF/DWG)")
         self._pole_pliku(f, "Własne zestawienie (.xlsx):", self.obl_zestawienie,
                          "Wybierz własny plik zestawienia (.xls/.xlsx)", typy=XLSX_TYPY)
         self._podpowiedz(f, "(opcjonalnie — gdy podasz własne zestawienie, obliczenia liczą się z niego, "
-                            "a pole „Plik DXF” jest ignorowane; wypełnia się samo po module „Zestawienie”)")
+                            "a pole „Plik planu” jest ignorowane; wypełnia się samo po module „Zestawienie”)")
         box = self._sekcja(f, "Opcje")
         r = ttk.Frame(box)
         r.pack(fill="x", pady=4)
@@ -680,10 +680,10 @@ class Aplikacja:
 
     def _zakladka_orientacje(self):
         f = self._strona("orientacje", "Rysunki stałe", "Rysunki stałe",
-                         "Dla każdej stacji trafo z szablonu DXF powstaje osobny plan orientacyjny + "
+                         "Dla każdej stacji trafo z szablonu DXF/DWG powstaje osobny plan orientacyjny + "
                          "zestawienie. Nazwa miejscowości w tabelce jest ustalana z położenia słupów stacji "
                          "(wg zestawienia).")
-        self._pole_pliku(f, "Szablon rysunków stałych:", self.we["orientacje"], "Wybierz szablon DXF")
+        self._pole_pliku(f, "Szablon rysunków stałych:", self.we["orientacje"], "Wybierz szablon (DXF/DWG)")
         self._podpowiedz(f, "(puste = dołączony szablon.dxf)")
         self._pole_pliku(f, "Plik PZT (stacje i słupy):", self.orient_zasiegi,
                          "Wybierz plik PZT (zasięgi stacji !trafo_<nr> + słupy)")
@@ -702,9 +702,9 @@ class Aplikacja:
                          "Dla każdej stacji trafo powstaje komplet arkuszy A3 1:1000 pokrywających całą trasę "
                          "(warstwa !tele) w zakresie stacji (poligony !trafo), przy minimalnej liczbie arkuszy. "
                          "Każdy arkusz to kopia layoutu-wzorca „a” z pliku.")
-        self._pole_pliku(f, "Plik planu DXF:", self.we["pzt"], "Wybierz plik planu DXF")
+        self._pole_pliku(f, "Plik planu DXF/DWG:", self.we["pzt"], "Wybierz plik planu (DXF/DWG)")
         self._pole_pliku(f, "Plik ze wzorcem „a”:", self.pzt_wzorzec,
-                         "Wybierz plik DXF z layoutem-wzorcem „a”")
+                         "Wybierz plik (DXF/DWG) z layoutem-wzorcem „a”")
         self._podpowiedz(f, "(puste = wzorzec „a” z pliku planu powyżej)")
         self._pole_pliku(f, "Warunki techniczne (.xls):", self.wt_plik,
                          "Wybierz plik Warunków Technicznych (.xls/.xlsx)", typy=XLSX_TYPY)
@@ -759,7 +759,7 @@ class Aplikacja:
         """Okno podglądu układu arkuszy - otwierane tylko na żądanie (liczenie rozkładu w tle)."""
         plik = self.we["pzt"].get().strip()
         if not plik or not os.path.isfile(plik):
-            messagebox.showwarning(TYTUL, "Wskaż istniejący plik planu DXF (pole „Plik planu DXF”).",
+            messagebox.showwarning(TYTUL, "Wskaż istniejący plan DXF/DWG (pole „Plik planu DXF/DWG”).",
                                    parent=self.root)
             return
         okno = getattr(self, "_okno_podgladu", None)
@@ -826,18 +826,18 @@ class Aplikacja:
         self._przycisk_generuj(f, "Utwórz PPW .docx", self._start_ppw)
 
         # --- renumeracja numerów rysunku w tabelkach arkuszy (DXF, osobna akcja) ---
-        ren = self._sekcja(f, "Renumeracja numerów rysunku (DXF)")
+        ren = self._sekcja(f, "Renumeracja numerów rysunku (DXF/DWG)")
         self._podpowiedz(ren, "Dla arkuszy STACJA-ARKUSZ (np. 112-1) nadaje numery rysunku w tabelkach "
                               "(112→1, wiele arkuszy → 1.1, 1.2; jeden → bez kropki) i zamienia „Projekt "
                               "wykonawczy” → „Projekt powykonawczy”. Tworzy „PPW <nazwa pliku>.dxf”.")
-        self._pole_pliku(ren, "Plik DXF (PZT/arkusze):", self.ppw_renumer_dxf,
-                         "Wybierz plik DXF z arkuszami STACJA-ARKUSZ")
-        self._przycisk_generuj(ren, "Renumeruj rysunki (DXF)", self._start_renumer)
+        self._pole_pliku(ren, "Plik DXF/DWG (PZT/arkusze):", self.ppw_renumer_dxf,
+                         "Wybierz plik (DXF/DWG) z arkuszami STACJA-ARKUSZ")
+        self._przycisk_generuj(ren, "Renumeruj rysunki", self._start_renumer)
 
     def _start_renumer(self):
         dxf = self.ppw_renumer_dxf.get().strip()
         if not dxf or not os.path.isfile(dxf):
-            messagebox.showwarning(TYTUL, "Wskaż plik DXF z arkuszami STACJA-ARKUSZ (np. plik PZT).",
+            messagebox.showwarning(TYTUL, "Wskaż plik DXF/DWG z arkuszami STACJA-ARKUSZ (np. plik PZT).",
                                    parent=self.root)
             return
         self._uruchom(dxf, ("ppw_renumer",))
@@ -1014,7 +1014,7 @@ class Aplikacja:
             orient_szablon = plik or None
             wejscie = plik or zasoby.szablon_orientacji_dxf()
             if not wejscie:
-                messagebox.showwarning(TYTUL, "Brak dołączonego szablonu — wskaż plik szablonu DXF.",
+                messagebox.showwarning(TYTUL, "Brak dołączonego szablonu — wskaż plik szablonu DXF/DWG.",
                                        parent=self.root)
                 return
         self._uruchom(wejscie, (krok,), orient_szablon=orient_szablon)
@@ -1031,7 +1031,7 @@ class Aplikacja:
             self._uruchom(dxf or zest, ("obliczenia",))
             return
         if not dxf or not os.path.isfile(dxf):
-            messagebox.showwarning(TYTUL, "Wskaż plik DXF albo własne zestawienie (.xlsx).", parent=self.root)
+            messagebox.showwarning(TYTUL, "Wskaż plan DXF/DWG albo własne zestawienie (.xlsx).", parent=self.root)
             return
         self._uruchom(dxf, ("obliczenia",))
 
@@ -1127,8 +1127,8 @@ class Aplikacja:
         """Dla wyniku modułu zwraca (plik, [(moduł, pole, StringVar), ...]) - gdzie go podpiąć."""
         if krok == "numeracja":
             return wyjscie, [("Przewieszenia", "plik planu", self.we["przewieszenia"]),
-                             ("Zestawienie", "plik DXF", self.we["zestawienie"]),
-                             ("Obliczenia", "plik DXF", self.we["obliczenia"]),
+                             ("Zestawienie", "plik planu", self.we["zestawienie"]),
+                             ("Obliczenia", "plik planu", self.we["obliczenia"]),
                              ("Arkusze PZT", "plik planu", self.we["pzt"]),
                              ("Rysunki stałe", "plik stacji i słupów", self.orient_zasiegi)]
         if krok == "zestawienie":
@@ -1143,7 +1143,7 @@ class Aplikacja:
                           ("Zakładki", "zestawienie", self.zakladki_zestawienie)]
         if krok == "pzt":
             return wyjscie, [("Rysunki stałe", "plik PZT (stacje i słupy)", self.orient_zasiegi),
-                             ("PPW", "plik DXF do renumeracji", self.ppw_renumer_dxf)]
+                             ("PPW", "plik do renumeracji", self.ppw_renumer_dxf)]
         return None, []
 
     def _podepnij_wyniki(self, udane):
