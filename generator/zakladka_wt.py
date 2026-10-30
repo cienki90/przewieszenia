@@ -8,6 +8,8 @@ Odpowiednik okna Qt Generatora WT, krok po kroku:
      w <projekt>.wt.json, więc nie przepadają przy ponownej analizie,
   3. „Kontrola projektu” - plan numeracji, błędne kliki, długie przęsła, ulice, stacje, arkusze…,
   4. zlecenie (operator, rejon, daty) i wybór wyników -> „Numeruj i generuj dokumenty”.
+Na żądanie (osobne okna, wt_okna.py): mapa słupów z wyłączaniem z numeracji i podkładem z Geoportalu,
+układ arkuszy z ręcznym przesuwaniem, dodawanie operatora po NIP.
 Rdzeń (shapely, pyproj, numpy…) ładowany dopiero przy pierwszym użyciu - reszta programu działa
 bez tych bibliotek. Zestawienie uproszczone (.xls) jest podpinane do pola „Warunki techniczne”.
 """
@@ -70,6 +72,8 @@ class ZakladkaWT:
         self._kolejka = queue.Queue()
         self._praca = False
         self._przyciski = []
+        self._okna = {}                    # otwarte okna pomocnicze: "mapa" / "arkusze"
+        self._z_mapy = False
 
         self.plik = tk.StringVar()
         self.geo = tk.BooleanVar(value=True)
@@ -117,6 +121,13 @@ class ZakladkaWT:
         self._przyciski.append(b)
         self.info = ttk.Label(f, text="", wraplength=720, justify="left")
         self.info.pack(anchor="w")
+        r = ttk.Frame(f)
+        r.pack(anchor="w", pady=(4, 0))
+        self.b_mapa = ttk.Button(r, text="Mapa słupów…", command=lambda: self._okno("mapa"), state="disabled")
+        self.b_mapa.pack(side="left")
+        self.b_arkusze = ttk.Button(r, text="Układ arkuszy…", command=lambda: self._okno("arkusze"),
+                                    state="disabled")
+        self.b_arkusze.pack(side="left", padx=6)
 
         # wykaz słupów
         box = self._sekcja("Wykaz słupów (podwójne kliknięcie - popraw; kolumna „W num.” - wyłącz/włącz słup)")
@@ -136,6 +147,7 @@ class ZakladkaWT:
         self.tab.tag_configure("wykl", foreground="#9AA3AE")
         self.tab.tag_configure("ulica", background="#FFE2C2")
         self.tab.bind("<Double-1>", self._edytuj_komorke)
+        self.tab.bind("<<TreeviewSelect>>", self._wybrano_w_wykazie)
         self.b_ulice = ttk.Button(box, text="Przyjmij ulice z dróg", command=self.przyjmij_ulice, state="disabled")
         self.b_ulice.pack(anchor="w", pady=(4, 0))
 
@@ -164,6 +176,7 @@ class ZakladkaWT:
         r.pack(fill="x", pady=(4, 0))
         ttk.Button(r, text="Edytuj listy (Excel)", command=self.edytuj_listy).pack(side="left")
         ttk.Button(r, text="Odśwież listy", command=self.wczytaj_listy).pack(side="left", padx=6)
+        ttk.Button(r, text="Dodaj operatora po NIP…", command=self.dodaj_operatora).pack(side="left")
 
         # wyniki
         box = self._sekcja("Wyniki")
@@ -251,6 +264,98 @@ class ZakladkaWT:
             os.startfile(plik)  # noqa: S606
         except OSError as ex:
             messagebox.showinfo("Warunki techniczne", f"Plik list: {plik}\n({ex})", parent=self.root)
+
+    def dodaj_operatora(self):
+        try:
+            from .wt_okna import DialogOperatora
+            DialogOperatora(self)
+        except ImportError as ex:
+            messagebox.showwarning("Warunki techniczne", f"Brak bibliotek modułu WT: {ex}", parent=self.root)
+
+    # ------------------------------------------------------------------ okna: mapa i arkusze
+    def _okno(self, rodzaj):
+        okno = self._okna.get(rodzaj)
+        if okno is not None and okno.winfo_exists():
+            okno.deiconify()
+            okno.lift()
+            return
+        from .wt_okna import OknoArkuszy, OknoMapy
+        okno = (OknoMapy if rodzaj == "mapa" else OknoArkuszy)(self)
+        self._okna[rodzaj] = okno
+        sel = self.tab.selection()
+        if rodzaj == "mapa" and sel:
+            okno.after(200, lambda: okno.zaznacz(int(sel[0])))
+
+    def _odswiez_okna(self, dopasuj=False):
+        for okno in list(self._okna.values()):
+            if okno is not None and okno.winfo_exists():
+                okno.odswiez(dopasuj=dopasuj)
+
+    def pokaz_w_wykazie(self, slup_id):
+        iid = str(slup_id)
+        if self.tab.exists(iid):
+            self._z_mapy = True
+            self.tab.selection_set(iid)
+            self.tab.see(iid)
+
+    def _wybrano_w_wykazie(self, _e=None):
+        if self._z_mapy:
+            self._z_mapy = False
+            return
+        sel = self.tab.selection()
+        mapa = self._okna.get("mapa")
+        if sel and mapa is not None and mapa.winfo_exists():
+            mapa.zaznacz(int(sel[0]))
+
+    def przelacz_slup(self, slup_id):
+        """Wyłącza/włącza słup w numeracji (wykaz albo mapa): numeracja od nowa, wykaz, kontrola, okna."""
+        p = self.projekt
+        if not p or self._praca:
+            return
+        w = p.slupy[slup_id]
+        p.ustaw_wykluczenie(w, not w.wykluczony)
+        p.planuj()
+        p.odswiez_miejscowosci_arkuszy()
+        self._wypelnij_tabele()
+        self._wypelnij_kontrole()
+        mapa = self._okna.get("mapa")
+        if mapa is not None and mapa.winfo_exists():
+            mapa.zaznacz(slup_id)
+        self.pokaz_w_wykazie(slup_id)
+        wykl = sum(1 for x in p.slupy if x.wykluczony)
+        self.app._pisz(f"Numeracja: {len(p.plan)} słupów" + (f" · wyłączonych: {wykl}" if wykl else ""))
+
+    # ręczne położenie arkuszy - w ustawieniach pliku stanu rdzenia (<projekt>.wt.json)
+    def arkusze_reczne(self):
+        p = self.projekt
+        return (p.stan.get("ustawienia") or {}).get("arkusze_reczne") if p else None
+
+    def _zastosuj_arkusze_reczne(self, p):
+        """Po automatycznym rozmieszczeniu: przywraca ręczne położenia, jeśli liczba arkuszy się zgadza."""
+        zap = (p.stan.get("ustawienia") or {}).get("arkusze_reczne")
+        if not zap or zap.get("liczba") != len(p.arkusze):
+            return False
+        for a in p.arkusze:
+            if a.nazwa in zap.get("pol", {}):
+                a.x0, a.y0 = zap["pol"][a.nazwa]
+        p.odswiez_miejscowosci_arkuszy()
+        return True
+
+    def arkusze_przesuniete(self):
+        p = self.projekt
+        p.odswiez_miejscowosci_arkuszy()
+        p.stan.setdefault("ustawienia", {})["arkusze_reczne"] = {
+            "liczba": len(p.arkusze), "pol": {a.nazwa: [round(a.x0, 3), round(a.y0, 3)] for a in p.arkusze}}
+        p.zapisz_stan()
+        self._wypelnij_kontrole(okna=False)
+
+    def arkusze_automatycznie(self):
+        p = self.projekt
+        (p.stan.get("ustawienia") or {}).pop("arkusze_reczne", None)
+        p.planuj_arkusze()
+        p.zapisz_stan()
+        self._wypelnij_kontrole(okna=False)
+        self.app._pisz(f"Arkusze ułożone automatycznie: {len(p.arkusze)}")
 
     # ------------------------------------------------------------------ praca w tle
     def _w_tle(self, praca, po, opis):
@@ -351,6 +456,8 @@ class ZakladkaWT:
             projekt.planuj()
             self._postep("Rozmieszczanie arkuszy…")
             projekt.planuj_arkusze()
+            if self._zastosuj_arkusze_reczne(projekt):
+                self._log("Arkusze: przywrócono ręczne położenie zapamiętane w projekcie.")
             return bledy
 
         self._w_tle(praca, lambda bledy: self._analiza_gotowa(projekt, bledy), "Analiza projektu WT…")
@@ -366,7 +473,10 @@ class ZakladkaWT:
             self.app._pisz(f"Zastosowano zapamiętane poprawki ({p.plik_stanu.name}): {p.poprawek_zastosowanych} słupów")
         self.info.configure(text=info)
         self._wypelnij_tabele()
-        self._wypelnij_kontrole()
+        self._wypelnij_kontrole(okna=False)
+        self._odswiez_okna(dopasuj=True)
+        for b in (self.b_mapa, self.b_arkusze):
+            b.configure(state="normal")
         self.app._pisz(f"Analiza zakończona: {len(p.slupy)} słupów, {len(p.bledne_kliki)} błędnych klików, "
                        f"{len(p.ostrzezenia)} ostrzeżeń.")
         self.app.status.configure(text="Analiza zakończona - sprawdź wykaz i kontrolę, potem generuj dokumenty.")
@@ -402,11 +512,7 @@ class ZakladkaWT:
         nagl, atr, edyt, _ = KOLUMNY[int(kol[1:]) - 1]
         w = p.slupy[int(wiersz)]
         if atr == "_wlaczony":
-            p.ustaw_wykluczenie(w, not w.wykluczony)
-            p.planuj()
-            p.odswiez_miejscowosci_arkuszy()
-            self._wypelnij_tabele()
-            self._wypelnij_kontrole()
+            self.przelacz_slup(w.id)
             return
         if not edyt:
             return
@@ -442,10 +548,12 @@ class ZakladkaWT:
         self._wypelnij_kontrole()
 
     # ------------------------------------------------------------------ kontrola projektu
-    def _wypelnij_kontrole(self):
+    def _wypelnij_kontrole(self, okna=True):
         from .warunki.pismo import adres_slupa
         p, cfg, k = self.projekt, self.cfg, self.kontrola
         k.delete(*k.get_children())
+        if okna:
+            self._odswiez_okna()
         if not p:
             return
 
@@ -480,7 +588,8 @@ class ZakladkaWT:
                    for w in nz], "uwaga" if nz else None, otwarty=bool(nz))
         else:
             wezel("Sprawdzenie ulic", "nie wykonano (włącz pobieranie adresów)")
-        wezel(f"Arkusze 1:{cfg.skala_arkuszy}", f"{len(p.arkusze)} (zakładka {cfg.zakladka:g} m)",
+        wezel(f"Arkusze 1:{cfg.skala_arkuszy}", f"{len(p.arkusze)} (zakładka {cfg.zakladka:g} m)"
+              + (" · położenie ręczne" if self.arkusze_reczne() else ""),
               [(f"Arkusz {a.nazwa}", ", ".join(a.miejscowosci) or "–") for a in p.arkusze])
         st = [(s.nazwa, f"{sum(1 for w in p.slupy if w.stacja_trafo == s.nazwa)} słupów w zasięgu") for s in p.stacje]
         poza = sum(1 for w in p.slupy if not w.stacja_trafo)
@@ -546,7 +655,8 @@ class ZakladkaWT:
         p.zapisz_ustawienia({"prefiks": cfg.prefiks, "numer_startowy": cfg.numer_startowy,
                              "tolerancja_slupa": cfg.tolerancja_slupa, "zakladka": cfg.zakladka,
                              "inteligentny_kierunek": cfg.inteligentny_kierunek, "operator": self.operator.get(),
-                             "rejon": self.rejon.get(), "umowa_od": data_od, "umowa_do": data_do})
+                             "rejon": self.rejon.get(), "umowa_od": data_od, "umowa_do": data_do,
+                             **({"arkusze_reczne": self.arkusze_reczne()} if self.arkusze_reczne() else {})})
         w = {k: v.get() for k, v in self.wyn.items()}
         skala, zrodlo = int(self.skala_or.get()), self.zrodlo_or.get()
         rys = p.format_rysunkow

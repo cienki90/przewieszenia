@@ -34,9 +34,11 @@ rejon, daty) → „Numeruj i generuj dokumenty” (numeracja + arkusze, pismo, 
 projektowa, plan orientacyjny, PDF). Dokumenty są identyczne jak z samodzielnego Generatora WT.
 Zestawienie uproszczone `.xls` podpina się do pola „Warunki techniczne” (PZT, Rysunki stałe, Opisy).
 Listy operatorów i rejonów oraz pamięć adresów leżą w `%LOCALAPPDATA%\GeneratorNN\warunki`
-(przy pierwszym uruchomieniu przenoszone z dotychczasowego Generatora WT). Funkcje jeszcze
-nieprzeniesione (mapa z wykluczaniem słupów, podgląd arkuszy, dodawanie operatora po NIP) są
-dostępne w pełnym Generatorze WT uruchamianym z dołu zakładki.
+(przy pierwszym uruchomieniu przenoszone z dotychczasowego Generatora WT). Na żądanie, w osobnych
+oknach: „Mapa słupów…” (klik zaznacza słup w wykazie, podwójny klik wyłącza go z numeracji, podkład
+mapy zasadniczej z Geoportalu po przybliżeniu), „Układ arkuszy…” (arkusz można przeciągnąć myszą;
+słupy poza arkuszami są zaznaczane, ręczne położenie zostaje w `<projekt>.wt.json` i wraca przy
+ponownej analizie) oraz „Dodaj operatora po NIP…” (GUS / biała lista MF + rejestr RPT UKE).
 
 ## Udogodnienia okna
 

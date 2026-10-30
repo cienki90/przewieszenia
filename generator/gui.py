@@ -683,11 +683,10 @@ class Aplikacja:
         # natywne okno Generatora WT (rdzeń generator.warunki ładowany dopiero przy użyciu)
         self.zakladka_wt = ZakladkaWT(self, f)
 
-        # pełny Generator WT w osobnym oknie - na funkcje jeszcze nieprzeniesione (mapa z wykluczaniem
-        # słupów, podgląd arkuszy, dodawanie operatora po NIP)
+        # pełny Generator WT w osobnym oknie - opcjonalnie (wszystkie jego funkcje są już w zakładce)
         box = self._sekcja(f, "Pełny Generator WT (osobne okno)")
-        self._podpowiedz(box, "(mapa z wykluczaniem słupów, podgląd arkuszy, „Dodaj operatora po NIP” - do czasu "
-                              "przeniesienia tych funkcji tutaj)")
+        self._podpowiedz(box, "(opcjonalnie - wszystkie funkcje Generatora WT są już w tej zakładce; "
+                              "tu można uruchomić dotychczasowy program i podpiąć jego wyniki)")
         r = ttk.Frame(box)
         r.pack(fill="x", pady=4)
         ttk.Label(r, text="Program Generator WT:", width=24).pack(side="left")
