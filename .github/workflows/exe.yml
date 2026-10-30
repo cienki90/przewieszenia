@@ -27,7 +27,7 @@ jobs:
           python-version: "3.12"
 
       - name: Instalacja zależności
-        run: python -m pip install --upgrade pip pillow python-docx openpyxl ezdxf sv-ttk pymupdf
+        run: python -m pip install --upgrade pip pillow python-docx openpyxl ezdxf sv-ttk pymupdf shapely pyproj numpy requests xlrd xlwt
 
       - name: Testy jednostkowe (nazwy plików, zakres WT, logika okna)
         run: python -m unittest discover -s testy -v

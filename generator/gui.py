@@ -354,7 +354,8 @@ class Aplikacja:
     def _pola_modulow(self):
         """[(klucz strony, nazwa modułu, [(etykieta pola, zmienna)])] - pliki wejściowe modułów."""
         return [
-            ("wt", "1. Generator WT", [("Warunki techniczne (.xls)", self.wt_plik)]),
+            ("wt", "1. Warunki techniczne", [("Plan warunków technicznych", self.zakladka_wt.plik),
+                                             ("Warunki techniczne (.xls)", self.wt_plik)]),
             ("numeracja", "Numeracja słupów", [("Plik planu", self.we["numeracja"])]),
             ("zestawienie", "Zestawienie", [("Plik planu", self.we["zestawienie"])]),
             ("obliczenia", "Obliczenia", [("Plik planu", self.we["obliczenia"]),
