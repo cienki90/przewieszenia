@@ -58,8 +58,9 @@ def _starty_stacji(model, st, ids):
     Grot opisu "obw. nr X" wskazuje PIERWSZE PRZĘSŁO (odcinek słup "1"-słup "2"), więc
     geometrycznie może wypaść bliżej słupa "2" niż "1". Dlatego START obwodu to słup
     oznaczony ręcznie numerem "1" NAJBLIŻSZY grotowi (a nie dowolny najbliższy słup).
-    Gdy w tej stacji nie ma słupa "1" przy grocie, w ostateczności bierzemy najbliższy
-    słup grotowi (z uwagą)."""
+    Słupy "1" są rozdzielane od najbliższej pary grot-słup, żeby obwód bez własnego znacznika
+    nie zabrał "1" sąsiedniego obwodu. Gdy dla obwodu nie zostanie słup "1", w ostateczności
+    bierzemy najbliższy grotowi słup, który nie jest słupem "2" (numeruj() zgłasza to w uwagach)."""
     obszar = model.obszar
     sp = next((s['p'] for s in model.stacje if s['nr'] == st), None)
     # czy ta stacja ma w ogóle zakres !trafo z nazwą (poligon)?
@@ -76,21 +77,25 @@ def _starty_stacji(model, st, ids):
         return sp is not None and math.dist(p, sp) < 150.0 and o is None
 
     jedynki = [i for i in ids if model.slupy[i].get('nr') == '1']
+    groty = [(n, g) for n, g in sorted(model.starty, key=lambda x: x[0]) if grot_tej_stacji(g)]
+    pary = sorted((math.dist(g, model.slupy[i]['p']), k, i)
+                  for k, (_n, g) in enumerate(groty) for i in jedynki)
+    start_grotu, uzyte = {}, set()
+    for _d, k, i in pary:
+        if k not in start_grotu and i not in uzyte:
+            start_grotu[k] = i
+            uzyte.add(i)
     starty = []
-    uzyte = set()
-    for n, grot in sorted(model.starty, key=lambda x: x[0]):
-        if not grot_tej_stacji(grot):
-            continue
-        kand1 = [i for i in jedynki if i not in uzyte]
-        if kand1:
-            start = min(kand1, key=lambda i: math.dist(grot, model.slupy[i]['p']))
-        else:
-            kand = [i for i in ids if i not in uzyte]
+    for k, (n, grot) in enumerate(groty):
+        start = start_grotu.get(k)
+        if start is None:
+            wolne = [i for i in ids if i not in uzyte]
+            kand = [i for i in wolne if model.slupy[i].get('nr') != '2'] or wolne
             if not kand:
                 continue
             start = min(kand, key=lambda i: math.dist(grot, model.slupy[i]['p']))
+            uzyte.add(start)
         starty.append((n, start, grot))
-        uzyte.add(start)
     return starty
 
 
@@ -344,6 +349,9 @@ def numeruj(model):
         start_idx = {s for _, s, _ in starty}
 
         for nr_obw, start, grot in starty:
+            if grot is not None and model.slupy[start].get('nr') != '1':
+                log.append(('UWAGA', 'Obwód %s/%d: brak znacznika "1" przy opisie "obw. nr" - start od '
+                            'słupa najbliższego grotowi.' % (st, nr_obw), start))
             # blokady = inne starty tej stacji + słupy '2' innych obwodów
             inne_starty = start_idx - {start}
             dozwolone = set(ids)
