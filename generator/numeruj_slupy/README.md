@@ -9,7 +9,9 @@ W rysunku DXF (ASCII), dla **każdego obwodu**:
 
 1. **Słup „1" i „2"** – wpisz ręcznie numer `1` i `2` (TEXT) przy dwóch pierwszych
    słupach obwodu, na warstwie numerów (`_numery`). Kierunek **1 → 2** wyznacza
-   magistralę („na wprost”), czyli w którą stronę biegnie obwód od stacji.
+   magistralę („na wprost”), czyli w którą stronę biegnie obwód od stacji. Liczby na
+   innych warstwach (np. numery punktów geodezyjnych z `PointNames`) są pomijane, chyba
+   że w planie nie ma żadnej warstwy `_numery*`.
 2. **Opis „obw. nr X”** – multileader/TEXT z tekstem `obw. nr X`, którego **grot
    wskazuje pierwsze przęsło** (odcinek między słupem 1 a 2). To wiąże obwód z numerem.
 

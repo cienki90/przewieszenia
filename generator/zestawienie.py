@@ -146,6 +146,11 @@ def fl(d, k, dom=0.0):
 
 
 # ================================================================ model
+def warstwa_numerow(nazwa):
+    """Warstwa z numerami słupów: „_numery”, „_numery_<stacja>_<obwod>”, „_numery slupow etap 4”…"""
+    return (nazwa or '').strip().lower().startswith('_numery')
+
+
 class Rysunek:
     def __init__(self, sciezka):
         self.sciezka = sciezka
@@ -181,6 +186,7 @@ class Rysunek:
             if 'muf' in nazwa.lower() or (warstwy and all('muf' in w.lower() for w in warstwy)):
                 bloki_mufy.add(nazwa)
 
+        teksty_inne = []
         for typ, g in lista:
             d = dict(g)
             warstwa = d.get(8, '')
@@ -206,7 +212,7 @@ class Rysunek:
                 txt = czysc_mtext(txt)
                 p = (fl(d, 10), fl(d, 20))
                 if RE_NUMER.match(txt):
-                    self.teksty.append((txt, p))
+                    (self.teksty if warstwa_numerow(warstwa) else teksty_inne).append((txt, p))
                 elif RE_SLUP.search(txt) or RE_STACJA.search(txt) or RE_OBWOD.search(txt):
                     self.opisy.append((txt, p))
             elif typ == 'DIMENSION':
@@ -232,6 +238,10 @@ class Rysunek:
                 ys = [float(v) for k, v in g if k == 20]
                 if len(xs) >= 2:
                     self.sieci.append(list(zip(xs, ys)))
+        # liczby spoza _numery* (np. numery punktów geodezyjnych z warstwy PointNames) leżą często
+        # bliżej słupa niż jego numer i wypierałyby go - używane tylko w planie bez warstwy _numery*
+        if not self.teksty:
+            self.teksty = teksty_inne
 
 
 def w_wielokacie(pt, poly):
