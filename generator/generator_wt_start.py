@@ -19,6 +19,7 @@ import sys
 WYNIKI = (
     ("_pismo.docx", "pismo - zapytanie o dostęp do słupów"),
     ("_uproszczona.xls", "zestawienie uproszczone (WT)"),
+    ("_uproszczona.xlsx", "zestawienie uproszczone (WT, .xlsx)"),
     ("_rozbudowana.xlsx", "zestawienie rozbudowane"),
     ("_tabela_projektowa.xlsx", "tabela projektowa"),
     ("_numeracja.dxf", "numeracja + arkusze 1:1000"),

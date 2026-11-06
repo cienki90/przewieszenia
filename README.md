@@ -46,9 +46,15 @@ stałe, Opisy). Generator WT działa jako osobny proces - ma własne biblioteki 
   Pola z plikami innego projektu są wyróżnione; „Wyczyść pola spoza projektu” opróżnia je za
   potwierdzeniem. Przy otwarciu projektu pola wypełnione przez program plikami spoza jego folderu
   są odpinane same (wpis „ODPIĘTO” w „Przebiegu”).
+- **Tabele WT** — pole „Warunki techniczne” przyjmuje każdą tabelę WT, rozpoznawaną po zawartości:
+  zestawienie uproszczone (`.xls`/`.xlsx`), rozbudowane (współrzędne jako tekst), tabelę projektową
+  (WGS84, także stopnie/minuty/sekundy), skoroszyt z osobnym arkuszem na każdy numer WT (czytane są
+  wszystkie arkusze) i samą listę współrzędnych bez miejscowości (wtedy tylko kontrola zakresu,
+  a nazwy z geokodowania).
 - **Kontrola zakresu WT** — przed Arkuszami PZT i Rysunkami stałymi program porównuje słupy planu
   (wierzchołki `!tele`) ze słupami z pliku WT (tolerancja 5 m): ile słupów planu jest w WT, ile
-  słupów WT leży poza trasą i jak wygląda to dla każdej stacji. Przy wyraźnej niezgodności (np. WT
+  słupów WT leży poza trasą i jak wygląda to dla każdej stacji (arkusze skoroszytu bez żadnego słupa
+  na trasie to inne zadania i nie są liczone). Przy wyraźnej niezgodności (np. WT
   z innego projektu) okno pyta, czy kontynuować; w wierszu poleceń jest tylko ostrzeżenie w logu.
 - **Dziennik** — przebieg każdego uruchomienia dopisywany do `dziennik GeneratorNN.txt` w katalogu
   wyników; przycisk „Kopiuj dziennik”.
