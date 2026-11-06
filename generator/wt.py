@@ -8,6 +8,14 @@ podwieszenia światłowodu. Dla każdego słupa zawiera m.in.:
 
 Współrzędne mogą być podane w układzie PUWG 2000 (PL-2000) albo w WGS84 (stopnie) -
 program rozpoznaje układ po zakresie wartości i w razie potrzeby przelicza WGS84 -> PL-2000.
+
+Obsługiwane rodzaje tabel (rozpoznawane po zawartości, nie po nazwie pliku):
+  * zestawienie uproszczone (.xls/.xlsx, arkusz „Summary”; nagłówek pod tytułem),
+  * zestawienie rozbudowane (.xlsx, arkusz „Zał.1”; współrzędne zapisane jako TEKST),
+  * tabela projektowa (.xlsx; współrzędne GPS w WGS84, też w zapisie stopnie/minuty/sekundy),
+  * skoroszyt WT od operatora (osobny arkusz na każdy numer WT) - czytane są WSZYSTKIE arkusze,
+  * sama lista współrzędnych bez kolumny „Miejscowość” (np. arkusz „Złożone warunki”) - wystarcza
+    do kontroli zakresu; nazwy miejscowości trzeba wtedy ustalić inaczej (geokodowanie).
 Plik WT NIE zawiera numeru stacji trafo - przypisanie słup WT -> stacja robimy przestrzennie
 na podstawie rysunku DXF (patrz miejscowosci_stacji_z_wt).
 
@@ -17,6 +25,7 @@ from __future__ import annotations
 
 import math
 import os
+import re
 from collections import defaultdict
 from dataclasses import dataclass, field
 
@@ -29,9 +38,10 @@ except ImportError:  # bezpośrednie uruchomienie
 
 
 # nagłówki rozpoznawane dla pól WT (po normalizacji do ascii/małych liter)
-_H_MIEJSCOWOSC = ("miejscowosc", "miejscowość")
+_H_MIEJSCOWOSC = "miejscowosc"       # początek nagłówka („Miejscowość”, „Miejscowość ”…)
 _H_ULICA = ("lokalizacja, ulica", "lokalizacja ulica", "ulica", "lokalizacja")
-_H_NR = ("nr slupa", "nr słupa", "lp", "lp.", "numer")
+_H_NR = ("nr slupa", "numer slupa", "numer", "lp")      # od najlepszego; kropki pomijane („L.p.”)
+_RE_DMS = re.compile(r"""^(\d{1,3})\s*[°d]\s*(\d{1,2})\s*['′]\s*(\d{1,2}(?:[.,]\d+)?)\s*["″]?\s*[NE]?$""", re.I)
 
 
 def _ascii(s) -> str:
@@ -39,13 +49,37 @@ def _ascii(s) -> str:
     return str(s or "").translate(tr).strip().lower()
 
 
+def _naglowek(s) -> str:
+    return " ".join(_ascii(s).replace(".", " ").split()).replace("l p", "lp")
+
+
+def _liczba(v):
+    """Wartość komórki jako liczba albo None: tabele WT bywają zapisane tekstem („5787495,12”,
+    „5 787 495.12”), a współrzędne GPS także w stopniach/minutach/sekundach (52°13'50.588" N)."""
+    if isinstance(v, bool):
+        return None
+    if isinstance(v, (int, float)):
+        return v
+    if not isinstance(v, str):
+        return None
+    t = v.strip()
+    m = _RE_DMS.match(t)
+    if m:
+        return int(m.group(1)) + int(m.group(2)) / 60 + float(m.group(3).replace(",", ".")) / 3600
+    t = t.replace("\xa0", "").replace(" ", "").replace(",", ".")
+    if not re.fullmatch(r"[+-]?\d+(\.\d+)?", t):       # „05-0729” itp. to nie współrzędne
+        return None
+    return float(t)
+
+
 @dataclass
 class SlupWT:
     x: float            # easting PL-2000 (jak w DXF: X ~ 7.5 mln dla strefy 7)
     y: float            # northing PL-2000 (Y ~ 5.8 mln)
-    miejscowosc: str
+    miejscowosc: str    # "" - tabela bez miejscowości (sama lista współrzędnych) albo pusta komórka
     ulica: str = ""
     nr: str = ""
+    arkusz: str = ""    # arkusz skoroszytu (skoroszyt operatora: arkusz = numer WT)
 
 
 # ---------------------------------------------------------------------------
@@ -86,8 +120,9 @@ def _wykryj_kolumny_wsp(rows, kol_startowe):
     kolumny = {}
     for r in rows:
         for c in kol_startowe:
-            if c < len(r) and isinstance(r[c], (int, float)):
-                kolumny.setdefault(c, []).append(r[c])
+            wartosc = _liczba(r[c]) if c < len(r) else None
+            if wartosc is not None:
+                kolumny.setdefault(c, []).append(wartosc)
     kolumny = {c: v for c, v in kolumny.items() if len(v) >= 3}
     if len(kolumny) < 2:
         return None
@@ -137,66 +172,84 @@ def wczytaj_wt(sciezka):
     """Czyta plik WT. Zwraca listę SlupWT (współrzędne w PL-2000, jak w DXF).
 
     Rozpoznaje kolumny po nagłówkach (Miejscowość / ulica) i współrzędne po zawartości;
-    gdy współrzędne są w WGS84 - przelicza na PL-2000."""
+    gdy współrzędne są w WGS84 - przelicza na PL-2000. Czyta wszystkie arkusze z tabelą słupów
+    (ten sam słup z kilku arkuszy liczony raz). Arkusze bez kolumny „Miejscowość” są używane tylko,
+    gdy żaden inny jej nie ma - a wtedy, jeśli są, tylko te z „warunk” w nazwie (obok nich bywają
+    np. współrzędne tras zaprojektowanych, które warunkami nie są)."""
     arkusze = _wczytaj_arkusze(sciezka)
-    for _nazwa, rows in arkusze:
-        slupy = _slupy_z_wierszy(rows)
-        if slupy:
-            return slupy
-    raise ValueError(f"W pliku WT „{sciezka}” nie znaleziono słupów ze współrzędnymi "
-                     "(kolumny Miejscowość + współrzędne PUWG 2000 lub WGS84).")
+    wybrane = [(n, s) for n, s in ((n, _slupy_z_wierszy(r)) for n, r in arkusze) if s]
+    if not wybrane:
+        same = [(n, s) for n, s in ((n, _slupy_z_wierszy(r, False)) for n, r in arkusze) if s]
+        wybrane = [(n, s) for n, s in same if "warunk" in _ascii(n)] or same
+    wynik, widziane = [], set()
+    for nazwa, slupy in wybrane:
+        for s in slupy:
+            klucz = (round(s.x, 1), round(s.y, 1))
+            if klucz not in widziane:
+                widziane.add(klucz)
+                s.arkusz = nazwa
+                wynik.append(s)
+    if not wynik:
+        raise ValueError(f"W pliku WT „{sciezka}” nie znaleziono słupów ze współrzędnymi "
+                         "(tabela ze współrzędnymi PUWG 2000 lub WGS84).")
+    return wynik
 
 
 def _znajdz_wiersz_naglowka(rows):
     """Indeks wiersza nagłówka = pierwszy wiersz zawierający 'Miejscowość'."""
     for i, r in enumerate(rows[:20]):
-        if any(_ascii(v) in _H_MIEJSCOWOSC for v in r):
+        if any(_ascii(v).startswith(_H_MIEJSCOWOSC) for v in r):
             return i
     return None
 
 
-def _slupy_z_wierszy(rows):
+def _slupy_z_wierszy(rows, wymagaj_miejscowosci=True):
     i_hdr = _znajdz_wiersz_naglowka(rows)
     if i_hdr is None:
-        return []
-    naglowek = [_ascii(v) for v in rows[i_hdr]]
-    i_miejsc = next((j for j, h in enumerate(naglowek) if h in _H_MIEJSCOWOSC), None)
+        if wymagaj_miejscowosci:
+            return []
+        # sama lista współrzędnych: nagłówek (jeśli jest) po kolumnie numeru, kandydaci to wszystkie kolumny
+        i_hdr = next((i for i, r in enumerate(rows[:20]) if any(_naglowek(v) in _H_NR for v in r)), -1)
+    naglowek = [_naglowek(v) for v in rows[i_hdr]] if i_hdr >= 0 else []
+    i_miejsc = next((j for j, h in enumerate(naglowek) if h.startswith(_H_MIEJSCOWOSC)), None)
     i_ulica = next((j for j, h in enumerate(naglowek) if h in _H_ULICA), None)
-    i_nr = next((j for j, h in enumerate(naglowek) if h in _H_NR), None)
-    if i_miejsc is None:
-        return []
+    i_nr = next((naglowek.index(h) for h in _H_NR if h in naglowek), None)
     dane = rows[i_hdr + 1:]
     # kolumny-kandydaci na współrzędne: wszystkie na prawo od miejscowości (oraz ulicy)
-    start = max(x for x in (i_miejsc, i_ulica or 0) if x is not None) + 1
+    start = max((x for x in (i_miejsc, i_ulica) if x is not None), default=-1) + 1
     maxc = max((len(r) for r in dane), default=0)
-    kol_kand = list(range(start, maxc))
-    wykr = _wykryj_kolumny_wsp(dane, kol_kand)
+    wykr = _wykryj_kolumny_wsp(dane, list(range(start, maxc)))
     if wykr is None:
         return []
     ix, iy, uklad = wykr
+
+    def tekst(r, j):
+        if j is None or j >= len(r) or r[j] is None:
+            return ""
+        if isinstance(r[j], float) and r[j].is_integer():     # „2.0” z Excela to numer 2
+            return str(int(r[j]))
+        t = str(r[j]).strip()
+        return "" if t == "-" else t
+
     slupy = []
     for r in dane:
         if ix >= len(r) or iy >= len(r):
             continue
-        vx, vy = r[ix], r[iy]
-        if not isinstance(vx, (int, float)) or not isinstance(vy, (int, float)):
-            continue
-        miejsc = str(r[i_miejsc]).strip() if i_miejsc < len(r) and r[i_miejsc] else ""
-        if not miejsc or miejsc == "-":
+        vx, vy = _liczba(r[ix]), _liczba(r[iy])
+        if vx is None or vy is None:
             continue
         if uklad == "wgs84":
+            if not (_czy_wgs_lon(vx) and _czy_wgs_lat(vy)):     # np. suma w stopce tabeli
+                continue
             lon, lat = vx, vy
             zone = _strefa_z_lon(lon)
             x, y = _ori.wgs84_to_pl2000(lat, lon, zone)   # (easting, northing)
         else:
+            if not (_czy_pl2000_easting(vx) or _czy_pl2000_easting(vy)):
+                continue
             x, y = _os_easting_northing(vx, vy)
-        ulica = ""
-        if i_ulica is not None and i_ulica < len(r) and r[i_ulica] and str(r[i_ulica]).strip() != "-":
-            ulica = str(r[i_ulica]).strip()
-        nr = ""
-        if i_nr is not None and i_nr < len(r) and r[i_nr] is not None:
-            nr = str(r[i_nr]).strip()
-        slupy.append(SlupWT(x=x, y=y, miejscowosc=miejsc, ulica=ulica, nr=nr))
+        # słup bez miejscowości zostaje: liczy się w kontroli zakresu, nazwy biorą tylko te z nazwą
+        slupy.append(SlupWT(x=x, y=y, miejscowosc=tekst(r, i_miejsc), ulica=tekst(r, i_ulica), nr=tekst(r, i_nr)))
     return slupy
 
 
@@ -277,9 +330,10 @@ def miejscowosci_stacji_z_wt(dxf_path, wt_path, tol=3.0, log=print):
 
     Gdy dla stacji nie uda się dopasować ŻADNEGO słupa WT - zgłaszamy to głośno w ostrzeżeniach
     (fallback na geokodowanie wykonuje warstwa wyżej)."""
-    slupy_wt = wczytaj_wt(wt_path)
+    slupy_wt = [s for s in wczytaj_wt(wt_path) if s.miejscowosc]
     if not slupy_wt:
-        raise ValueError(f"Plik WT „{wt_path}” nie zawiera słupów ze współrzędnymi.")
+        return {}, [f"Tabela WT „{os.path.basename(wt_path)}” nie ma miejscowości (sama lista współrzędnych) - "
+                    "nazwy trzeba ustalić inaczej."]
 
     # poligony !trafo i trasy !tele z DXF (ten sam parser co PZT; layout-wzorzec „a” niepotrzebny)
     _pzt = _modul_pzt()
@@ -342,6 +396,7 @@ class PokrycieWT:
     bez_wt: list = field(default_factory=list)      # [(x, y, oznaczenie stacji|None)] słupy planu bez WT
     slupy_wt: int = 0
     wt_poza: list = field(default_factory=list)     # [SlupWT] słupy WT daleko od trasy planu
+    pominiete_arkusze: list = field(default_factory=list)   # arkusze skoroszytu bez słupów na tej trasie
     stacje: dict = field(default_factory=dict)      # {oznaczenie stacji: (słupów w planie, w tym w WT)}
 
     @property
@@ -373,6 +428,9 @@ class PokrycieWT:
                  f"  słupy planu znalezione w WT: {self.dopasowane} z {self.slupy_planu} "
                  f"({self.udzial_planu:.0%})",
                  f"  słupy z WT poza trasą planu: {len(self.wt_poza)} z {self.slupy_wt}"]
+        if self.pominiete_arkusze:
+            linie.append("  pominięte arkusze WT (inne zadania, żaden słup nie leży na trasie): "
+                         + ", ".join(re.sub(r"_x[0-9A-Fa-f]{4}_", " ", a)[:30] for a in self.pominiete_arkusze))
         if any(s != POZA_ZASIEGAMI for s in self.stacje):
             st = [f"{s}: {d}/{n}" + (" - BRAK w WT" if s in self.stacje_bez_wt else "")
                   for s, (n, d) in sorted(self.stacje.items(), key=lambda kv: (kv[0] == POZA_ZASIEGAMI, kv[0]))]
@@ -420,5 +478,12 @@ def pokrycie_wt(dxf_path, wt_path, tol=5.0) -> PokrycieWT:
             wynik.bez_wt.append((s.x, s.y, s.stacja))
     wynik.slupy_planu = len(slupy)
     w_planie = _szukacz(slupy, tol)
+    # skoroszyt z kilkoma numerami WT: arkusze innych zadań nie świadczą o niezgodności z tym planem
+    arkusze = {s.arkusz for s in slupy_wt}
+    trafione = {s.arkusz for s in slupy_wt if w_planie((s.x, s.y)) is not None}
+    if len(arkusze) > 1 and trafione:
+        wynik.pominiete_arkusze = sorted(arkusze - trafione)
+        slupy_wt = [s for s in slupy_wt if s.arkusz in trafione]
+        wynik.slupy_wt = len(slupy_wt)
     wynik.wt_poza = [s for s in slupy_wt if w_planie((s.x, s.y)) is None]
     return wynik

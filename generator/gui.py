@@ -355,13 +355,13 @@ class Aplikacja:
         """[(klucz strony, nazwa modułu, [(etykieta pola, zmienna)])] - pliki wejściowe modułów."""
         return [
             ("wt", "1. Warunki techniczne", [("Plan warunków technicznych", self.zakladka_wt.plik),
-                                             ("Warunki techniczne (.xls)", self.wt_plik)]),
+                                             ("Warunki techniczne", self.wt_plik)]),
             ("numeracja", "Numeracja słupów", [("Plik planu", self.we["numeracja"])]),
             ("zestawienie", "Zestawienie", [("Plik planu", self.we["zestawienie"])]),
             ("obliczenia", "Obliczenia", [("Plik planu", self.we["obliczenia"]),
                                           ("Własne zestawienie", self.obl_zestawienie)]),
             ("pzt", "Arkusze PZT", [("Plik planu", self.we["pzt"]), ("Plik ze wzorcem „a”", self.pzt_wzorzec),
-                                    ("Warunki techniczne (.xls)", self.wt_plik)]),
+                                    ("Warunki techniczne", self.wt_plik)]),
             ("orientacje", "Rysunki stałe", [("Szablon", self.we["orientacje"]), ("Plik PZT", self.orient_zasiegi),
                                              ("Folder na PDF", self.pdf_folder)]),
             ("opisy", "Opisy techniczne", [("Zestawienie", self.opisy_zestawienie),
@@ -856,7 +856,9 @@ class Aplikacja:
         for przyrostek, opis in gwt.WYNIKI:
             if przyrostek in wyniki:
                 self._pisz(f"  {opis}: {wyniki[przyrostek]}")
-        xls = wyniki.get("_uproszczona.xls")
+        # do pola „Warunki techniczne”: zestawienie uproszczone, a bez niego inna tabela WT
+        xls = next((wyniki[k] for k in ("_uproszczona.xls", "_uproszczona.xlsx", "_rozbudowana.xlsx",
+                                        "_tabela_projektowa.xlsx") if k in wyniki), None)
         if xls:
             teraz = self.wt_plik.get().strip()
             if not teraz or teraz == self._podpiete.get(str(self.wt_plik)):
@@ -957,11 +959,12 @@ class Aplikacja:
         self._pole_pliku(f, "Plik ze wzorcem „a”:", self.pzt_wzorzec,
                          "Wybierz plik (DXF/DWG) z layoutem-wzorcem „a”")
         self._podpowiedz(f, "(puste = wzorzec „a” z pliku planu powyżej)")
-        self._pole_pliku(f, "Warunki techniczne (.xls):", self.wt_plik,
+        self._pole_pliku(f, "Warunki techniczne:", self.wt_plik,
                          "Wybierz plik Warunków Technicznych (.xls/.xlsx)", typy=XLSX_TYPY)
         self._podpowiedz(f, "(opcjonalnie — miejscowości słupów wg zasięgu stacji trafo z WT, zamiast "
-                            "geokodowania; współrzędne PUWG2000 lub WGS84. To samo źródło zasila też "
-                            "Rysunki stałe i Opisy)")
+                            "geokodowania. Dowolna tabela WT: zestawienie uproszczone, rozbudowane, tabela "
+                            "projektowa albo skoroszyt z kilkoma numerami WT; współrzędne PUWG2000 lub WGS84. "
+                            "To samo źródło zasila też Rysunki stałe i Opisy)")
         box = self._sekcja(f, "Opcje")
         r = ttk.Frame(box)
         r.pack(fill="x", pady=4)

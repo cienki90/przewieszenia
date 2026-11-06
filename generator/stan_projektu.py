@@ -30,7 +30,9 @@ def _w_folderze(plik, folder) -> bool:
 
 # wyniki modułów: klucz strony -> [(opis, warunek(nazwa pliku małymi literami, nazwa folderu małymi))]
 WYNIKI = {
-    "wt": [("zestawienie uproszczone WT", lambda n, d: n.endswith("_uproszczona.xls"))],
+    "wt": [("zestawienie uproszczone WT", lambda n, d: n.endswith(("_uproszczona.xls", "_uproszczona.xlsx"))),
+           ("zestawienie rozbudowane WT", lambda n, d: n.endswith("_rozbudowana.xlsx")),
+           ("tabela projektowa WT", lambda n, d: n.endswith("_tabela_projektowa.xlsx"))],
     "numeracja": [("plan ponumerowany", lambda n, d: n.endswith((".dxf", ".dwg")) and (
         n.startswith(_np.PONUMEROWANY.lower() + " ") or n[:-4].endswith(" - ponumerowane")))],
     "przewieszenia": [("rysunek przewieszeń", lambda n, d: n.endswith((".dxf", ".dwg")) and (
