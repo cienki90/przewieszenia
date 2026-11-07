@@ -231,29 +231,60 @@ def wczytaj_stacje_trafo(doc: Drawing, cfg: Config) -> tuple[list[StacjaTrafo], 
 
 # ---------------------------------------------------------------- opisy słupów
 
+def _opis_i_punkt(e) -> tuple[str, object] | None:
+    """Tekst opisu i punkt wskazujący słup: MULTILEADER - grot strzałki, MTEXT/TEXT - wstawienie."""
+    typ = e.dxftype()
+    if typ == "MULTILEADER":
+        ctx = e.context
+        if not ctx.mtext or not ctx.leaders or not ctx.leaders[0].lines:
+            return None
+        return _czysty_tekst(ctx.mtext.default_content), ctx.leaders[0].lines[0].vertices[0]
+    if typ == "MTEXT":
+        return _czysty_tekst(e.text), e.dxf.insert
+    if typ == "TEXT":
+        return _czysty_tekst(e.dxf.text), e.dxf.insert
+    return None
+
+
 def przypisz_opisy_slupow(doc: Drawing, slupy: list[Wierzcholek], cfg: Config) -> int:
-    """MULTILEADER 'słup nN\\P<typ>': grot wskazuje słup -> rodzaj (nN/SN) i typ słupa."""
+    """Opis 'słup nN\\P<typ>' -> rodzaj (nN/SN) i typ słupa. Opis to MULTILEADER w modelu (grot
+    wskazuje słup) albo opis w bloku wstawionym przy słupie (np. blok „q” z MULTILEADEREM, którego
+    grot leży w punkcie wstawienia). MULTILEADER z modelu ma pierwszeństwo przed blokiem.
+    Zwraca liczbę opisanych słupów."""
     if not slupy:
         return 0
     pref = cfg.prefiks_opisu_slupa.casefold()
-    przypisano = 0
-    for e in doc.modelspace().query("MULTILEADER"):
-        ctx = e.context
-        if not ctx.mtext or not ctx.leaders or not ctx.leaders[0].lines:
-            continue
-        tekst = _czysty_tekst(ctx.mtext.default_content)
-        if not tekst.casefold().startswith(pref):
-            continue
-        v = ctx.leaders[0].lines[0].vertices[0]
+    opisane = set()
+
+    def opis_slupa(e):
+        opis = _opis_i_punkt(e)
+        return opis if opis and opis[0].casefold().startswith(pref) else None
+
+    def przypisz(tekst, v):
         w = min(slupy, key=lambda s: math.hypot(s.x - v.x, s.y - v.y))
         if math.hypot(w.x - v.x, w.y - v.y) > cfg.tolerancja_slupa:
-            continue
+            return
         linie = [x.strip() for x in tekst.split("\n") if x.strip()]
         m = re.search(r"\b(nN|SN|WN)\b", linie[0], re.IGNORECASE)
         w.rodzaj_slupa = {"nn": "nN", "sn": "SN", "wn": "WN"}[m.group(1).lower()] if m else None
         w.typ_slupa = " ".join(linie[1:]) or None
-        przypisano += 1
-    return przypisano
+        opisane.add(id(w))
+
+    msp = doc.modelspace()
+    opisy_blokow = {}                       # nazwa bloku -> opis z definicji (raz na blok)
+    for wstawienie in msp.query("INSERT"):
+        nazwa = wstawienie.dxf.name
+        if nazwa not in opisy_blokow:
+            blok = doc.blocks.get(nazwa)
+            opisy_blokow[nazwa] = next(filter(None, map(opis_slupa, blok)), None) if blok else None
+        opis = opisy_blokow[nazwa]
+        if opis:
+            przypisz(opis[0], wstawienie.matrix44().transform(opis[1]))
+    for e in msp.query("MULTILEADER"):
+        opis = opis_slupa(e)
+        if opis:
+            przypisz(*opis)
+    return len(opisane)
 
 
 def kierunki_linii(slup: Wierzcholek, slupy: list[Wierzcholek]) -> list[float]:

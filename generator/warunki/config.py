@@ -21,7 +21,7 @@ class Config:
     prefiks_warstwy_trafo: str = "_trafo"  # ...oraz warstwy o nazwie zaczynającej się od
     # Opisy stacji: MULTILEADER/TEXT/MTEXT na warstwach zawierających ten fragment
     fragment_warstwy_opisu_trafo: str = "trafo"
-    # Opisy słupów (MULTILEADER "słup nN\\P<typ>") - strzałka wskazuje słup
+    # Opisy słupów ("słup nN\\P<typ>"): MULTILEADER (strzałka wskazuje słup) albo opis w bloku przy słupie
     prefiks_opisu_slupa: str = "słup"
     # Numery słupów w sieci (np. 9, 9.1, 14.2) - teksty na warstwach o nazwie zaczynającej się od:
     prefiks_warstwy_numerow: str = "_numery"
