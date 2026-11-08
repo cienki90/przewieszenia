@@ -649,13 +649,14 @@ def _krok_opisy(opcje: Opcje, wyjscie_dir: str, orient_zest) -> WynikKroku:
     # dla szablonu dołączonego (z zasobów/.exe) zostaje podfolder „opisy” w katalogu wyników
     if opcje.opisy_szablon and os.path.isfile(opcje.opisy_szablon):
         wyjscie_dir = os.path.dirname(os.path.abspath(opcje.opisy_szablon))
-    os.makedirs(wyjscie_dir, exist_ok=True)
 
     def uruchom():
         return mod_opisy.generuj(szablon, zestawienie, out=wyjscie_dir, wt=opcje.opisy_wt,
                                  obliczenia=opcje.opisy_obliczenia, log=print)
     try:
         (utworzone, raport) = _przechwyc(uruchom)
+    except mod_opisy.BledyNosnosci as ex:      # słupy niespełniające nośności - opisów nie tworzymy
+        return WynikKroku("opisy", ok=False, raport=str(ex), blad=ex.krotko)
     except ImportError:
         return WynikKroku("opisy", ok=False,
                           raport="Moduł opisów wymaga bibliotek python-docx i openpyxl "

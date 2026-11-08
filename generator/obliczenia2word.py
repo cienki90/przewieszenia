@@ -164,6 +164,88 @@ def parsuj_arkusz(ws):
 
 
 # ---------------------------------------------------------------------------
+# Kontrola nośności (przed wstawieniem tabeli do opisu)
+# ---------------------------------------------------------------------------
+def _liczba_lub_none(v):
+    """Liczba z komórki (także tekst „928,50”); None, gdy to nie liczba (np. „sprawdz”, „ CHECK”, puste)."""
+    if isinstance(v, bool):
+        return None
+    if isinstance(v, (int, float)):
+        return float(v)
+    t = _s(v).replace("\xa0", "").replace(" ", "").replace(",", ".")
+    try:
+        return float(t)
+    except ValueError:
+        return None
+
+
+def _kolumny_nosnosci(teksty):
+    """Z wiersza nagłówka („Lp | | Nr słupa | Nośność | Obciążenie …”): kolumny (nr słupa albo None,
+    Lp, nośność, obciążenie). Tabela bywa przesunięta (ręczne arkusze zaczynają ją w kolumnie C),
+    a niektóre (np. linia SN) nie mają kolumny „Nr słupa” - wtedy słup wskazuje Lp."""
+    def kol(*poczatki):
+        return next((i for i, t in enumerate(teksty) if t.lower().startswith(poczatki)), None)
+    lp = teksty.index("Lp")
+    nr, nos, obc = kol("nr słupa", "nr slupa"), kol("nośność", "nosnosc"), kol("obciążenie", "obciazenie")
+    return nr, lp, lp + 3 if nos is None else nos, lp + 4 if obc is None else obc
+
+
+def bledy_nosnosci(ws):
+    """Słupy z arkusza obliczeń, które NIE spełniają warunku nośności.
+
+    Zwraca listę tekstów, np. „obw. 1, słup 5: obciążenie 1234.56 daN > nośność 1000 daN”.
+    Błąd to: obciążenie większe od nośności, nośność albo obciążenie, które nie są liczbą
+    (np. „sprawdz” / „ CHECK” dla nieznanego typu słupa), oraz adnotacja arkusza „UWAGA! NIE
+    WSZYSTKIE STANOWISKA…”, gdy nie wskazano przy niej konkretnego słupa. Pusta lista = arkusz OK.
+    Kolumny są ustalane z nagłówka „Lp”, więc działa też dla tabeli przesuniętej w arkuszu."""
+    bledy = []
+    uwaga = None
+    obw = ""
+    kol = None                      # (nr słupa, Lp, nośność, obciążenie) w bieżącej tabeli obwodu
+    for row in ws.iter_rows(values_only=True):
+        teksty = [_s(v) for v in row]
+        a = next((t for t in teksty if t), "")          # pierwsza niepusta komórka wiersza
+        if not a:
+            continue
+        if a.startswith("Sieć napowietrzna nN"):
+            obw = next((teksty[i + 1] for i, t in enumerate(teksty[:-1]) if t.lower().startswith("obw nr")), obw)
+            kol = None
+            continue
+        if a == "Lp":
+            kol = _kolumny_nosnosci(teksty)
+            continue
+        if a.upper().startswith("UWAGA!"):
+            uwaga = a
+            continue
+        if a.startswith(("Całkowita", "CAŁKOWITA", "WSZYSTKIE", "Projektant")):
+            kol = None
+            continue
+        if kol is None:
+            continue
+        i_nr, i_lp, i_nos, i_obc = kol
+        vals = list(row) + [None] * (max(i for i in kol if i is not None) + 1)
+        nos_txt, obc_txt = _s(vals[i_nos]), _s(vals[i_obc])
+        nr = _s(vals[i_nr]) if i_nr is not None else ""
+        if not (nr or nos_txt or obc_txt):
+            continue
+        if i_nr is None:
+            slup = f"poz. {_s(vals[i_lp]) or '?'}"
+        else:
+            slup = f"słup {nr or '?'}"
+        gdzie = (f"obw. {obw}, " if obw else "") + slup
+        nos, obc = _liczba_lub_none(vals[i_nos]), _liczba_lub_none(vals[i_obc])
+        if nos is None:
+            bledy.append(f"{gdzie}: nieznana nośność („{nos_txt}”)" if nos_txt else f"{gdzie}: brak nośności")
+        elif obc is None:
+            bledy.append(f"{gdzie}: nieznane obciążenie („{obc_txt}”)" if obc_txt else f"{gdzie}: brak obciążenia")
+        elif obc > nos + 1e-9:
+            bledy.append(f"{gdzie}: obciążenie {obc:.2f} daN > nośność {nos:g} daN")
+    if uwaga and not bledy:
+        bledy.append(uwaga)
+    return bledy
+
+
+# ---------------------------------------------------------------------------
 # Wzorce wierszy z pliku-wzorca
 # ---------------------------------------------------------------------------
 class WzorceWierszy:

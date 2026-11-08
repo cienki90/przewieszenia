@@ -443,6 +443,8 @@ def generuj(szablon, zestawienie, out=".", arkusz="Arkusz1",
                        nośności słupów. Jeśli podana, dla każdego projektu, dla
                        którego istnieje arkusz o nazwie = numer pliku, zostanie
                        wstawiona tabela "Zestawienie zbiorcze słupów".
+                       Gdy w którymś z tych arkuszy słup nie spełnia warunku
+                       nośności, nie powstaje żaden opis (wyjątek BledyNosnosci).
         log          – (opcjonalnie) funkcja log(msg) do raportowania postępu
                        (np. do GUI). Domyślnie print.
 
@@ -457,8 +459,6 @@ def generuj(szablon, zestawienie, out=".", arkusz="Arkusz1",
         raise FileNotFoundError(f"Nie znaleziono szablonu: {szablon}")
     if not os.path.isfile(zestawienie):
         raise FileNotFoundError(f"Nie znaleziono zestawienia: {zestawienie}")
-
-    os.makedirs(out, exist_ok=True)
 
     wiersze = wczytaj_zestawienie(zestawienie, arkusz, wt_domyslne=wt)
     if not wiersze:
@@ -482,9 +482,21 @@ def generuj(szablon, zestawienie, out=".", arkusz="Arkusz1",
         except ImportError:
             import obliczenia2word as o2w
         wb_obl = _opx.load_workbook(obliczenia, data_only=True)
+        # opisów z tabelą nośności, w której słupy nie spełniają warunku nośności, nie tworzymy
+        bledy = []
+        for dane in wiersze:
+            baza = _nazwa_docx(dane)[:-5]
+            arkusz_obl = _dopasuj_arkusz_obliczen(wb_obl, baza, dane.get("trafo", ""))
+            if arkusz_obl is not None and all(arkusz_obl != a for _, a, _ in bledy):
+                b = o2w.bledy_nosnosci(wb_obl[arkusz_obl])
+                if b:
+                    bledy.append((dane.get("trafo") or baza, arkusz_obl, b))
+        if bledy:
+            raise BledyNosnosci(obliczenia, bledy)
         wzorce = o2w.WzorceWierszy()
-        log(f"Dołączam obliczenia z: {os.path.basename(obliczenia)}")
+        log(f"Dołączam obliczenia z: {os.path.basename(obliczenia)} (warunek nośności spełniony)")
 
+    os.makedirs(out, exist_ok=True)
     log(f"Znaleziono {len(wiersze)} pozycji w zestawieniu.")
 
     utworzone = []
@@ -492,9 +504,7 @@ def generuj(szablon, zestawienie, out=".", arkusz="Arkusz1",
         doc = docx.Document(szablon)
         wypelnij_dokument(doc, dane)
 
-        nazwa = dane["plik"]
-        if not nazwa.lower().endswith(".docx"):
-            nazwa += ".docx"
+        nazwa = _nazwa_docx(dane)
         baza = nazwa[:-5]  # bez .docx
 
         # dołączenie tabeli obliczeń, jeśli jest odpowiedni arkusz
@@ -519,6 +529,42 @@ def generuj(szablon, zestawienie, out=".", arkusz="Arkusz1",
 
     log("Gotowe.")
     return utworzone
+
+
+def _nazwa_docx(dane):
+    """Nazwa pliku opisu z kolumny „Plik” zestawienia (np. „433” -> „433.docx”)."""
+    nazwa = dane["plik"]
+    return nazwa if nazwa.lower().endswith(".docx") else nazwa + ".docx"
+
+
+class BledyNosnosci(ValueError):
+    """Obliczenia dołączane do opisów mają słupy niespełniające warunku nośności - opisów nie tworzymy.
+
+    bledy: lista (stacja, arkusz obliczeń, [opisy błędów]); str(wyjątek) = pełny raport,
+    .krotko = jedno zdanie (do podsumowania w oknie)."""
+    MAKS_POZYCJI = 40
+
+    def __init__(self, plik, bledy):
+        self.plik, self.bledy = plik, bledy
+        n = sum(len(b) for _, _, b in bledy)
+        self.krotko = (f"Opisy nie zostały utworzone — obliczenia nośności mają błędy "
+                       f"({n} poz. w {len(bledy)} stacj{'i' if len(bledy) == 1 else 'ach'}).")
+        linie = ["Opisy nie zostały utworzone: w obliczeniach nośności są słupy, które nie spełniają "
+                 "warunku nośności (albo mają nieznaną nośność / obciążenie).",
+                 f"Plik obliczeń: {plik}"]
+        pokazane = 0
+        for stacja, arkusz, b in bledy:
+            linie.append(f"  stacja {stacja} (arkusz „{arkusz}”):")
+            for t in b:
+                if pokazane >= self.MAKS_POZYCJI:
+                    break
+                linie.append(f"    ! {t}")
+                pokazane += 1
+        if pokazane < n:
+            linie.append(f"  … i {n - pokazane} kolejnych.")
+        linie.append("Popraw projekt (typ słupa / rozpiętości) i wykonaj obliczenia ponownie, "
+                     "a potem utwórz opisy.")
+        super().__init__("\n".join(linie))
 
 
 def _dopasuj_arkusz_obliczen(wb, baza, trafo):
