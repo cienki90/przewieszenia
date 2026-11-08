@@ -77,8 +77,11 @@ ponownej analizie) oraz „Dodaj operatora po NIP…” (GUS / biała lista MF +
 > nagłówkach (`Oznaczenie stacji`→trafo, `Nr stacji`→nazwa pliku, `Miejscowość`), więc działa też
 > z formatem „domtel” (`Plik/trafo/miejscowosc/wt`). **Numer warunków (WT)** – jeden wspólny –
 > wpisuje się ręcznie (pole „Numer warunków (WT)” / `--opisy-wt`), bo nie ma go w zestawieniu z
-> Orientacji. Opcjonalnie dołącza tabelę nośności słupów z pliku obliczeń. Wymaga bibliotek
-> `python-docx` i `openpyxl` (w `.exe` są wbudowane).
+> Orientacji. Opcjonalnie dołącza tabelę nośności słupów z pliku obliczeń — **gdy w którymś
+> z dołączanych arkuszy słup nie spełnia warunku nośności** (obciążenie > nośność, nieznana
+> nośność/obciążenie albo adnotacja „UWAGA! NIE WSZYSTKIE…”), **opisy nie powstają**, a program
+> wypisuje stacje i słupy do poprawy. Wymaga bibliotek `python-docx` i `openpyxl` (w `.exe` są
+> wbudowane).
 
 > **Arkusze PZT** (odpowiednik programu AutoLISP `PZT_ARKUSZE`, przeniesiony na Pythona bez CAD-a):
 > dla każdej stacji trafo tworzy komplet arkuszy A3 1:1000 pokrywających całą trasę (`!tele`)
@@ -347,7 +350,8 @@ współrzędnymi miejsca na rysunku; wiersze są kolorowane).
 
 Obliczenia czytają zestawienie (`.xls`/`.xlsx`) i dla każdej stacji liczą nośność i obciążenie
 słupów, zestawienie osprzętu oraz sumy, w układzie zgodnym z dotychczasowymi obliczeniami, wraz
-z podpisami projektantów. Słupy niespełniające warunku nośności są wyróżniane.
+z podpisami projektantów. Słupy niespełniające warunku nośności są wyróżniane, a opisy techniczne
+z takimi obliczeniami nie zostaną utworzone.
 
 ## Pliki programu
 

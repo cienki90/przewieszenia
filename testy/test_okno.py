@@ -99,6 +99,19 @@ class TestOkno(unittest.TestCase):
         self.assertIs(wynik.get("odp"), False)
         pyt.assert_called_once()
 
+    def test_powod_bledu_w_komunikacie(self):
+        """Po nieudanym kroku okno komunikatu podaje powód (np. opisy wstrzymane przez nośność)."""
+        from generator import pipeline
+        blad = "Opisy nie zostały utworzone — obliczenia nośności mają błędy (3 poz. w 1 stacji)."
+        wynik = pipeline.Wynik([pipeline.WynikKroku("opisy", ok=False, blad=blad, raport="szczegóły")])
+        app = self.app
+        with mock.patch.object(app, "_zapisz_projekt"), mock.patch.object(app, "_zapisz_dziennik", return_value=None), \
+                mock.patch.object(app, "_odswiez_stan_projektu"), \
+                mock.patch.object(self.gui.messagebox, "showwarning") as okno:
+            app._zakoncz(wynik)
+        self.assertIn("• opisy: " + blad, okno.call_args.args[1])
+        self.assertEqual(self.gui._skroc("x" * 500, 300), "x" * 299 + "…")
+
     def test_stan_projektu(self):
         from generator import stan_projektu as sp
         app = self.app

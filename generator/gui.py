@@ -1050,7 +1050,8 @@ class Aplikacja:
         self._pole_pliku(f, "Obliczenia (.xlsx):", self.opisy_obliczenia,
                          "Wybierz plik obliczeń nośności (.xlsx)", typy=XLSX_TYPY)
         self._podpowiedz(f, "(opcjonalnie — do każdego opisu dołączana jest tabela „Zestawienie zbiorcze "
-                            "słupów” z pasującego arkusza obliczeń; puste = bez tabeli nośności)")
+                            "słupów” z pasującego arkusza obliczeń; puste = bez tabeli nośności. Gdy któryś "
+                            "słup nie spełnia warunku nośności, opisy nie powstaną)")
         box = self._sekcja(f, "Dane wspólne")
         self._pole_wt(box, self.opisy_wt, "100/RE-5/KŚ/2026")
         self._przycisk_generuj(f, "Utwórz opisy .docx", self._start_opisy)
@@ -1550,8 +1551,10 @@ class Aplikacja:
                 self._otworz_folder()
         else:
             self.status.configure(text=f"Zakończono z problemami: {len(udane)} OK, {len(nieudane)} błędów.")
-            messagebox.showwarning(TYTUL, f"Część kroków się nie powiodła ({len(nieudane)}). "
-                                          "Szczegóły w oknie „Przebieg”.", parent=self.root)
+            powody = "\n".join(f"• {k.nazwa}: {_skroc(k.blad, 300)}" for k in nieudane if k.blad)
+            messagebox.showwarning(TYTUL, f"Część kroków się nie powiodła ({len(nieudane)})."
+                                          + (f"\n\n{powody}" if powody else "")
+                                          + "\n\nSzczegóły w oknie „Przebieg”.", parent=self.root)
 
     def _otworz_folder(self):
         folder = self._ostatni_katalog or self.katalog.get()
@@ -1568,6 +1571,12 @@ class Aplikacja:
                 subprocess.Popen(["xdg-open", folder])
         except Exception:  # noqa: BLE001
             messagebox.showinfo(TYTUL, f"Wyniki zapisano w:\n{folder}", parent=self.root)
+
+
+def _skroc(tekst, n):
+    """Tekst do okna komunikatu: najwyżej n znaków (reszta jest w oknie „Przebieg”)."""
+    tekst = str(tekst or "").strip()
+    return tekst if len(tekst) <= n else tekst[:n - 1].rstrip() + "…"
 
 
 def _float(s, dom):
