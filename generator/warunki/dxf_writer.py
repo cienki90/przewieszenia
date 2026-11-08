@@ -89,3 +89,39 @@ def zapisz_numeracje(doc: Drawing, plan: list[Wierzcholek], wszystkie: list[Wier
         ld.dxf.hookline_direction = 0
         ld.dxf.horizontal_direction = (sx, 0, 0)
         mt.append_reactor_handle(ld.dxf.handle)  # powiązanie tekstu z odnośnikiem
+
+
+# ---------------------------------------------------------------- uwagi (warstwa niedrukowalna)
+
+def usun_uwagi(doc: Drawing, cfg: Config) -> int:
+    if not cfg.warstwa_uwag:
+        return 0
+    msp = doc.modelspace()
+    stare = list(msp.query(f'*[layer=="{cfg.warstwa_uwag}"]i'))
+    for e in stare:
+        msp.delete_entity(e)
+    return len(stare)
+
+
+def zapisz_uwagi(doc: Drawing, uwagi: list[tuple[float, float, float, str, int]], cfg: Config,
+                 styl: str | None = None) -> int:
+    """Okręgi z podpisem w miejscach do sprawdzenia: uwagi = [(x, y, promień, opis, kolor ACI)].
+
+    Warstwa cfg.warstwa_uwag jest niedrukowalna i ma grubość cfg.grubosc_uwag (1.00 mm);
+    okręgi i podpisy mają kolor rodzaju uwagi, grubość z warstwy. Zwraca liczbę okręgów."""
+    if not cfg.warstwa_uwag or not uwagi:
+        return 0
+    if cfg.warstwa_uwag in doc.layers:
+        lay = doc.layers.get(cfg.warstwa_uwag)
+    else:
+        lay = doc.layers.add(cfg.warstwa_uwag, color=1)
+    lay.dxf.plot = 0
+    lay.dxf.lineweight = cfg.grubosc_uwag
+    msp = doc.modelspace()
+    for x, y, r, opis, kolor in uwagi:
+        atr = {"layer": cfg.warstwa_uwag, "color": kolor}
+        msp.add_circle((x, y), r, dxfattribs=atr)
+        mt = msp.add_mtext(opis, dxfattribs={**atr, "char_height": cfg.wysokosc_tekstu_uwag,
+                                             **({"style": styl} if styl else {})})
+        mt.set_location((x + r + 1.0, y), attachment_point=MTextEntityAlignment.MIDDLE_LEFT)
+    return len(uwagi)

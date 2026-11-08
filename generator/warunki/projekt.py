@@ -44,6 +44,7 @@ class Projekt:
         self.epsg: int | None = None
         self.opisanych_slupow = 0
         self.numerow_w_sieci = 0
+        self.uwag_na_rysunku = 0          # okręgi uwag w ostatnio zapisanym rysunku numeracji
         self.ulice_sprawdzone = False
         self.tolerancja_analizy = self.cfg.tolerancja_slupa
         self.arkusze: list[ark.Arkusz] = []
@@ -265,6 +266,67 @@ class Projekt:
                         wynik.append((d, para[0], para[1]))
         return sorted(wynik, key=lambda t: -t[0])
 
+    # kolory ACI uwag na rysunku numeracji (warstwa cfg.warstwa_uwag)
+    KOLOR_SCALENIA = 6          # magenta: scalone wierzchołki (błędne kliki)
+    KOLOR_PRZESLA = 30          # pomarańczowy: przęsło od progu ostrzeżenia do progu błędu (50-60 m)
+    KOLOR_PRZESLA_BLAD = 1      # czerwony: przęsło powyżej progu błędu (> 60 m)
+    KOLOR_SLUPA = 4             # cyjan: braki przy słupie (numer w sieci, opis, ulica, geokodowanie)
+    KOLOR_STACJI = 3            # zielony: numer stacji poza obrysem, obrys bez numeru stacji
+
+    def uwagi_rysunku(self) -> list[tuple[float, float, float, str, int]]:
+        """Miejsca do sprawdzenia na rysunku numeracji: (x, y, promień, opis, kolor ACI).
+
+        Scalone wierzchołki, przęsła > cfg.przeslo_ostrzezenie (osobny kolor > cfg.przeslo_blad),
+        braki przy słupach (numer w sieci / opis rodzaju - gdy większość słupów je ma, niezgodna
+        ulica, błąd geokodowania; kilka braków jednego słupa = jeden okrąg) i stacje: numer poza
+        obrysem !trafo, obrys bez numeru stacji."""
+        cfg = self.cfg
+        r = cfg.promien_uwagi
+        uwagi = []
+
+        def etykieta(w):
+            return w.etykieta or (f"nr {w.nr_w_sieci}" if w.nr_w_sieci else "?")
+
+        for b in self.bledne_kliki:
+            uwagi.append((b.x, b.y, max(r, b.max_odleglosc + 1.0),
+                          f"scalono wierzchołki: {b.liczba} (do {b.max_odleglosc:.2f} m)", self.KOLOR_SCALENIA))
+        for d, a, b in self.przesla(cfg.przeslo_ostrzezenie):
+            uwagi.append(((a.x + b.x) / 2, (a.y + b.y) / 2, r, f"przęsło {d:.1f} m ({etykieta(a)}–{etykieta(b)})",
+                          self.KOLOR_PRZESLA_BLAD if d > cfg.przeslo_blad else self.KOLOR_PRZESLA))
+
+        plan = self.plan or [w for w in self.slupy if not getattr(w, "wykluczony", False)]
+        # brak numeru w sieci / opisu zaznaczamy, gdy większość słupów je ma (pojedyncze luki);
+        # brak w większości planu widać w raporcie kontroli, a okręgi przy każdym słupie zasłoniłyby rysunek
+        sa_numery = 2 * sum(1 for w in plan if w.nr_w_sieci) > len(plan)
+        sa_opisy = 2 * sum(1 for w in plan if w.rodzaj_slupa) > len(plan)
+        for w in plan:
+            braki = []
+            if sa_numery and not w.nr_w_sieci:
+                braki.append("brak numeru w sieci")
+            if sa_opisy and not w.rodzaj_slupa:
+                braki.append("brak opisu rodzaju/typu")
+            if w.ulica_zgodna is False:
+                braki.append(f"ulica {w.ulica or '–'} ≠ droga {w.ulica_droga}")
+            if "Błąd geokodowania" in (w.uwagi or ""):
+                braki.append("błąd geokodowania")
+            if braki:
+                uwagi.append((w.x, w.y, r, f"słup {etykieta(w)}: " + ", ".join(braki), self.KOLOR_SLUPA))
+
+        if self.doc is not None:
+            for p, n in reader._opisy_trafo(self.doc, cfg):
+                if any(s.obrys.buffer(0.5).covers(p) for s in self.stacje):
+                    continue
+                s = next((s for s in self.stacje
+                          if s.punkt_stacji is not None and s.punkt_stacji.distance(p) < 1e-6), None)
+                opis = (f"stacja {n}: numer {s.obrys.distance(p):.1f} m poza obrysem !trafo" if s
+                        else f"stacja {n} poza obrysami !trafo")
+                uwagi.append((p.x, p.y, r, opis, self.KOLOR_STACJI))
+        for s in self.stacje:
+            if s.nazwa.startswith("TRAFO ?"):
+                q = s.obrys.representative_point()
+                uwagi.append((q.x, q.y, r, "obrys !trafo bez numeru stacji", self.KOLOR_STACJI))
+        return uwagi
+
     def istniejaca_numeracja(self) -> int:
         return dxf_writer.istniejaca_numeracja(self.doc, self.cfg) if self.doc else 0
 
@@ -318,6 +380,11 @@ class Projekt:
                    opracowal: str | None = None, data: str | None = None) -> None:
         dxf_writer.usun_numeracje(self.doc, self.cfg)
         dxf_writer.zapisz_numeracje(self.doc, self.plan, self.slupy, self.cfg)
+        # uwagi (okręgi do sprawdzenia) na warstwie niedrukowalnej; zamrożona w rzutniach arkuszy,
+        # żeby nie trafiła do PDF (render PDF nie pomija warstw niedrukowalnych)
+        dxf_writer.usun_uwagi(self.doc, self.cfg)
+        self.uwag_na_rysunku = dxf_writer.zapisz_uwagi(self.doc, self.uwagi_rysunku(), self.cfg,
+                                                       ark.styl_arial(self.doc))
         if arkusze:
             if not self.arkusze:
                 self.planuj_arkusze()
@@ -325,7 +392,9 @@ class Projekt:
             sz = ark.wczytaj_szablon(self.szablon_doc(), self.cfg.uklad_trasy)
             ark.dodaj_uklady(self.doc, self.szablon_doc(), sz, self.arkusze,
                              self.cfg.skala_arkuszy, None, self.tekst_inwestora(operator),
-                             opracowal, data, zamrozone=[self.cfg.warstwa_obrysow],
+                             opracowal, data,
+                             zamrozone=[self.cfg.warstwa_obrysow] + (
+                                 [self.cfg.warstwa_uwag] if self.uwag_na_rysunku else []),
                              wysokosc_branzy=self.cfg.wysokosc_branzy)
             ark.rysuj_obrysy(self.doc, self.arkusze, self.cfg.warstwa_obrysow,
                              drukowalna=False, wys_tekstu=20.0)

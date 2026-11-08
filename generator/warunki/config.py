@@ -45,8 +45,15 @@ class Config:
     inteligentny_kierunek: bool = True
 
     # Raport długich przęseł [m]: pokazywane powyżej progu, na czerwono powyżej progu błędu
-    przeslo_ostrzezenie: float = 55.0
+    przeslo_ostrzezenie: float = 50.0
     przeslo_blad: float = 60.0
+
+    # Uwagi na rysunku numeracji: okręgi z podpisem w miejscach do sprawdzenia (scalone
+    # wierzchołki, długie przęsła, braki opisów…) na warstwie niedrukowalnej
+    warstwa_uwag: str = "WT_uwagi"        # "" = nie rysuj
+    grubosc_uwag: int = 100               # 1.00 mm
+    promien_uwagi: float = 5.0            # [m]
+    wysokosc_tekstu_uwag: float = 2.5     # [m]
 
     # Wierzchołki bliżej niż ta odległość [m] = jeden słup (błędny klik)
     tolerancja_slupa: float = 5.0
