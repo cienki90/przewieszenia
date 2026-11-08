@@ -239,6 +239,16 @@ python narzedzia/publikuj_gotowy.py "D:/OneDrive/MMUI/ai test/GOTOWE PROJEKTY/PG
 Bez hooków kopię odświeża to samo polecenie bez `--zainstaluj-hook`. Pliki programu usunięte
 z repozytorium znikają też z kopii; własne pliki w katalogu kopii (np. wyniki) nie są ruszane.
 
+Każda gałąź może mieć **własną kopię** — kolejna instalacja hooka dopisuje parę gałąź → katalog
+(poprzednie zostają). Wersja z wbudowanym Generatorem WT (gałąź `scalenie-WT`) trafia do
+`GOTOWE PROJEKTY/PGE MAKER + WT`:
+
+```bash
+python narzedzia/publikuj_gotowy.py "D:/OneDrive/MMUI/ai test/GOTOWE PROJEKTY/PGE MAKER + WT" --zainstaluj-hook --galaz scalenie-WT --z-galezi scalenie-WT
+```
+
+`--z-galezi` robi kopię ze stanu wskazanej gałęzi bez jej przełączania (domyślnie: bieżąca, HEAD).
+
 ## Uruchomienie z kodu (Windows)
 
 - `setup.bat` — sprawdza Pythona i `tkinter` (oraz opcjonalnie instaluje PyInstaller),
