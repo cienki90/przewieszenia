@@ -6,7 +6,8 @@ Z jednego pliku DXF:
 
   * trasa      - polilinie na warstwie !tele,
   * zakresy    - zamknięte polilinie (poligony) na warstwie !trafo (zasięg stacji),
-  * stacje     - multileadery "STACJA TRAFO <nr>" na warstwie _mm trafo,
+  * stacje     - multileadery "STACJA TRAFO <nr>" na warstwie _mm trafo (albo na innej warstwie,
+                 np. „0”, gdy tekst to „STACJA TRAFO” z numerem),
   * wzorzec    - layout papieru o nazwie "a" (ramka A3, tabelka, legenda, rzutnia 1:1000),
 
 tworzy dla każdej stacji komplet arkuszy pokrywających całą jej trasę przy minimalnej
@@ -51,6 +52,8 @@ KROK = 15.0                         # siatka kandydatów na arkusze [m]
 BB_LIMIT = 20000                    # limit dokładnego przeszukiwania
 
 RE_STACJA = re.compile(r"(\d{2,3}-\d{3,4}|\d{3,4})")   # "03-0494" lub "0494"/"494"
+# opis stacji na warstwie bez „trafo” w nazwie (np. multileader wstawiony na „0”): „STACJA TRAFO <nr>”
+RE_OPIS_STACJI = re.compile(r"stacja\s*trafo\w*\W*(\d{2,3}-\d{3,4}|\d{3,4})(?!\d)", re.I)
 RE_NAZWA_PZT = re.compile(r"^\d+-\d+$")                # nazwa layoutu PZT, np. "244-1" / "2-3"
 
 
@@ -406,13 +409,15 @@ def wczytaj(sciezka, wzorzec_sciezka=None, wzorzec=True):
                 # numer stacji z nazwy warstwy "!trafo_<nr>" (z poprzedniego uruchomienia) - opcjonalnie
                 reszta = warstwa[len(WARSTWA_ZAKRES):].strip(" _-")
                 poligony.append([reszta or None, pts, get(d, 5)])   # [nr|None, punkty, uchwyt]
-        elif t == "MULTILEADER" and _dopasuj(warstwa, "trafo"):
+        elif t == "MULTILEADER":
             txt, grot = _mleader_tekst_grot(d)
-            if "STACJA" in txt.upper():
-                m = RE_STACJA.search(txt)
-                if m:
-                    # zachowaj PEŁNE oznaczenie (np. '05-0244') - potrzebne do tabelki
-                    stacje.append((m.group(1).strip(), grot))
+            if _dopasuj(warstwa, "trafo"):
+                m = RE_STACJA.search(txt) if "STACJA" in txt.upper() else None
+            else:                                   # np. warstwa „0” - tylko „STACJA TRAFO <nr>”
+                m = RE_OPIS_STACJI.search(txt)
+            if m:
+                # zachowaj PEŁNE oznaczenie (np. '05-0244') - potrzebne do tabelki
+                stacje.append((m.group(1).strip(), grot))
 
     if not wzorzec:
         return Wejscie(trasy, poligony, stacje, (0.0, 0.0), (0.0, 0.0, 0.0, 0.0))
