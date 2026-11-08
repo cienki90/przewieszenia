@@ -165,7 +165,9 @@ def wczytaj_stacje_trafo(doc: Drawing, cfg: Config) -> tuple[list[StacjaTrafo], 
 
     - polilinie niezamknięte są domykane (zgodnie z praktyką rysowania obrysów),
     - nazwa strefy = numer stacji, której opis (grot multileadera / tekst) leży w obrysie,
-    - obrysy bez stacji są dołączane do sąsiedniej strefy ze stacją, z którą się stykają.
+    - obrys bez opisu w środku dostaje najbliższy opis stacji leżący poza wszystkimi obrysami,
+      nie dalej niż cfg.odl_opisu_stacji (50 m) - z ostrzeżeniem,
+    - pozostałe obrysy bez stacji są dołączane do sąsiedniej strefy ze stacją, z którą się stykają.
     Zwraca (strefy, ostrzeżenia).
     """
     ostrz: list[str] = []
@@ -195,6 +197,27 @@ def wczytaj_stacje_trafo(doc: Drawing, cfg: Config) -> tuple[list[StacjaTrafo], 
                 ostrz.append(f"Obrys {uchwyt} zawiera kilka stacji: "
                              f"{', '.join(sorted({n for _, n in wewn}))} - użyto {wewn[0][1]}.")
 
+    # obrysy bez numeru stacji w środku -> opis stacji postawiony tuż za obrysem (poza wszystkimi
+    # obrysami), do cfg.odl_opisu_stacji; pary obrys-opis od najbliższych, każdy opis i obrys raz
+    z_okolicy: set[int] = set()                      # indeksy opisów przypisanych spoza obrysu
+    if cfg.odl_opisu_stacji > 0:
+        wolne = [k for k, (p, _) in enumerate(opisy)
+                 if not any(poly.buffer(0.5).covers(p) for _, poly, _ in obrysy)]
+        pary = sorted((poly.distance(opisy[k][0]), i, k)
+                      for i, (_, poly, _) in enumerate(obrysy) if i not in przypisane
+                      for k in wolne)
+        for odl, i, k in pary:
+            if odl > cfg.odl_opisu_stacji:
+                break
+            if i in przypisane or k in z_okolicy:
+                continue
+            p, n = opisy[k]
+            przypisane[i] = (n, p)
+            z_okolicy.add(k)
+            ostrz.append(f"Stacja {n}: w obrysie !trafo {obrysy[i][2]} nie ma numeru stacji - użyto opisu "
+                         f"stacji leżącego {odl:.1f} m poza obrysem (szukano do {cfg.odl_opisu_stacji:g} m). "
+                         "Sprawdź na rysunku, czy to właściwa stacja.")
+
     # obrysy bez stacji -> do stykającej się strefy ze stacją (iteracyjnie)
     zmiana = True
     while zmiana:
@@ -222,8 +245,8 @@ def wczytaj_stacje_trafo(doc: Drawing, cfg: Config) -> tuple[list[StacjaTrafo], 
             s.punkt_stacji = s.punkt_stacji or punkt
         else:
             strefy[nazwa] = StacjaTrafo(nazwa, poly, punkt, nr)
-    bez_strefy = [n for p, n in opisy if not any(s.obrys.buffer(0.5).covers(p)
-                                                  for s in strefy.values())]
+    bez_strefy = [n for k, (p, n) in enumerate(opisy)
+                  if k not in z_okolicy and not any(s.obrys.buffer(0.5).covers(p) for s in strefy.values())]
     for n in bez_strefy:
         ostrz.append(f"Stacja {n} leży poza obrysami !trafo.")
     return list(strefy.values()), ostrz
