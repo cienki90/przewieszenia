@@ -139,24 +139,35 @@ def _nazwa_stacji(tekst: str) -> str:
     return re.sub(r"(?i)stacja\s*trafo\w*", "", tekst).replace("\n", " ").strip() or tekst
 
 
+# opis stacji rozpoznawany po treści (na dowolnej warstwie): „STACJA TRAFO” i numer stacji
+_OPIS_STACJI = re.compile(r"stacja\s*trafo\w*\W*\d{2}-\d{3,5}", re.IGNORECASE)
+
+
 def _opisy_trafo(doc: Drawing, cfg: Config) -> list[tuple[Point, str]]:
-    """Punkty stacji z opisami: MULTILEADER (grot strzałki), TEXT, MTEXT."""
+    """Punkty stacji z opisami: MULTILEADER (grot strzałki), TEXT, MTEXT.
+
+    Z warstw z cfg.fragment_warstwy_opisu_trafo („trafo”) w nazwie - każdy opis; z innych warstw
+    (np. multileader wstawiony na warstwie „0”) - gdy tekst to „STACJA TRAFO <numer stacji>”."""
     frag = cfg.fragment_warstwy_opisu_trafo.casefold()
     wynik = []
     for e in doc.modelspace():
-        if frag not in e.dxf.layer.casefold():
-            continue
         typ = e.dxftype()
         if typ == "MULTILEADER":
             ctx = e.context
             if not ctx.mtext or not ctx.leaders or not ctx.leaders[0].lines:
                 continue
             v = ctx.leaders[0].lines[0].vertices[0]
-            wynik.append((Point(v.x, v.y), _nazwa_stacji(_czysty_tekst(ctx.mtext.default_content))))
-        elif typ == "TEXT" and e.dxf.text.strip():
-            wynik.append((Point(e.dxf.insert.x, e.dxf.insert.y), _nazwa_stacji(e.dxf.text)))
-        elif typ == "MTEXT" and e.plain_text().strip():
-            wynik.append((Point(e.dxf.insert.x, e.dxf.insert.y), _nazwa_stacji(e.plain_text())))
+            punkt, tekst = Point(v.x, v.y), _czysty_tekst(ctx.mtext.default_content)
+        elif typ == "TEXT":
+            punkt, tekst = Point(e.dxf.insert.x, e.dxf.insert.y), e.dxf.text
+        elif typ == "MTEXT":
+            punkt, tekst = Point(e.dxf.insert.x, e.dxf.insert.y), e.plain_text()
+        else:
+            continue
+        if not tekst.strip():
+            continue
+        if frag in e.dxf.layer.casefold() or _OPIS_STACJI.search(tekst):
+            wynik.append((punkt, _nazwa_stacji(tekst)))
     return wynik
 
 
