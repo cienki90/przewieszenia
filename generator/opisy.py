@@ -488,7 +488,11 @@ def generuj(szablon, zestawienie, out=".", arkusz="Arkusz1",
             baza = _nazwa_docx(dane)[:-5]
             arkusz_obl = _dopasuj_arkusz_obliczen(wb_obl, baza, dane.get("trafo", ""))
             if arkusz_obl is not None and all(arkusz_obl != a for _, a, _ in bledy):
-                b = o2w.bledy_nosnosci(wb_obl[arkusz_obl])
+                if o2w.tabela_rozpoznana(wb_obl[arkusz_obl]):
+                    b = o2w.bledy_nosnosci(wb_obl[arkusz_obl])
+                else:                     # starszy układ arkusza - do opisu trafiłaby tabela ze śmieci
+                    b = ["arkusz ma nieznany układ (brak nagłówka obwodu „Sieć napowietrzna nN … obw nr:”) "
+                         "- nie da się wstawić tabeli ani sprawdzić nośności"]
                 if b:
                     bledy.append((dane.get("trafo") or baza, arkusz_obl, b))
         if bledy:
