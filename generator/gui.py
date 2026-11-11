@@ -1280,6 +1280,13 @@ class Aplikacja:
                 messagebox.showwarning(TYTUL, "Brak dołączonego szablonu — wskaż plik szablonu DXF/DWG.",
                                        parent=self.root)
                 return
+            if not plik and not zas:
+                # dołączony szablon jest przykładowy (ma stacje innego projektu) - bez pliku PZT
+                # powstałyby rysunki dla tych przykładowych stacji
+                messagebox.showwarning(TYTUL, "Wskaż plik PZT z zasięgami stacji albo własny szablon rysunków "
+                                              "stałych.\n\nDołączony szablon jest przykładowy — bez pliku PZT "
+                                              "powstałyby rysunki dla jego przykładowych stacji.", parent=self.root)
+                return
         self._uruchom(wejscie, (krok,), orient_szablon=orient_szablon)
 
     # ---- Rysunki stałe: plik PZT z tego samego projektu co szablon ----

@@ -1524,15 +1524,25 @@ def _kopia_encji(ent: Entity, cel: DxfDocument, nazwy_zrodla: dict, uchwyty_celu
     return out
 
 
+def _skrot_listy(pozycje, ile: int = 4) -> str:
+    """„a, b, c, d i 7 innych” - krótki zapis długiej listy do komunikatu."""
+    pozycje = list(pozycje)
+    return ", ".join(pozycje[:ile]) + (f" i {len(pozycje) - ile} innych" if len(pozycje) > ile else "")
+
+
 def wstaw_stacje_z_pliku(szablon: DxfDocument, zrodlo: Path, zone_layer: str = "!trafo",
                          log=print) -> DxfDocument:
     """Kopiuje do szablonu zasięgi stacji i odnośniki „STACJA TRAFO” z innego pliku (np. PZT).
 
     Dzięki temu szablon rysunków stałych może być „czysty” (sam podkład + tabelka), a zasięgi
     stacji pochodzą z jednego źródła - pliku PZT (warstwy !trafo_<nr>). Zasięgi trafiają na
-    warstwę ``zone_layer`` szablonu. Stacje są przenoszone tylko do szablonu BEZ własnych stacji;
-    gdy szablon ma stacje albo plik nie ma zasięgów, szablon wraca bez zmian (plik służy wtedy
-    tylko jako źródło słupów do nazw miejscowości)."""
+    warstwę ``zone_layer`` szablonu.
+
+    Gdy plik nie ma zasięgów, szablon wraca bez zmian (plik służy tylko jako źródło słupów do nazw
+    miejscowości). Gdy szablon ma własne stacje:
+      * te same co plik (szablon tego projektu) - zostają stacje szablonu, jak dotąd,
+      * ŻADNA nie występuje w pliku (szablon przykładowy albo z innego projektu) - stacje szablonu
+        są pomijane, a wstawiane te z pliku; inaczej powstałyby rysunki dla cudzych stacji."""
     zr = DxfDocument.load(zrodlo)
     stacje = find_stations(zr, zone_layer)
     if not any(st.zone_poly is not None for st in stacje):
@@ -1540,11 +1550,26 @@ def wstaw_stacje_z_pliku(szablon: DxfDocument, zrodlo: Path, zone_layer: str = "
         log(f"Plik {Path(zrodlo).name} nie ma zasięgów stacji - stacje z szablonu, "
             f"słupy (miejscowości) z tego pliku.")
         return szablon
-    if find_stations(szablon, zone_layer):
-        # szablon ma własne stacje - nie dokładamy cudzych; plik służy tylko jako źródło słupów
-        log(f"Szablon ma własne stacje - stacje z szablonu, słupy (miejscowości) z pliku "
-            f"{Path(zrodlo).name}.")
-        return szablon
+    wlasne = find_stations(szablon, zone_layer)
+    if wlasne:
+        nr_pliku = {st.nr: st.designation for st in stacje if st.zone_poly is not None}
+        nr_szablonu = {st.nr: st.designation for st in wlasne}
+        if set(nr_szablonu) & set(nr_pliku):
+            # szablon ma stacje tego projektu - nie dokładamy; plik służy tylko jako źródło słupów
+            log(f"Szablon ma własne stacje - stacje z szablonu, słupy (miejscowości) z pliku "
+                f"{Path(zrodlo).name}.")
+            brak = sorted(d for nr, d in nr_pliku.items() if nr not in nr_szablonu)
+            if brak:
+                log(f"UWAGA: w pliku {Path(zrodlo).name} są stacje, których nie ma w szablonie - nie "
+                    f"powstaną dla nich rysunki: {', '.join(brak)}.")
+            return szablon
+        # szablon ma INNE stacje niż plik (np. dołączony szablon przykładowy) - bierzemy stacje z pliku
+        log(f"UWAGA: szablon ma stacje innego projektu ({_skrot_listy(sorted(nr_szablonu.values()))}) - "
+            f"pominięto je; rysunki powstaną dla stacji z pliku {Path(zrodlo).name}.")
+        ostrz = szablon.delete_entities([e for st in wlasne for e in (st.label, st.zone_poly) if e is not None])
+        for o in ostrz:
+            log(f"  {o}")
+        szablon = DxfDocument(szablon.to_bytes())
     nazwy_zr = _nazwy_obiektow(zr)
     uchwyty_sz = {v: h for h, v in _nazwy_obiektow(szablon).items()}
     model = uchwyty_sz.get(("BLOCK_RECORD", "*MODEL_SPACE"))
