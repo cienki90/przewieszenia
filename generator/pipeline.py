@@ -150,12 +150,87 @@ def domyslne_wyjscia(plan: str, katalog: str | None = None) -> dict:
     }
 
 
+# Postęp na żywo: na czas kroku _uruchom_kroki wpisuje tu funkcję logu; _przechwyc przekazuje jej
+# każdą wydrukowaną przez moduł linię od razu (a nie dopiero po zakończeniu kroku).
+_POSTEP = {"log": None, "pokazane": []}
+
+
+class _NaZywo(io.TextIOBase):
+    """Strumień zastępujący stdout/stderr na czas kroku: zbiera wydruk modułu (jak dotąd) i każdą
+    pełną linię od razu przekazuje do logu - w oknie widać postęp zamiast ciszy do końca kroku."""
+
+    def __init__(self, pokaz, oryginal):
+        self.pokaz, self.oryginal = pokaz, oryginal
+        self.calosc = io.StringIO()
+        self.pokazane: list[str] = []
+        self._linia = ""
+        self._w_logu = False
+
+    def writable(self):
+        return True
+
+    def write(self, s):
+        if self._w_logu:                    # log=print (wiersz poleceń) pisze na prawdziwy ekran
+            if self.oryginal is not None:
+                self.oryginal.write(s)
+            return len(s)
+        self.calosc.write(s)
+        self._linia += s
+        while "\n" in self._linia:
+            linia, self._linia = self._linia.split("\n", 1)
+            self._wyslij(linia)
+        return len(s)
+
+    def flush(self):
+        if self._w_logu and self.oryginal is not None:
+            self.oryginal.flush()
+
+    def koniec(self):
+        """Linia bez znaku końca (ostatni wydruk modułu) też trafia do logu."""
+        if self._linia:
+            linia, self._linia = self._linia, ""
+            self._wyslij(linia)
+
+    def _wyslij(self, linia):
+        if self.pokaz is None:
+            return
+        linia = linia.rstrip("\r")
+        self._w_logu = True
+        try:
+            self.pokaz(linia)
+            self.pokazane.append(linia.rstrip())
+        except Exception:  # noqa: BLE001 - kłopot z logiem nie może przerwać pracy modułu;
+            pass           # niepokazana linia zostaje w raporcie kroku i trafi do logu po nim
+        finally:
+            self._w_logu = False
+
+
 def _przechwyc(funkcja, *args, **kwargs):
-    """Uruchamia funkcję, przechwytując jej wydruki (stdout/stderr) do tekstu."""
-    buf = io.StringIO()
-    with redirect_stdout(buf), redirect_stderr(buf):
-        wynik = funkcja(*args, **kwargs)
-    return wynik, buf.getvalue()
+    """Uruchamia funkcję, przechwytując jej wydruki (stdout/stderr) do tekstu. Gdy trwa krok
+    łańcucha, każda linia idzie też od razu do logu (postęp na żywo)."""
+    buf = _NaZywo(_POSTEP["log"], sys.stdout)
+    try:
+        with redirect_stdout(buf), redirect_stderr(buf):
+            wynik = funkcja(*args, **kwargs)
+    finally:
+        buf.koniec()
+        _POSTEP["pokazane"] += buf.pokazane
+    return wynik, buf.calosc.getvalue()
+
+
+def _bez_pokazanych(raport: str, pokazane: list[str]) -> str:
+    """Raport kroku bez linii, które poszły już do logu na żywo (żeby nie pojawiały się dwa razy)."""
+    zostalo: dict[str, int] = {}
+    for linia in pokazane:
+        zostalo[linia] = zostalo.get(linia, 0) + 1
+    reszta = []
+    for linia in raport.splitlines():
+        klucz = linia.rstrip()
+        if zostalo.get(klucz):
+            zostalo[klucz] -= 1
+        else:
+            reszta.append(linia)
+    return "\n".join(reszta).strip("\n")
 
 
 # ---------------------------------------------------------------------------
@@ -316,6 +391,7 @@ def _uruchom_kroki(opcje: Opcje) -> Wynik:
     for krok in kroki:
         tymczasowy = zestawienie_tymczasowe and krok == "zestawienie"
         log(f"\n=== {krok.upper()} ===")
+        _POSTEP["log"], _POSTEP["pokazane"] = log, []       # wydruki modułu idą do logu na żywo
         try:
             if krok == "numeracja":
                 r = _krok_numeracja(plan, wyj["numeracja"])
@@ -373,8 +449,11 @@ def _uruchom_kroki(opcje: Opcje) -> Wynik:
                 opis = f"moduł „{krok}” zakończył się z kodem {ex.code}"
             r = WynikKroku(krok, ok=False, blad=opis, raport=traceback.format_exc())
             log(f"BŁĄD: {opis}")
-        if r.raport:
-            log(r.raport.rstrip())
+        finally:
+            _POSTEP["log"] = None
+        reszta = _bez_pokazanych(r.raport or "", _POSTEP["pokazane"])   # to, czego nie było na żywo
+        if reszta.strip():
+            log(reszta.rstrip())
         if r.ok and not tymczasowy and r.wyjscie:
             log(f"-> zapisano: {r.wyjscie}")
         # krok tymczasowy (zestawienie pomocnicze) nie trafia do podsumowania
