@@ -697,12 +697,18 @@ def _http_get(url: str, user_agent: str, timeout: int = 30, retries: int = 3) ->
 # Nazwy miejscowości - kilka niezależnych źródeł
 # ---------------------------------------------------------------------------
 PLACE_SOURCE_NAMES = {
+    "uug": "GUGiK UUG (najbliższy adres)",
     "nominatim": "OSM Nominatim",
     "overpass": "OSM Overpass (najbliższa miejscowość)",
     "photon": "Photon (komoot)",
     "uldk": "GUGiK ULDK (obręb ewidencyjny)",
 }
-DEFAULT_PLACE_ORDER = ("nominatim", "overpass", "photon", "uldk")
+# UUG pierwszy: na 70 słupach z 7 gmin jego nazwa zgadzała się z tabelami WT w 96% (Nominatim 87% -
+# bywa „gmina Karczew” zamiast wsi), odpowiada w ~0,1 s i nie ma limitu 1 zapytania na sekundę.
+# To też źródło nazw w Generatorze WT, więc nazwy w rysunkach i w warunkach są takie same.
+DEFAULT_PLACE_ORDER = ("uug", "nominatim", "overpass", "photon", "uldk")
+UUG_URL = "https://services.gugik.gov.pl/uug/"
+UUG_PROMIEN = 300                   # [m] szukanie najbliższego adresu - jak w Generatorze WT
 # bok komórki siatki [m] do grupowania słupów przy ustalaniu miejscowości stacji:
 # geokodujemy jeden punkt na komórkę (nie każdy słup) - mniej zapytań do serwisów, ten sam wynik
 GESTOSC_MIEJSC = 300.0
@@ -711,7 +717,7 @@ OVERPASS_URLS = ("https://overpass-api.de/api/interpreter",
 PHOTON_URL = "https://photon.komoot.io/reverse"
 ULDK_URL = "https://uldk.gugik.gov.pl/"
 _OVERPASS_PLACES = ("city", "town", "village", "hamlet", "suburb", "isolated_dwelling")
-_MIN_INTERVAL = {"nominatim": 1.1, "overpass": 1.0, "photon": 0.5, "uldk": 0.2}
+_MIN_INTERVAL = {"uug": 0.1, "nominatim": 1.1, "overpass": 1.0, "photon": 0.5, "uldk": 0.2}
 
 
 def _norm_name(s: str) -> str:
@@ -736,6 +742,7 @@ def _haversine(lat1, lon1, lat2, lon2):
 class PlaceResolver:
     """Ustala miejscowość dla punktu, pytając kolejne źródła.
 
+    * uug       - usługa GUGiK: miejscowość najbliższego punktu adresowego (dane urzędowe PRG)
     * nominatim - adres OSM punktu (village/town/city/hamlet...)
     * overpass  - najbliższy węzeł place=* z OSM (w promieniu 3 km) + gmina z granic
     * photon    - niezależny geokoder komoot oparty na danych OSM
@@ -847,6 +854,23 @@ class PlaceResolver:
         name = name or p.get("city") or p.get("locality") or p.get("district") or ""
         return {"miejscowosc": name, "powiat": (p.get("county") or "").replace("powiat ", ""),
                 "wojewodztwo": (p.get("state") or "").replace("województwo ", "")}
+
+    def _uug(self, lat, lon, x, y, zone):
+        """GUGiK UUG: najbliższy punkt adresowy w promieniu UUG_PROMIEN; gmina/powiat/województwo
+        z pola „jednostka” („{Polska,mazowieckie,otwocki,Osieck}”). Brak adresu w pobliżu = pusta nazwa
+        (pytane jest wtedy kolejne źródło)."""
+        q = urllib.parse.urlencode({"request": "GetAddressReverse", "location": f"POINT({lon:.7f} {lat:.7f})",
+                                    "srid": 4326, "radius": UUG_PROMIEN},
+                                   safe="(),", quote_via=urllib.parse.quote)
+        res = json.loads(self._get("uug", f"{UUG_URL}?{q}").decode("utf-8"))
+        wyniki = (res.get("results") if isinstance(res, dict) else None) or {}
+        if not wyniki:
+            return {"miejscowosc": ""}
+        r = wyniki[min(wyniki, key=lambda k: int(k) if str(k).isdigit() else 0)]
+        jedn = [t.strip() for t in (r.get("jednostka") or "").strip("{}").split(",")]
+        jedn += [""] * (4 - len(jedn))
+        return {"miejscowosc": (r.get("city") or "").strip(), "gmina": jedn[3], "powiat": jedn[2],
+                "wojewodztwo": jedn[1]}
 
     def _uldk(self, lat, lon, x, y, zone):
         # ULDK przyjmuje współrzędne "x,y,srid" w kolejności easting,northing
