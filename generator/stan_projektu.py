@@ -110,6 +110,7 @@ class OknoStanu(tk.Toplevel):
         ttk.Button(g, text="Otwórz folder projektu", command=self._otworz_folder).pack(side="right", padx=6)
         self.b_wyczysc = ttk.Button(g, text="Wyczyść pola spoza projektu", command=self._wyczysc_obce)
         self.b_wyczysc.pack(side="right")
+        ttk.Button(g, text="Nazwa firmy…", command=lambda: app._pokaz_firme(self)).pack(side="right", padx=6)
         ramka = ttk.Frame(self, padding=(12, 4, 12, 4))
         ramka.pack(fill="both", expand=True)
         self.drzewo = ttk.Treeview(ramka, columns=("plik", "stan"), show="tree headings")

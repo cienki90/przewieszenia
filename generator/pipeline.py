@@ -95,6 +95,9 @@ class Opcje:
     # pytanie tak/nie do użytkownika: pytaj(tytuł, tekst) -> bool (GUI); None = bez pytań (CLI -
     # ostrzeżenia trafiają tylko do logu, praca idzie dalej)
     pytaj: object = None
+    # nazwa firmy (inwestora): pliki z innych etapów projektu [(opis, ścieżka)] porównywane z plikami
+    # wejściowymi uruchamianych kroków (okno podaje tu pliki ze wszystkich modułów)
+    firma_pliki: tuple = ()
 
 
 class _Przerwano(Exception):
@@ -239,6 +242,62 @@ POLA_RYSUNKOW = ("plan", "orient_szablon", "orient_plan_slupow", "orient_zasiegi
                  "pzt_wzorzec", "ppw_renumer_dxf")
 
 
+def pliki_firmy_krokow(opcje: Opcje) -> list:
+    """[(opis, ścieżka)] - pliki wejściowe uruchamianych kroków, w których stoi nazwa firmy
+    (tabelka rysunku, nagłówek „Inwestor:” w szablonie .docx). Puste pole szablonu = dołączony."""
+    from . import zasoby
+    kroki = set(opcje.kroki)
+    pliki = []
+    if kroki & {"numeracja", "przewieszenia", "pzt"}:
+        pliki.append(("Plan", opcje.plan))
+    if "pzt" in kroki and opcje.pzt_wzorzec:
+        pliki.append(("Arkusze PZT - plik ze wzorcem „a”", opcje.pzt_wzorzec))
+    if "orientacje" in kroki:
+        pliki.append(("Rysunki stałe - szablon" + ("" if opcje.orient_szablon else " (dołączony)"),
+                      opcje.orient_szablon or zasoby.szablon_orientacji_dxf()))
+        if opcje.orient_zasiegi:
+            pliki.append(("Rysunki stałe - plik PZT", opcje.orient_zasiegi))
+    if "opisy" in kroki:
+        pliki.append(("Opisy techniczne - szablon" + ("" if opcje.opisy_szablon else " (dołączony)"),
+                      opcje.opisy_szablon or zasoby.szablon_opisu_docx()))
+    if "ppw" in kroki:
+        pliki.append(("PPW - szablon" + ("" if opcje.ppw_szablon else " (dołączony)"),
+                      opcje.ppw_szablon or zasoby.szablon_ppw_docx()))
+    if "ppw_renumer" in kroki and opcje.ppw_renumer_dxf:
+        pliki.append(("PPW - plik do renumeracji", opcje.ppw_renumer_dxf))
+    return [(o, p) for o, p in pliki if p]
+
+
+def _sprawdz_firme(opcje: Opcje) -> str | None:
+    """Czy nazwa firmy (inwestora) w plikach wejściowych kroków jest taka sama jak w pozostałych
+    plikach projektu (opcje.firma_pliki). Różnice trafiają do logu; okno pyta, czy kontynuować.
+    Zwraca tekst przerwania albo None (zgodne / brak nazw do porównania / użytkownik kontynuuje)."""
+    from . import firma as mod_firma
+    log = opcje.log or (lambda *_: None)
+    try:
+        wlasne = mod_firma.zbierz(pliki_firmy_krokow(opcje))
+        if not any(w.nazwy for w in wlasne):
+            return None                              # te kroki nie mają plików z nazwą firmy
+        wpisy = mod_firma.zbierz(pliki_firmy_krokow(opcje) + list(opcje.firma_pliki))
+        zgodne, linie = mod_firma.raport(wpisy)
+    except Exception as ex:  # noqa: BLE001 - kontrola pomocnicza nie może zatrzymać pracy
+        log(f"Nazwa firmy: nie udało się sprawdzić ({ex}).")
+        return None
+    z_nazwa = [w for w in wpisy if w.nazwy]
+    if zgodne:
+        if len(z_nazwa) >= 2:
+            log(f"Nazwa firmy zgodna w {len(z_nazwa)} plikach projektu: „{z_nazwa[0].nazwy[0]}”.")
+        return None
+    log("UWAGA: różne nazwy firmy (inwestora) w plikach projektu:")
+    for linia in linie:
+        log(linia)
+    if opcje.pytaj and not opcje.pytaj(
+            "Różne nazwy firmy", "W plikach projektu są różne nazwy firmy (inwestora):\n\n"
+            + "\n".join(linie) + "\n\nKontynuować mimo to?"):
+        return "Przerwano: różne nazwy firmy (inwestora) w plikach projektu."
+    return None
+
+
 def uruchom(opcje: Opcje) -> Wynik:
     """Wykonuje wybrane kroki łańcucha i zwraca zbiorczy wynik.
 
@@ -246,6 +305,12 @@ def uruchom(opcje: Opcje) -> Wynik:
     zostają jak dla oryginału). Przy opcje.eksport_dwg (domyślnie) rysunki wynikowe są
     zapisywane jako DWG; gdy nie wykryto konwertera (ODA), zostają w formacie DXF."""
     log = opcje.log or (lambda *_: None)
+    # nazwa firmy w plikach wejściowych kroków i w innych etapach projektu - przed konwersją DWG,
+    # żeby w komunikacie były prawdziwe nazwy plików
+    przerwano = _sprawdz_firme(opcje)
+    if przerwano:
+        log(przerwano)
+        return Wynik([WynikKroku(k, ok=False, blad=przerwano) for k in KROKI if k in opcje.kroki])
     # ręczny układ arkuszy PZT leży obok ORYGINALNEGO planu (także DWG) - ścieżkę ustalamy przed
     # zamianą wejścia na tymczasowy DXF
     if opcje.pzt_uklad is None and opcje.plan:

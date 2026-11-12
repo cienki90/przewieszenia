@@ -112,6 +112,53 @@ class TestOkno(unittest.TestCase):
         self.assertIn("• opisy: " + blad, okno.call_args.args[1])
         self.assertEqual(self.gui._skroc("x" * 500, 300), "x" * 299 + "…")
 
+    def test_nazwa_firmy_w_plikach_modulow(self):
+        """Okno zbiera rysunki i dokumenty ze wszystkich modułów (oraz pismo WT) i pokazuje rozbieżność."""
+        try:
+            import docx
+            import ezdxf
+        except ImportError:
+            self.skipTest("brak python-docx / ezdxf")
+        app = self.app
+
+        def rysunek(sciezka, firma):
+            doc = ezdxf.new()
+            b = doc.blocks.new("tabelka")
+            b.add_mtext("INWESTOR", dxfattribs={"insert": (0, 10), "char_height": 2.0})
+            b.add_mtext(firma, dxfattribs={"insert": (0, 5.6), "char_height": 2.0})
+            doc.layout("Layout1").add_blockref("tabelka", (350, 50))
+            doc.saveas(sciezka)
+            return sciezka
+
+        def dokument(sciezka, firma):
+            d = docx.Document()
+            d.add_paragraph("Inwestor:")
+            d.add_paragraph(firma)
+            d.save(sciezka)
+            return sciezka
+
+        plan = rysunek(os.path.join(self.A, "plan firmy.dxf"), "Firma A sp. z o. o.")
+        szablon = dokument(os.path.join(self.A, "szablon opisu.docx"), "Inna Firma S.A.")
+        wt = _plik(self.A, "WT", "plan_rozbudowana.xlsx")
+        pismo = dokument(os.path.join(self.A, "WT", "plan_pismo.docx"), "FIRMA A SP. Z O.O.")
+        app.we["pzt"].set(plan)
+        app.we["numeracja"].set(plan)
+        app.opisy_szablon.set(szablon)
+        app.wt_plik.set(wt)
+        pliki = app._pliki_firmy()
+        self.assertEqual({os.path.basename(p) for _o, p in pliki}, {"plan firmy.dxf", "szablon opisu.docx",
+                                                                    "plan_pismo.docx"})
+        self.assertIn(("Generator WT - pismo", pismo), pliki)
+        with mock.patch.object(self.gui.messagebox, "showwarning") as ostrz:
+            app._pokaz_firme()
+        tekst = ostrz.call_args.args[1]
+        self.assertIn("RÓŻNE nazwy firmy", tekst)
+        self.assertIn("„Inna Firma S.A.”", tekst)
+        app.opisy_szablon.set(dokument(os.path.join(self.A, "szablon dobry.docx"), "Firma A Sp z.o.o."))
+        with mock.patch.object(self.gui.messagebox, "showinfo") as info:
+            app._pokaz_firme()
+        self.assertIn("ta sama we wszystkich plikach", info.call_args.args[1])
+
     def test_stan_projektu(self):
         from generator import stan_projektu as sp
         app = self.app

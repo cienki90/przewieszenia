@@ -46,6 +46,13 @@ stałe, Opisy). Generator WT działa jako osobny proces - ma własne biblioteki 
   Pola z plikami innego projektu są wyróżnione; „Wyczyść pola spoza projektu” opróżnia je za
   potwierdzeniem. Przy otwarciu projektu pola wypełnione przez program plikami spoza jego folderu
   są odpinane same (wpis „ODPIĘTO” w „Przebiegu”).
+- **Nazwa firmy (inwestora) ta sama we wszystkich etapach** — przed uruchomieniem modułu program
+  czyta nazwę firmy z jego plików wejściowych (tabelka rysunku: tekst pod etykietą „INWESTOR”;
+  dokument Word: po „Inwestor:”, „Inwestor i zleceniodawca”, „dla inwestora:”, „Pełna nazwa”)
+  i porównuje z plikami pozostałych modułów oraz pismem o warunki leżącym obok pliku WT. Przy
+  różnicy wypisuje, który plik ma którą nazwę, i pyta, czy kontynuować. Zapis nie ma znaczenia
+  („InterWan Sp z.o.o.” = „InterWan sp. z o. o.”). To samo na żądanie: „Stan projektu” →
+  „Nazwa firmy…”. Uwaga: dołączone szablony mają wpisane przykładowe firmy.
 - **Tabele WT** — pole „Warunki techniczne” przyjmuje każdą tabelę WT, rozpoznawaną po zawartości:
   zestawienie uproszczone (`.xls`/`.xlsx`), rozbudowane (współrzędne jako tekst), tabelę projektową
   (WGS84, także stopnie/minuty/sekundy), skoroszyt z osobnym arkuszem na każdy numer WT (czytane są
