@@ -81,6 +81,11 @@ class ZakladkaWT:
         self.start = tk.StringVar(value="1")
         self.tolerancja = tk.StringVar(value="5.0")
         self.zakladka = tk.StringVar(value="10")
+        # progi kontroli i uwag na rysunku (domyślne z Config rdzenia)
+        self.przeslo_uwaga = tk.StringVar(value="50")
+        self.przeslo_blad = tk.StringVar(value="60")
+        self.odl_stacji = tk.StringVar(value="50")
+        self.promien_uwag = tk.StringVar(value="5")
         self.kierunek = tk.BooleanVar(value=True)
         self.operator = tk.StringVar()
         self.rejon = tk.StringVar()
@@ -116,6 +121,13 @@ class ZakladkaWT:
             ttk.Label(r, text=etyk).pack(side="left", padx=(0, 4))
             ttk.Entry(r, textvariable=var, width=szer).pack(side="left", padx=(0, 14))
         ttk.Checkbutton(box, text="Odnośnik po stronie z dala od linii", variable=self.kierunek).pack(anchor="w")
+        r = ttk.Frame(box)
+        r.pack(fill="x", pady=2)
+        for etyk, var, szer in (("Przęsło – uwaga od [m]:", self.przeslo_uwaga, 5), ("błąd od [m]:", self.przeslo_blad, 5),
+                                ("Numer stacji poza obrysem do [m]:", self.odl_stacji, 5),
+                                ("Promień okręgów uwag [m]:", self.promien_uwag, 5)):
+            ttk.Label(r, text=etyk).pack(side="left", padx=(0, 4))
+            ttk.Entry(r, textvariable=var, width=szer).pack(side="left", padx=(0, 14))
         b = ttk.Button(f, text="▶  Analizuj", command=self.analizuj, style="Accent.TButton")
         b.pack(anchor="w", pady=(10, 4))
         self._przyciski.append(b)
@@ -415,8 +427,12 @@ class ZakladkaWT:
             cfg.numer_startowy = int(self.start.get())
             cfg.tolerancja_slupa = float(self.tolerancja.get().replace(",", "."))
             cfg.zakladka = float(self.zakladka.get().replace(",", "."))
+            cfg.przeslo_ostrzezenie = float(self.przeslo_uwaga.get().replace(",", "."))
+            cfg.przeslo_blad = max(float(self.przeslo_blad.get().replace(",", ".")), cfg.przeslo_ostrzezenie)
+            cfg.odl_opisu_stacji = max(0.0, float(self.odl_stacji.get().replace(",", ".")))
+            cfg.promien_uwagi = max(0.5, float(self.promien_uwag.get().replace(",", ".")))
         except ValueError:
-            raise ValueError("Numer startowy, scalanie i zakładka muszą być liczbami.") from None
+            raise ValueError("Numer startowy, scalanie, zakładka i progi kontroli muszą być liczbami.") from None
         cfg.inteligentny_kierunek = self.kierunek.get()
         cfg.format_rysunkow = "dwg" if self.app.eksport_dwg.get() else "dxf"
         self.cfg = cfg
@@ -654,6 +670,8 @@ class ZakladkaWT:
         self.app._zaplanuj_zapis()
         p.zapisz_ustawienia({"prefiks": cfg.prefiks, "numer_startowy": cfg.numer_startowy,
                              "tolerancja_slupa": cfg.tolerancja_slupa, "zakladka": cfg.zakladka,
+                             "przeslo_ostrzezenie": cfg.przeslo_ostrzezenie, "przeslo_blad": cfg.przeslo_blad,
+                             "odl_opisu_stacji": cfg.odl_opisu_stacji, "promien_uwagi": cfg.promien_uwagi,
                              "inteligentny_kierunek": cfg.inteligentny_kierunek, "operator": self.operator.get(),
                              "rejon": self.rejon.get(), "umowa_od": data_od, "umowa_do": data_do,
                              **({"arkusze_reczne": self.arkusze_reczne()} if self.arkusze_reczne() else {})})
@@ -665,7 +683,11 @@ class ZakladkaWT:
             self.app._pisz("Brak programu ODA File Converter – rysunki zostaną zapisane jako DXF.")
         zadania = []
         if w["dxf"]:
-            zadania.append((f"numeracja.{rys}", lambda f: p.zapisz_dxf(f, w["arkusze"], operator, opracowal, data_rys)))
+            def rysunek(f):
+                p.zapisz_dxf(f, w["arkusze"], operator, opracowal, data_rys)
+                self._log(f"Uwagi na rysunku: {p.uwag_na_rysunku} okręgów na niedrukowalnej warstwie "
+                          f"{cfg.warstwa_uwag}." if p.uwag_na_rysunku else "Uwagi na rysunku: brak.")
+            zadania.append((f"numeracja.{rys}", rysunek))
             if w["arkusze"] and w["pdf_num"]:
                 zadania.append(("numeracja.pdf", lambda f: p.zapisz_numeracje_pdf(f, self._log)))
         if w["pismo"]:

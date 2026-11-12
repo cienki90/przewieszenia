@@ -24,7 +24,12 @@ Trzy sprawy wymagają osobnego potraktowania, bo inaczej PDF różni się od wyd
 """
 from __future__ import annotations
 
+import json
+import os
 import re
+import subprocess
+import sys
+import tempfile
 from pathlib import Path
 
 from ezdxf.addons.drawing import Frontend, RenderContext, layout
@@ -213,13 +218,114 @@ def _usun_tlo_strony(pdf) -> None:
         pdf.update_stream(xref, nowy)
 
 
+# Rysowanie stron w kilku procesach: strona to ~1 s czystego Pythona na jednym rdzeniu, a strony są
+# od siebie niezależne. Od tylu stron się to opłaca (start procesu i wczytanie rysunku ~2-3 s):
+MIN_STRON_ROWNOLEGLE = 4
+MAKS_PROCESOW = 6
+CZAS_PROCESU_S = 900
+
+
+def liczba_procesow(stron: int, procesy: int | None = None) -> int:
+    """Ile procesów pomocniczych użyć do narysowania 'stron' (1 = rysuj po kolei w tym procesie).
+    W programie spakowanym do .exe zawsze 1 - nie ma tam interpretera do uruchomienia pomocników."""
+    if procesy is not None:
+        return max(1, min(int(procesy), stron))
+    if getattr(sys, "frozen", False) or stron < MIN_STRON_ROWNOLEGLE:
+        return 1
+    return max(1, min((os.cpu_count() or 1) - 1, MAKS_PROCESOW, (stron + 1) // 2))
+
+
+def _strony_w_procesach(doc: Drawing, nazwy, obrazy_tla, warstwa_numeracji, procesy: int, log) -> list[bytes]:
+    """Rysuje strony w 'procesy' procesach pomocniczych; zwraca strony PDF (bajty) w kolejności 'nazwy'.
+
+    Pomocnik to osobno uruchomiony interpreter z modułem tego pliku (python -m …pdf zadanie.json),
+    a nie multiprocessing - tamten wczytuje ponownie plik startowy programu, a uruchom.pyw otwiera
+    okno przy samym wczytaniu. Każdy pomocnik dostaje kopię rysunku w pliku tymczasowym."""
+    modul = __spec__.name if __spec__ else __name__
+    korzen = Path(__file__).resolve().parents[len(modul.split(".")) - 1]
+    with tempfile.TemporaryDirectory(prefix="wt_pdf_") as tmp:
+        tmp = Path(tmp)
+        rysunek = tmp / "arkusze.dxf"
+        stara_nazwa = doc.filename
+        try:
+            doc.saveas(rysunek)
+        finally:
+            doc.filename = stara_nazwa               # saveas przestawia nazwę dokumentu - przywróć
+        # ezdxf przy zapisie dopisuje stylom wymiarowania wartości domyślne (np. dimlwd = -2), a wtedy
+        # po wczytaniu odnośnik LEADER bierze grubość ze stylu zamiast własnej. Pomocnik dostaje listę
+        # ustawień faktycznie obecnych w stylach i resztę usuwa - rysuje jak z dokumentu w pamięci.
+        style_wym = {s.dxf.name: sorted(s.dxfattribs()) for s in doc.dimstyles}
+        zadania = []
+        for i in range(procesy):
+            czesc = list(enumerate(nazwy))[i::procesy]
+            if not czesc:
+                continue
+            plik = tmp / f"zadanie_{i}.json"
+            plik.write_text(json.dumps({
+                "dxf": str(rysunek), "katalog": str(tmp), "warstwa_numeracji": warstwa_numeracji,
+                "style_wymiarowania": style_wym,
+                "strony": [[nr, nazwa] for nr, nazwa in czesc],
+                "tla": {nazwa: [[str(t.plik), t.x, t.y, t.szer, t.wys] for t in (obrazy_tla or {}).get(nazwa) or []]
+                        for _nr, nazwa in czesc}}), encoding="utf-8")
+            flagi = {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}
+            # komunikaty pomocnika do pliku (nie do potoku - pełny potok zatrzymałby proces)
+            bledy_plik = tmp / f"bledy_{i}.txt"
+            with open(bledy_plik, "wb") as f_err:
+                proces = subprocess.Popen([sys.executable, "-m", modul, str(plik)], cwd=str(korzen),
+                                          stdout=subprocess.DEVNULL, stderr=f_err, **flagi)
+            zadania.append((czesc, proces, bledy_plik))
+        bledy = []
+        for czesc, proces, bledy_plik in zadania:
+            try:
+                proces.wait(timeout=CZAS_PROCESU_S)
+            except subprocess.TimeoutExpired:
+                proces.kill()
+                proces.wait()
+                bledy.append("przekroczony czas")
+                continue
+            if proces.returncode != 0:
+                linie = bledy_plik.read_text(encoding="utf-8", errors="replace").strip().splitlines()
+                bledy.append(linie[-1] if linie else f"kod {proces.returncode}")
+            elif log:
+                for _nr, nazwa in czesc:
+                    log(f"PDF: strona {nazwa}")
+        if bledy:
+            raise RuntimeError("proces pomocniczy: " + "; ".join(bledy))
+        return [(tmp / f"strona_{nr}.pdf").read_bytes() for nr in range(len(nazwy))]
+
+
+def _proces_pomocniczy(plik_zadania: str) -> int:
+    """(python -m …pdf zadanie.json) Rysuje strony z zadania do plików strona_<nr>.pdf."""
+    import ezdxf
+    import pymupdf
+    z = json.loads(Path(plik_zadania).read_text(encoding="utf-8"))
+    doc = ezdxf.readfile(z["dxf"])
+    for styl in doc.dimstyles:                       # stan stylów jak w dokumencie nadrzędnym
+        obecne = z.get("style_wymiarowania", {}).get(styl.dxf.name)
+        if obecne is not None:
+            for atr in list(styl.dxfattribs()):
+                if atr not in obecne:
+                    styl.dxf.discard(atr)
+    pogrub = _PogrubioneNumery(doc, z["warstwa_numeracji"]) if z.get("warstwa_numeracji") else _bez_zmian()
+    with pogrub:
+        ctx = RenderContext(doc)        # po dodaniu stylu numerów - inaczej kontekst go nie zna
+        for nr, nazwa in z["strony"]:
+            tla = [RysunekTla(*t) for t in z["tla"].get(nazwa) or []]
+            strona = _rysuj_strone(doc, doc.paperspace(nazwa), ctx, tla, pymupdf)
+            strona.save(str(Path(z["katalog"]) / f"strona_{nr}.pdf"))
+            strona.close()
+    return 0
+
+
 def eksportuj_uklady(doc: Drawing, wyjscie: Path, nazwy=None, obrazy_tla=None,
-                     warstwa_numeracji: str | None = None, log=None) -> int:
+                     warstwa_numeracji: str | None = None, log=None, procesy: int | None = None) -> int:
     """Zapisuje układy papieru 'doc' do jednego wielostronicowego PDF-u.
 
     nazwy             - lista nazw układów (kolejność stron); None = wszystkie poza 'Model'.
     obrazy_tla        - opcjonalny słownik {nazwa_układu: [RysunekTla, ...]} (podkład).
     warstwa_numeracji - gdy podana, numery na tej warstwie są pogrubiane w PDF.
+    procesy           - liczba procesów rysujących strony; None = dobierz (patrz liczba_procesow),
+                        1 = po kolei w tym procesie. Gdy pomocnik zawiedzie, strony rysowane są po kolei.
     Zwraca liczbę zapisanych stron.
     """
     import pymupdf
@@ -227,20 +333,36 @@ def eksportuj_uklady(doc: Drawing, wyjscie: Path, nazwy=None, obrazy_tla=None,
     nazwy = _nazwy_ukladow(doc, nazwy)
     if not nazwy:
         raise ValueError("Dokument nie ma układów papieru do zapisania w PDF.")
-    ctx = RenderContext(doc)
     pdf = pymupdf.open()
-    pogrub = (_PogrubioneNumery(doc, warstwa_numeracji) if warstwa_numeracji
-              else _bez_zmian())
     try:
-        with pogrub:
-            for nazwa in nazwy:
-                psp = doc.paperspace(nazwa)
-                tla = (obrazy_tla or {}).get(nazwa) or []
-                strona = _rysuj_strone(doc, psp, ctx, tla, pymupdf)
+        gotowe = None
+        ile = liczba_procesow(len(nazwy), procesy)
+        if ile > 1:
+            try:
+                gotowe = _strony_w_procesach(doc, nazwy, obrazy_tla, warstwa_numeracji, ile, log)
+            except Exception as ex:  # noqa: BLE001 - każdy kłopot z pomocnikami = rysuj po kolei
+                if log:
+                    log(f"PDF: rysowanie w {ile} procesach nie powiodło się ({ex}) - rysuję po kolei.")
+        if gotowe is not None:
+            for bajty in gotowe:
+                strona = pymupdf.open("pdf", bajty)
                 pdf.insert_pdf(strona)
                 strona.close()
-                if log:
-                    log(f"PDF: strona {nazwa}")
+        else:
+            pogrub = (_PogrubioneNumery(doc, warstwa_numeracji) if warstwa_numeracji
+                      else _bez_zmian())
+            with pogrub:
+                # kontekst po dodaniu pogrubionego stylu numerów: utworzony wcześniej nie znał go
+                # i przy pierwszym eksporcie część numerów rysowała się inną czcionką
+                ctx = RenderContext(doc)
+                for nazwa in nazwy:
+                    psp = doc.paperspace(nazwa)
+                    tla = (obrazy_tla or {}).get(nazwa) or []
+                    strona = _rysuj_strone(doc, psp, ctx, tla, pymupdf)
+                    pdf.insert_pdf(strona)
+                    strona.close()
+                    if log:
+                        log(f"PDF: strona {nazwa}")
         Path(wyjscie).parent.mkdir(parents=True, exist_ok=True)
         # garbage+deflate+clean: usuwa duplikaty i kompresuje strumienie (mały plik)
         pdf.save(str(wyjscie), garbage=4, deflate=True, clean=True)
@@ -315,3 +437,7 @@ def _rzutnia(psp):
 def _wysokosc_strony_mm(psp) -> float:
     h = psp.dxf_layout.dxfattribs().get("paper_height")
     return float(h) if h else layout.Page.from_dxf_layout(psp).height
+
+
+if __name__ == "__main__":          # proces pomocniczy rysowania stron (patrz _strony_w_procesach)
+    sys.exit(_proces_pomocniczy(sys.argv[1]))
