@@ -20,6 +20,37 @@ def nr_stacji(tekst) -> int | None:
     return int(m.group(1)) if m else None
 
 
+_RE_OZNACZENIE = re.compile(r"^\s*(\d{2,3})\s*-\s*0*(\d+)\s*$")
+
+
+def kolizje_prefiksow(oznaczenia) -> list[str]:
+    """Stacje o TYM SAMYM numerze i RÓŻNYCH prefiksach, np. ["05-0073 i 09-0073"].
+
+    Program nazywa arkusze PZT („73-1”), rysunki stałe („73.dxf”), arkusze obliczeń i opisy
+    („73.docx”) samym numerem stacji - dwie takie stacje w jednym projekcie zlałyby się w jedną.
+    Pusta lista = brak kolizji (także gdy oznaczenia nie mają prefiksu)."""
+    wg_numeru: dict[int, dict[str, str]] = {}
+    for o in oznaczenia:
+        m = _RE_OZNACZENIE.match(str(o or ""))
+        if m:
+            wg_numeru.setdefault(int(m.group(2)), {}).setdefault(m.group(1), str(o).strip())
+    return [" i ".join(pelne[p] for p in sorted(pelne)) for _nr, pelne in sorted(wg_numeru.items())
+            if len(pelne) > 1]
+
+
+def komunikat_kolizji(kolizje: list[str]) -> str:
+    return ("W projekcie są stacje o tym samym numerze i różnych prefiksach: " + "; ".join(kolizje) + ". "
+            "Program nazywa arkusze, rysunki i opisy samym numerem stacji, więc pomyliłby te stacje. "
+            "Rozdziel projekt na osobne pliki dla każdego prefiksu (rejonu).")
+
+
+def sprawdz_prefiksy(oznaczenia) -> None:
+    """ValueError z wyjaśnieniem, gdy w zbiorze są stacje o tym samym numerze i różnych prefiksach."""
+    kolizje = kolizje_prefiksow(oznaczenia)
+    if kolizje:
+        raise ValueError(komunikat_kolizji(kolizje))
+
+
 def wczytaj(sciezka: str) -> dict:
     """{nr stacji (int): miejscowość} albo {} gdy brak pliku."""
     try:

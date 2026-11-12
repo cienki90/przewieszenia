@@ -84,6 +84,44 @@ def _fmt_obciazenie(v):
 # ---------------------------------------------------------------------------
 # Parsowanie arkusza projektu
 # ---------------------------------------------------------------------------
+LICZBA_KOLUMN = 9       # Lp | Lp w obw. | Nr słupa | Nośność | Obciążenie | Typ | Kabel | Osprzęt | Odległość
+
+
+def _wiersze_tabeli(ws):
+    """Wiersze tabeli obliczeń jako listy 9 wartości - niezależnie od miejsca tabeli w arkuszu.
+
+    Arkusz z programu: tabela od A1 do ostatniego wiersza. Arkusz prowadzony ręcznie: tabela
+    w kolumnach C-K, nad nią wiersze pomocnicze (wzorzec formuł), pod podpisami projektantów -
+    robocze wiersze z formułami. Dlatego:
+      * początek i pierwsza kolumna = pierwszy nagłówek obwodu („Sieć napowietrzna nN” w wierszu
+        z „obw nr:”); gdy takiego wiersza nie ma - cały arkusz od kolumny A (jak dawniej),
+      * koniec = ostatni wiersz „Projektant…”, a bez podpisów - ostatni wiersz zbiorczy
+        („WSZYSTKIE STANOWISKA…”, „UWAGA!…”, „CAŁKOWITA…”); bez nich - koniec arkusza."""
+    wszystkie = [list(r) for r in ws.iter_rows(values_only=True)]
+    k0, r0 = 0, 0
+    for i, row in enumerate(wszystkie):
+        teksty = [_s(v) for v in row]
+        k = next((j for j, t in enumerate(teksty) if t.startswith("Sieć napowietrzna nN")), None)
+        if k is not None and any(t.lower().startswith("obw nr") for t in teksty):
+            k0, r0 = k, i
+            break
+
+    def pierwsza(i):
+        row = wszystkie[i]
+        return _s(row[k0]) if k0 < len(row) else ""
+
+    zakres = range(r0, len(wszystkie))
+    r1 = max((i for i in zakres if pierwsza(i).startswith("Projektant")), default=None)
+    if r1 is None:
+        r1 = max((i for i in zakres if pierwsza(i).startswith(("WSZYSTKIE STANOWISKA", "UWAGA!", "CAŁKOWITA"))),
+                 default=len(wszystkie) - 1)
+    wynik = []
+    for row in wszystkie[r0:r1 + 1]:
+        okno = row[k0:k0 + LICZBA_KOLUMN]
+        wynik.append(okno + [None] * (LICZBA_KOLUMN - len(okno)))
+    return wynik
+
+
 def parsuj_arkusz(ws):
     """
     Zwraca listę "wierszy logicznych" opisujących zawartość tabeli:
@@ -95,10 +133,12 @@ def parsuj_arkusz(ws):
       ('uwaga', 'WSZYSTKIE STANOWISKA ...')          # wiersz scalony na całość
       ('pusty', None)
       ('projektant', ['Projektant:', 'inż. ...', 'PDL/...'])
+
+    Tabela nie musi zaczynać się w komórce A1 (patrz _wiersze_tabeli): w arkuszach prowadzonych
+    ręcznie leży w kolumnach C-K, nad nią są wiersze pomocnicze, a pod podpisami - robocze.
     """
     wiersze = []
-    for row in ws.iter_rows(values_only=True):
-        vals = list(row)
+    for vals in _wiersze_tabeli(ws):
         a = _s(vals[0]) if vals else ""
 
         if not any(_s(v) for v in vals):
@@ -161,6 +201,13 @@ def parsuj_arkusz(ws):
         wiersze.insert(idx_proj, ("pusty", None))
 
     return wiersze
+
+
+def tabela_rozpoznana(ws) -> bool:
+    """Czy arkusz ma tabelę obliczeń w znanym układzie (nagłówek obwodu, nagłówek kolumn, słupy).
+    Starsze układy bez wiersza „Sieć napowietrzna nN … obw nr:” dałyby w opisie tabelę ze śmieci."""
+    typy = {t for t, _ in parsuj_arkusz(ws)}
+    return {"naglowek_obw", "naglowek_kol", "dana"} <= typy
 
 
 # ---------------------------------------------------------------------------

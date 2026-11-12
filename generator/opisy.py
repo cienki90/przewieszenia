@@ -463,6 +463,16 @@ def generuj(szablon, zestawienie, out=".", arkusz="Arkusz1",
     wiersze = wczytaj_zestawienie(zestawienie, arkusz, wt_domyslne=wt)
     if not wiersze:
         raise ValueError("Zestawienie nie zawiera danych.")
+    # opis nazywany jest numerem stacji („73.docx”) - dwie stacje dające ten sam plik (np. 05-0073
+    # i 09-0073) nadpisałyby sobie opis
+    wg_pliku: dict[str, set] = {}
+    for w in wiersze:
+        wg_pliku.setdefault(_nazwa_docx(w).lower(), set()).add(w["trafo"])
+    powtorzone = [f"{n} ({', '.join(sorted(t))})" for n, t in sorted(wg_pliku.items()) if len(t) > 1]
+    if powtorzone:
+        raise ValueError("W zestawieniu różne stacje dałyby ten sam plik opisu: " + "; ".join(powtorzone)
+                         + ". Opisy nadpisałyby się - rozdziel zestawienie albo nadaj stacjom różne nazwy "
+                           "w kolumnie „Plik”.")
     if wt and not any(w["wt"] for w in wiersze):
         pass  # żaden wiersz nie miał WT - użyto wartości domyślnej (ręcznie wpisany numer WT)
     braki_wt = [w["plik"] for w in wiersze if not w["wt"]]
@@ -488,7 +498,11 @@ def generuj(szablon, zestawienie, out=".", arkusz="Arkusz1",
             baza = _nazwa_docx(dane)[:-5]
             arkusz_obl = _dopasuj_arkusz_obliczen(wb_obl, baza, dane.get("trafo", ""))
             if arkusz_obl is not None and all(arkusz_obl != a for _, a, _ in bledy):
-                b = o2w.bledy_nosnosci(wb_obl[arkusz_obl])
+                if o2w.tabela_rozpoznana(wb_obl[arkusz_obl]):
+                    b = o2w.bledy_nosnosci(wb_obl[arkusz_obl])
+                else:                     # starszy układ arkusza - do opisu trafiłaby tabela ze śmieci
+                    b = ["arkusz ma nieznany układ (brak nagłówka obwodu „Sieć napowietrzna nN … obw nr:”) "
+                         "- nie da się wstawić tabeli ani sprawdzić nośności"]
                 if b:
                     bledy.append((dane.get("trafo") or baza, arkusz_obl, b))
         if bledy:

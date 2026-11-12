@@ -130,6 +130,65 @@ class TestOpisyNosnosc(unittest.TestCase):
         self.assertIn("słup 2: obciążenie", r.raport)
         self.assertFalse(os.path.exists(os.path.join(self.kat, "opisy")))
 
+    def _reczny_arkusz(self, z_naglowkiem_obwodu=True):
+        """Skoroszyt prowadzony ręcznie: tabela w kolumnach C-K, nad nią wiersze pomocnicze,
+        pod podpisami robocze wiersze z formułami."""
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "471"
+        ws.append([None] * 13 + ["aa"])
+        ws.append([None, None, "Sieć napowietrzna nN - obw. nN Nr 1 zasilony ze stacji trafo [30-0851] Sadowa"])
+        ws.append(["OB3", 1632, 1, 1, "1", "sprawdz", " CHECK", "wir. typ slupa"])
+        if z_naglowkiem_obwodu:
+            ws.append([None, None, "Sieć napowietrzna nN ", None, None, None, "obw nr:", 1, None,
+                       "STACJA TRAFO: 03-", "0471"])
+        ws.append([None, None, "Lp", None, "Nr słupa", "Nośność [daN]", "Obciążenie [daN]", "Typ i rodzaj słupa",
+                   "Rodzaj kabla zawieszonego na słupie", "Osprzęt", "Odległość\n[m]"])
+        ws.append([None, None, 1, 1, "1", 1472, 762.37, "żel. Nr-10/ZN", "AsXSn 4x50", "uchwyty", 25, "-10/ZN", "1", "Nr"])
+        ws.append([None, None, 2, 2, "2", 227, 163.52, "żel. P-10/ZN", "AsXSn 4x50", "uchwyty", 43, "-10/ZN", "2", "P"])
+        ws.append([None, None, "Całkowita długość wykorzystanej linii napowietrznej nN:"] + [None] * 7 + ["68 m"])
+        ws.append([None, None, "Całkowita ilość wykorzystanych stanowisk słupowych:"] + [None] * 7 + [2, 68])
+        ws.append([None, None, "WSZYSTKIE STANOWISKA SŁUPOWE SPEŁNIAJĄ WARUNEK NOŚNOŚCI"])
+        ws.append([None, None, "Projektant:", None, None, None, "inż. Jan Testowy", None, "PDL/0001/TEST/26",
+                   None, None, "-10/ZN"])                                             # kol. L - poza tabelą
+        ws.append([None, None, 20, 12, 0, "sprawdz", " CHECK", "wir. "])              # wiersz roboczy
+        p = os.path.join(self.kat, "obliczenia reczne.xlsx")
+        wb.save(p)
+        return p
+
+    def test_tabela_z_recznego_arkusza(self):
+        from generator import obliczenia2word as o2w
+        obl = self._reczny_arkusz()
+        ws = openpyxl.load_workbook(obl, data_only=True)["471"]
+        wiersze = o2w.parsuj_arkusz(ws)
+        self.assertEqual([t for t, _ in wiersze], ["naglowek_obw", "naglowek_kol", "dana", "dana", "suma_dlugosc",
+                                                   "suma_slupy", "uwaga", "pusty", "projektant"])
+        self.assertEqual(wiersze[0][1], {"obw": "1", "trafo_prefix": "STACJA TRAFO: 03-", "trafo": "0471"})
+        self.assertEqual(wiersze[2][1][:5], ["1", "1", "1", "1472", "762.37"])
+        self.assertEqual((wiersze[4][1], wiersze[5][1]), ("68 m", "2"))
+        self.assertEqual(wiersze[-1][1], ["Projektant:", "inż. Jan Testowy", "PDL/0001/TEST/26"])
+        # opis z taką tabelą powstaje, bez wierszy pomocniczych
+        out = os.path.join(self.kat, "opisy")
+        zest = self._zestawienie(("471", "03-0471"))
+        self.assertEqual(opisy.generuj(self.szablon, zest, out=out, obliczenia=obl, log=lambda *_: None), ["471.docx"])
+        import docx as _docx
+        tekst = "\n".join(c.text for t in _docx.Document(os.path.join(out, "471.docx")).tables
+                          for r in t.rows for c in r.cells)
+        self.assertIn("762.37", tekst)
+        self.assertNotIn("OB3", tekst)
+        self.assertNotIn("sprawdz", tekst)
+        self.assertNotIn("Sadowa", tekst)
+
+    def test_arkusz_w_nieznanym_ukladzie_blokuje_opisy(self):
+        from generator import obliczenia2word as o2w
+        obl = self._reczny_arkusz(z_naglowkiem_obwodu=False)
+        self.assertFalse(o2w.tabela_rozpoznana(openpyxl.load_workbook(obl, data_only=True)["471"]))
+        zest = self._zestawienie(("471", "03-0471"))
+        with self.assertRaises(opisy.BledyNosnosci) as cm:
+            opisy.generuj(self.szablon, zest, out=os.path.join(self.kat, "opisy"), obliczenia=obl,
+                          log=lambda *_: None)
+        self.assertIn("nieznany układ", str(cm.exception))
+
 
 if __name__ == "__main__":
     unittest.main()

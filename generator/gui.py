@@ -373,6 +373,45 @@ class Aplikacja:
             ("zakladki", "Zakładki", [("Zestawienie", self.zakladki_zestawienie)]),
         ]
 
+    def _pliki_firmy(self):
+        """[(opis, ścieżka)] - rysunki i dokumenty Word ze wszystkich modułów (tam stoi nazwa firmy:
+        tabelka rysunku, nagłówek „Inwestor:”) oraz pismo o warunki leżące obok pliku WT."""
+        pliki = []
+        for _klucz, modul, pola in self._pola_modulow():
+            for etykieta, zmienna in pola:
+                p = zmienna.get().strip()
+                if p and os.path.isfile(p) and os.path.splitext(p)[1].lower() in (".dxf", ".dwg", ".docx"):
+                    pliki.append((f"{modul} - {etykieta}", p))
+        wt = self.wt_plik.get().strip()
+        if wt and os.path.isfile(wt):
+            folder = os.path.dirname(os.path.abspath(wt))
+            for n in sorted(os.listdir(folder)):
+                if n.lower().endswith(".docx") and "pismo" in n.lower() and not n.startswith("~"):
+                    pliki.append(("Generator WT - pismo", os.path.join(folder, n)))
+        return pliki
+
+    def _pokaz_firme(self, parent=None):
+        """Okno z nazwami firmy (inwestora) znalezionymi w plikach projektu."""
+        from . import firma
+        parent = parent or self.root
+        self.root.configure(cursor="watch")
+        self.root.update_idletasks()
+        try:
+            wpisy = firma.zbierz(self._pliki_firmy())
+            zgodne, linie = firma.raport(wpisy)
+        finally:
+            self.root.configure(cursor="")
+        if not any(w.nazwy for w in wpisy):
+            messagebox.showinfo(TYTUL, "W plikach podpiętych do modułów nie znaleziono nazwy firmy (pola "
+                                       "„INWESTOR” w tabelce rysunku ani nagłówka „Inwestor:” w dokumencie).",
+                                parent=parent)
+        elif zgodne:
+            messagebox.showinfo(TYTUL, "Nazwa firmy jest ta sama we wszystkich plikach projektu:\n\n"
+                                + "\n".join(linie), parent=parent)
+        else:
+            messagebox.showwarning(TYTUL, "W plikach projektu są RÓŻNE nazwy firmy (inwestora):\n\n"
+                                   + "\n".join(linie), parent=parent)
+
     def _pokaz_stan_projektu(self):
         okno = getattr(self, "_okno_stanu", None)
         if okno is not None and okno.winfo_exists():
@@ -1291,6 +1330,13 @@ class Aplikacja:
                 messagebox.showwarning(TYTUL, "Brak dołączonego szablonu — wskaż plik szablonu DXF/DWG.",
                                        parent=self.root)
                 return
+            if not plik and not zas:
+                # dołączony szablon jest przykładowy (ma stacje innego projektu) - bez pliku PZT
+                # powstałyby rysunki dla tych przykładowych stacji
+                messagebox.showwarning(TYTUL, "Wskaż plik PZT z zasięgami stacji albo własny szablon rysunków "
+                                              "stałych.\n\nDołączony szablon jest przykładowy — bez pliku PZT "
+                                              "powstałyby rysunki dla jego przykładowych stacji.", parent=self.root)
+                return
         self._uruchom(wejscie, (krok,), orient_szablon=orient_szablon)
 
     # ---- Rysunki stałe: plik PZT z tego samego projektu co szablon ----
@@ -1420,6 +1466,7 @@ class Aplikacja:
             nazwy_plik=self._plik_nazw() if os.path.isfile(self._plik_nazw() or "") else None,
             log=lambda t="": self._kolejka.put(("log", t)),
             pytaj=self._pytaj_z_watku,
+            firma_pliki=tuple(self._pliki_firmy()),
         )
         self._watek = threading.Thread(target=self._praca, args=(opcje,), daemon=True)
         self._watek.start()

@@ -1,11 +1,12 @@
 name: Testy (budowa GeneratorNN.exe tylko na żądanie)
 
-# Każde wypchnięcie gałęzi PGE_MAKER_CLAUDE uruchamia TYLKO testy.
+# Każde wypchnięcie gałęzi PGE_MAKER_CLAUDE albo scalenie-WT uruchamia TYLKO testy tej gałęzi
+# (na scalenie-WT ten plik ma dodatkowo biblioteki modułu „Warunki techniczne”).
 # Budowa .exe jest wyłączona do odwołania (decyzja z 2026-10-30) - zadanie „exe” rusza wyłącznie
 # po ręcznym uruchomieniu (Actions -> „Run workflow”) z zaznaczonym „Zbuduj GeneratorNN.exe”.
 on:
   push:
-    branches: [PGE_MAKER_CLAUDE]
+    branches: [PGE_MAKER_CLAUDE, scalenie-WT]
   workflow_dispatch:
     inputs:
       zbuduj_exe:
