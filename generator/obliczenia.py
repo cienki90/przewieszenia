@@ -848,6 +848,15 @@ def oblicz(wejscie, wyjscie=None, seed=None, kabel=DOMYSLNY_KABEL, cicho=False):
     stacje, podsumowanie = czytaj_zestawienie(wejscie, kabel)
     if not stacje:
         raise SystemExit("Nie znaleziono żadnego arkusza stacji w pliku: %s" % wejscie)
+    # arkusze obliczeń nazywane są samym numerem stacji („73”) - 05-0073 i 09-0073 dałyby dwa
+    # arkusze o tej samej nazwie
+    try:
+        from . import nazwy as _nazwy
+    except ImportError:  # bezpośrednie uruchomienie
+        import nazwy as _nazwy
+    kolizje = _nazwy.kolizje_prefiksow(st.nazwa_arkusza for st in stacje)
+    if kolizje:
+        raise SystemExit(_nazwy.komunikat_kolizji(kolizje))
     rng = random.Random(seed)
     for st in stacje:
         for s in st.slupy:

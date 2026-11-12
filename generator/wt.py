@@ -306,6 +306,7 @@ def _poligony_stacji(we, ostrzezenia):
     """({nr stacji: [poligony !trafo]}, {nr: pełne oznaczenie}) - numer z nazwy warstwy
     !trafo_<nr> albo z opisu STACJA TRAFO leżącego w poligonie."""
     _pzt = _modul_pzt()
+    _pzt.sprawdz_prefiksy_stacji(we)        # 05-0073 i 09-0073 w jednym planie - nie zgadujemy
     oznaczenia = {_pzt._norm_nr(nr): nr for nr, _ in we.stacje}
     poligony_stacji = defaultdict(list)
     for nazwa_warstwy, pts, _uchwyt in we.poligony:

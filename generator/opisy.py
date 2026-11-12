@@ -463,6 +463,16 @@ def generuj(szablon, zestawienie, out=".", arkusz="Arkusz1",
     wiersze = wczytaj_zestawienie(zestawienie, arkusz, wt_domyslne=wt)
     if not wiersze:
         raise ValueError("Zestawienie nie zawiera danych.")
+    # opis nazywany jest numerem stacji („73.docx”) - dwie stacje dające ten sam plik (np. 05-0073
+    # i 09-0073) nadpisałyby sobie opis
+    wg_pliku: dict[str, set] = {}
+    for w in wiersze:
+        wg_pliku.setdefault(_nazwa_docx(w).lower(), set()).add(w["trafo"])
+    powtorzone = [f"{n} ({', '.join(sorted(t))})" for n, t in sorted(wg_pliku.items()) if len(t) > 1]
+    if powtorzone:
+        raise ValueError("W zestawieniu różne stacje dałyby ten sam plik opisu: " + "; ".join(powtorzone)
+                         + ". Opisy nadpisałyby się - rozdziel zestawienie albo nadaj stacjom różne nazwy "
+                           "w kolumnie „Plik”.")
     if wt and not any(w["wt"] for w in wiersze):
         pass  # żaden wiersz nie miał WT - użyto wartości domyślnej (ręcznie wpisany numer WT)
     braki_wt = [w["plik"] for w in wiersze if not w["wt"]]

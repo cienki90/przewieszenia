@@ -1760,6 +1760,12 @@ class Generator:
         if not self.stations:
             raise ValueError("Nie znaleziono stacji trafo: szablon nie ma odnośników 'STACJA TRAFO ...' - "
                              "wskaż plik z zasięgami stacji (np. plik PZT)")
+        # rysunki nazywane są samym numerem stacji („73.dxf”) - 05-0073 i 09-0073 zlałyby się w jeden
+        try:
+            from . import nazwy as _nazwy
+        except ImportError:  # bezpośrednie uruchomienie
+            import nazwy as _nazwy
+        _nazwy.sprawdz_prefiksy(st.designation for st in self.stations)
         x0 = self.stations[0].x
         self.zone = pl2000_zone_from_easting(x0)
         # słupy należące do każdej stacji (wg zestawienia) - podstawa do ustalenia miejscowości.

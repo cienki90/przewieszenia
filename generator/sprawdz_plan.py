@@ -11,6 +11,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from . import nazwy as mod_nazwy
 from .dxfio import get, mtext_plain, read_tags, split_entities, split_sections
 
 BLOKI_SLUPOW = ("ZN", "E", "R")
@@ -69,6 +70,7 @@ def sprawdz(sciezka: str) -> Raport:
     trasy = zasiegi = otwarte = slupy = opisy_slupow = numery = obwody = przewieszenia = wymiary = 0
     znaczniki = set()
     stacje_odn, stacje_zas = set(), set()
+    oznaczenia = []                 # pełne oznaczenia stacji (z prefiksem) - do wykrycia 05-0073 / 09-0073
     for t, d in ents:
         w = (get(d, 8) or "").strip()
         wl = w.lower()
@@ -83,6 +85,7 @@ def sprawdz(sciezka: str) -> Raport:
                 otwarte += 1
             if wl.startswith("!trafo_"):
                 stacje_zas.add(_norm(w[len("!trafo_"):].split("-")[-1]))
+                oznaczenia.append(w[len("!trafo_"):])
         if t == "INSERT" and (get(d, 2) or "").strip() in ze_slupem:
             slupy += 1
         if t == "DIMENSION":
@@ -98,6 +101,7 @@ def sprawdz(sciezka: str) -> Raport:
             m = RE_STACJA.search(tx)
             if m:
                 stacje_odn.add(_norm(m.group(1).split("-")[-1]))
+                oznaczenia.append(re.sub(r"\s+", "", m.group(1)))
             if RE_OBWOD.search(tx):
                 obwody += 1
             if RE_SLUP.search(tx):
@@ -124,6 +128,9 @@ def sprawdz(sciezka: str) -> Raport:
         f((UWAGA, "Brak zasięgów stacji (!trafo) - stacje tylko z odnośników i drzewa sieci"))
     f((OK, f"Odnośniki „STACJA TRAFO”: {len(stacje_odn)}") if stacje_odn
       else (UWAGA if stacje_zas else BLAD, "Brak odnośników „STACJA TRAFO <nr>”"))
+    kolizje = mod_nazwy.kolizje_prefiksow(oznaczenia)
+    if kolizje:
+        f((BLAD, mod_nazwy.komunikat_kolizji(kolizje)))
     bez_zasiegu = sorted(stacje_odn - stacje_zas) if stacje_zas else []
     bez_odn = sorted(stacje_zas - stacje_odn)
     if bez_zasiegu:

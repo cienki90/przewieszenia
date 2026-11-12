@@ -575,10 +575,21 @@ class DaneStacji:
     linie: list             # [[(x, y), ...], ...] trasa !tele w zasięgu
 
 
+def sprawdz_prefiksy_stacji(we: Wejscie) -> None:
+    """ValueError, gdy w planie są stacje o tym samym numerze i różnych prefiksach (np. 05-0073
+    i 09-0073): arkusze i warstwy nazywane są samym numerem („73-1”), więc zlałyby się w jedną."""
+    try:
+        from . import nazwy as _nazwy
+    except ImportError:  # bezpośrednie uruchomienie
+        import nazwy as _nazwy
+    _nazwy.sprawdz_prefiksy([nr for nr, _ in we.stacje] + [n for n, _pts, _u in we.poligony if n])
+
+
 def dane_stacji(we: Wejscie, ostrzezenia=None):
     """Lista DaneStacji (w kolejności numerów) i {nr: [uchwyty poligonów]} - wspólne dla
     generowania arkuszy i podglądu ich układu."""
     ostrzezenia = [] if ostrzezenia is None else ostrzezenia
+    sprawdz_prefiksy_stacji(we)
     oznaczenia = {_norm_nr(nr): nr for nr, _ in we.stacje}      # 494 -> 03-0494
     poligony = []
     poligony_stacji = {}          # nr -> [uchwyty poligonów tej stacji]
