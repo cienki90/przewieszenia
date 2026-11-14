@@ -110,10 +110,19 @@ def _usun_odnosniki_niedrukowalne(doc) -> int:
     odn = {b.name.lower() for b in doc.blocks if b.block_record.is_xref}
     if not niedrukowalne or not odn:
         return 0
+    def klucz(e):   # to samo wstawienie: ten sam odnośnik, punkt, skala i obrót
+        d = e.dxf
+        return (d.name.lower(), tuple(round(v, 6) for v in d.insert),
+                round(d.get("xscale", 1), 6), round(d.get("yscale", 1), 6), round(d.get("rotation", 0), 6))
+
     n = 0
     for blok in list(doc.blocks):
-        for e in list(blok.query("INSERT")):
-            if e.dxf.name.lower() in odn and e.dxf.layer.lower() in niedrukowalne:
+        wst = [e for e in blok.query("INSERT") if e.dxf.name.lower() in odn]
+        ukryte = {klucz(e) for e in wst if e.dxf.layer.lower() in niedrukowalne}
+        for e in wst:
+            # niedrukowalne + ich duplikaty na drukowalnej warstwie (ten sam odnośnik nałożony w tym
+            # samym miejscu - np. „trafo minsk2” na Defpoints i drugi raz na 0)
+            if klucz(e) in ukryte:
                 blok.delete_entity(e)
                 n += 1
     return n
