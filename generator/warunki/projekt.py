@@ -532,14 +532,22 @@ class Projekt:
         pismo.generuj_pismo(self.cfg.szablon_pisma, wyjscie, self.plan, operator,
                             data_od, data_do, self.cfg)
 
-    def zapisz_rozbudowana(self, wyjscie: Path) -> None:
+    @staticmethod
+    def _nazwa_operatora(operator: dict | None) -> str | None:
+        return (operator.get("Pełna nazwa") or operator.get("Nazwa")) if operator else None
+
+    def zapisz_rozbudowana(self, wyjscie: Path, operator: dict | None = None) -> None:
+        """operator - gdy podany, jego nazwa trafia do skoroszytu jako ukryta właściwość dokumentu
+        (export.oznacz_firme) - po niej PGE MAKER sprawdza zgodność firmy między etapami."""
         self._wgs_jesli_trzeba()
         export.zapisz_rozbudowane(self.plan, wyjscie, self.cfg, self.epsg)
+        export.oznacz_firme(wyjscie, self._nazwa_operatora(operator))
 
     def zapisz_uproszczona(self, wyjscie: Path) -> None:
         self._wgs_jesli_trzeba()
         export.zapisz_uproszczone(self.plan, wyjscie, self.cfg, self.epsg)
 
-    def zapisz_projektowa(self, wyjscie: Path) -> None:
+    def zapisz_projektowa(self, wyjscie: Path, operator: dict | None = None) -> None:
         self._wgs_jesli_trzeba(zawsze=True)  # kolumna "Współrzędne GPS" - zawsze WGS 84
         export.zapisz_projektowa(self.plan, wyjscie, self.cfg)
+        export.oznacz_firme(wyjscie, self._nazwa_operatora(operator))

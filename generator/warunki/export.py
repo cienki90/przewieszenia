@@ -9,6 +9,8 @@ uproszczona.xls   - układ jak w szablonie (Załącznik nr 4, wykaz, stopka z po
 """
 from __future__ import annotations
 
+import os
+
 import copy
 import re
 from pathlib import Path
@@ -205,3 +207,55 @@ def zapisz_projektowa(slupy: list[Wierzcholek], plik: Path, cfg: Config) -> None
     ws.freeze_panes = "A2"
     ws.print_title_rows = "1:1"
     wb.save(plik)
+
+
+# ---------------------------------------------------------------- ukryta nazwa firmy
+# Nazwa operatora zapisana w skoroszycie jako niestandardowa właściwość dokumentu
+# (docProps/custom.xml): nie ma jej w komórkach ani na wydruku, a PGE MAKER sprawdza po niej,
+# czy we wszystkich etapach projektu jest ta sama firma (ta sama nazwa właściwości co tam).
+WLASCIWOSC = "GeneratorNN.firma"
+_CUSTOM = "docProps/custom.xml"
+_TYP_CUSTOM = "application/vnd.openxmlformats-officedocument.custom-properties+xml"
+_REL_CUSTOM = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/custom-properties"
+
+
+def oznacz_firme(sciezka: str, nazwa: str | None) -> bool:
+    """Zapisuje w skoroszycie .xlsx ukrytą nazwę firmy (właściwość dokumentu). Zwraca True, gdy
+    zapisano. Nie rusza arkuszy; plik bez nazwy / nie-xlsx / otwarty w Excelu zostaje bez zmian."""
+    import zipfile
+    from xml.sax.saxutils import escape
+    sciezka = str(sciezka)
+    nazwa = re.sub(r"\s+", " ", next((x for x in (nazwa or "").splitlines() if x.strip()), "")).strip()
+    if not nazwa or not str(sciezka).lower().endswith(".xlsx") or not os.path.isfile(sciezka):
+        return False
+    wlasc = (f'<property fmtid="{{D5CDD505-2E9C-101B-9397-08002B2CF9AE}}" pid="2" name="{WLASCIWOSC}">'
+             f'<vt:lpwstr>{escape(nazwa)}</vt:lpwstr></property>')
+    try:
+        with zipfile.ZipFile(sciezka) as z:
+            pliki = [(i, z.read(i.filename)) for i in z.infolist()]
+        nazwy = {i.filename for i, _ in pliki}
+        if _CUSTOM in nazwy and WLASCIWOSC not in dict((i.filename, d) for i, d in pliki)[_CUSTOM].decode("utf-8"):
+            return False                              # cudze właściwości niestandardowe - nie mieszamy
+        custom = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+                  '<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/custom-properties" '
+                  'xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">'
+                  + wlasc + '</Properties>').encode("utf-8")
+        tmp = sciezka + ".tmp_firma"
+        with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as z:
+            for info, dane in pliki:
+                if info.filename == _CUSTOM:
+                    continue
+                if info.filename == "[Content_Types].xml" and _CUSTOM not in nazwy:
+                    dane = dane.replace(b"</Types>", f'<Override PartName="/{_CUSTOM}" ContentType="{_TYP_CUSTOM}"/></Types>'.encode())
+                if info.filename == "_rels/.rels" and _CUSTOM not in nazwy:
+                    dane = dane.replace(b"</Relationships>", f'<Relationship Id="rIdFirma" Type="{_REL_CUSTOM}" Target="{_CUSTOM}"/></Relationships>'.encode())
+                z.writestr(info, dane)
+            z.writestr(_CUSTOM, custom)
+        os.replace(tmp, sciezka)
+        return True
+    except (OSError, zipfile.BadZipFile, KeyError):
+        try:
+            os.remove(sciezka + ".tmp_firma")
+        except OSError:
+            pass
+        return False

@@ -693,11 +693,11 @@ class ZakladkaWT:
         if w["pismo"]:
             zadania.append(("pismo.docx", lambda f: p.zapisz_pismo(f, operator, data_od, data_do)))
         if w["rozb"]:
-            zadania.append(("rozbudowana.xlsx", p.zapisz_rozbudowana))
+            zadania.append(("rozbudowana.xlsx", lambda f: p.zapisz_rozbudowana(f, operator)))
         if w["upr"]:
             zadania.append(("uproszczona.xls", p.zapisz_uproszczona))
         if w["proj"]:
-            zadania.append(("tabela_projektowa.xlsx", p.zapisz_projektowa))
+            zadania.append(("tabela_projektowa.xlsx", lambda f: p.zapisz_projektowa(f, operator)))
         if w["orient"]:
             pdf_or = p.sciezka(kat, "orientacja.pdf") if w["pdf_orient"] else None
 

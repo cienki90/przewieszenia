@@ -2,7 +2,7 @@ Rdzeń Generatora WT przeniesiony do programu (natywne scalenie, moduł nr 1).
 
 Źródło: https://github.com/cienki90/GENERATOR_WT.git
 Gałąź:  Generator_WT_PGE-CLAUDE
-Commit: 38b1f03a753aae7dbd17687bd9d61c679e99df81  (2026-11-13)
+Commit: 845d0865f9b64cd203fe8de037a7e798e0b2b60d  (2026-11-14)
 
 Pliki .py (oprócz config.py) są kopią 1:1 - przy aktualizacji z repozytorium Generatora WT
 wystarczy skopiować je ponownie. Pominięte: gui.py (okno Qt - zastąpione zakładką w
