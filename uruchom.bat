@@ -1,11 +1,18 @@
 @echo off
 chcp 65001 >nul
 rem ==========================================================================
-rem  uruchom.bat - otwiera OKNO programu (przewieszenia + zestawienie + obliczenia)
+rem  uruchom.bat - otwiera OKNO programu bez okna terminala.
+rem  Program startuje przez pythonw (Python bez konsoli); to okienko zamyka sie
+rem  od razu. Blad przy starcie pokaze sie w okienku programu i w pliku
+rem  "blad uruchomienia.txt". Z konsola (do diagnozy):  python generator_gui.py
 rem ==========================================================================
 setlocal
 cd /d "%~dp0"
 
+where pyw >nul 2>nul && ( start "" pyw -3 generator_gui.pyw & exit /b 0 )
+where pythonw >nul 2>nul && ( start "" pythonw generator_gui.pyw & exit /b 0 )
+
+rem brak pythonw - stary sposob, z oknem terminala
 call :find_python
 if errorlevel 1 goto :nopython
 
