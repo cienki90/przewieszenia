@@ -224,6 +224,47 @@ def zaokraglij_wektory(pdf) -> None:
             pdf.update_stream(xref, _LICZBA.sub(krotsza, tresc))
 
 
+def _rozbij_odnosniki_opisowe(doc) -> int:
+    """Odnośniki opisowe (MULTILEADER) rozbijane (w pamięci) na linie i MTEXT - tak jak w CAD:
+      * maska tła „w kolorze okna” jest białą maską (ezdxf malował ją czarnym prostokątem),
+      * ramka tekstu (has_text_frame) jest rysowana - ezdxf jej nie rysuje."""
+    from ezdxf.render import mleader as mod_mleader
+    n = 0
+    for blok in list(doc.blocks):
+        for ml in list(blok.query("MULTILEADER")):
+            tekst = ml.context.mtext
+            maska = bool(tekst is not None and tekst.has_bg_fill and tekst.use_window_bg_color)
+            ramka = bool(ml.dxf.get("has_text_frame", 0))
+            try:
+                # z danych odnośnika, nie z zapisanej grafiki zastępczej (proxy) - ta ma maskę jako
+                # czarne kreskowanie i teksty jednoliniowe
+                czesci = list(mod_mleader.virtual_entities(ml, proxy_graphic=False))
+            except Exception:  # noqa: BLE001 - nierozbijalny zostaje jak był
+                continue
+            for e in czesci:
+                if e.dxf.get("color", 256) == 0:                 # „ByBlock” = kolor samego odnośnika
+                    e.dxf.color = ml.dxf.get("color", 256)
+                    if ml.dxf.hasattr("true_color"):
+                        e.dxf.true_color = ml.dxf.true_color
+                blok.add_entity(e)
+            blok.delete_entity(ml)
+            for e in czesci:
+                if e.dxftype() != "MTEXT":
+                    continue
+                flagi = e.dxf.get("bg_fill", 0)
+                if maska:
+                    flagi = 1                                  # tło okna = biały papier
+                    e.dxf.bg_fill_color = 7
+                    e.dxf.bg_fill_true_color = 0xFFFFFF
+                if ramka:
+                    flagi |= 16
+                if flagi:
+                    e.dxf.bg_fill = flagi
+                    e.dxf.box_fill_scale = e.dxf.get("box_fill_scale", 1.5) or 1.5
+            n += 1
+    return n
+
+
 def arkusze_do_pdf(dxf: str, folder_obrazow: str | None = None, wybierz=None):
     """Rysuje arkusze (layouty papieru) rysunku do dokumentu PDF w pamięci.
     `wybierz(nazwa) -> bool` - które arkusze (None = wszystkie). Zwraca (dokument pymupdf, [nazwy stron])."""
@@ -237,7 +278,9 @@ def arkusze_do_pdf(dxf: str, folder_obrazow: str | None = None, wybierz=None):
     _napraw_obrazy(doc, dxf, folder_obrazow)
     pomin_niedrukowalne(doc)
     _napraw_rzutnie(doc)
-    konf = config.Configuration(image_policy=config.ImagePolicy.DISPLAY)
+    _rozbij_odnosniki_opisowe(doc)
+    konf = config.Configuration(image_policy=config.ImagePolicy.DISPLAY,
+                                background_policy=config.BackgroundPolicy.WHITE)
     # wierzch: białe „tło ekranu” (teksty z tłem w kolorze ekranu są białe, nie czarne); prostokąt tła
     # strony jest potem usuwany, żeby warstwa była przezroczysta
     konf_wierzch = config.Configuration(image_policy=config.ImagePolicy.DISPLAY,
