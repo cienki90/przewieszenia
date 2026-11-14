@@ -13,7 +13,7 @@ WYS_SIATKI = 8.5   # wysokość siatki/linijek [m]
 KOLOR_SWIATLOWODU = 3
 
 # numer przewieszenia (kontrola powiązania rysunku z zaznaczeniem na planie)
-WARSTWA_KONTROLI = "_PRZEWIESZENIA_KONTROLA"   # warstwa drukowalna, łatwa do wyłączenia
+WARSTWA_KONTROLI = "_PRZEWIESZENIA_KONTROLA"   # warstwa bez wydruku (numery do sprawdzenia w CAD)
 KOLOR_KONTROLI = 1                             # czerwony - dobrze widoczny
 
 KROPKOWA = dict(lt="ACAD_ISO07W100", lts=0.1, lw=15)
@@ -127,17 +127,19 @@ def zbuduj(d: Dane) -> Rysunek:
     R.encje.append(("MTEXT", dict(p=(-1.603, 2.102), h=0.28, txt="wysokość zawieszenia przewodu [m]",
                                   width=9.28, attach=1, kier=(0.0, 1.0))))
     # opisy słupów - przesuwane do środka, gdy nie mieszczą się w widoku arkusza
-    ul, up = -2.30, w + 0.58
+    # prawy opis wyrównany do PRAWEJ krawędzi - nie wyjdzie za widok, nawet gdy szacowana
+    # szerokość tekstu jest za mała (zapas 1,35 na czcionkę)
+    dl_p = 1.35 * max(szer_tekstu(f"Słup nr {d.slup_p}", 0.4), szer_tekstu(d.typ_p or "", 0.4))
+    ul, koniec_p = -2.30, w + 0.58 + dl_p
     if d.szer_okna:
         lim_l = w / 2 - d.szer_okna / 2 + 0.3
         lim_p = w / 2 + d.szer_okna / 2 - 0.3
-        dl_p = max(szer_tekstu(f"Słup nr {d.slup_p}", 0.4), szer_tekstu(d.typ_p or "", 0.4))
         ul = max(ul, lim_l)
-        up = min(up, lim_p - dl_p)
+        koniec_p = min(koniec_p, lim_p)
     R.tekst(ul, -0.902, 0.4, f"Słup nr {d.slup_l}")
     R.tekst(ul - 0.034, -1.569, 0.4, d.typ_l or "")
-    R.tekst(up, -0.969, 0.4, f"Słup nr {d.slup_p}")
-    R.tekst(up - 0.031, -1.574, 0.4, d.typ_p or "")
+    R.tekst(koniec_p, -0.969, 0.4, f"Słup nr {d.slup_p}", align=2)
+    R.tekst(koniec_p, -1.574, 0.4, d.typ_p or "", align=2)
 
     # --- legenda ---
     R.linia(0.105, -2.63, 1.036, -2.63, color=KOLOR_SWIATLOWODU, lw=25)

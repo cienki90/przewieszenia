@@ -54,16 +54,19 @@ class Wyjscie:
         self.encje: list = []       # tagi encji modelu
         self.bloki: list = []       # (nazwa, handle_rekordu, tagi encji bloku)
         self.warstwy: dict = {}      # nazwa -> kolor (warstwy do dopisania do tabeli LAYER)
+        self.niedrukowane: set = set()   # warstwy bez wydruku (np. numery kontrolne)
         self.ext = [math.inf, math.inf, -math.inf, -math.inf]
         self._nr_wym = 0
         self.ramka = True           # rysuj ramkę okalającą rzutnię na każdym arkuszu
         self.ramka_warstwa = "0"    # warstwa ramki (jak w rysunkach rysowanych ręcznie)
         self.ramka_lw = 30          # grubość linii ramki [0.01 mm] (370=30 -> 0,30 mm)
 
-    def warstwa(self, nazwa: str, kolor: int = 7):
+    def warstwa(self, nazwa: str, kolor: int = 7, drukuj: bool = True):
         """Rejestruje warstwę do dopisania do tabeli LAYER (gdy nie ma jej w szablonie)."""
         if nazwa not in self.warstwy_szablonu:
             self.warstwy.setdefault(nazwa, kolor)
+        if not drukuj:
+            self.niedrukowane.add(nazwa)
 
     # ------------------------------------------------------------------
     def _h(self) -> str:
@@ -487,7 +490,9 @@ class Wyjscie:
                     out_tab.append(("LAYER", [(5, self._h()), (330, self.layer_table or "2"),
                                               (100, "AcDbSymbolTableRecord"), (100, "AcDbLayerTableRecord"),
                                               (2, nazwa), (70, "     0"), (62, f"{kolor:>6}"),
-                                              (6, "Continuous"), (370, "    25"), (390, "F")]))
+                                              (6, "Continuous")]
+                                             + ([(290, "     0")] if nazwa in self.niedrukowane else [])
+                                             + [(370, "    25"), (390, "F")]))
             out_tab.append((t, d))
         # BLOCKS (z dołożeniem ramek do arkuszy szablonu - przed ich ENDBLK, wg block_record)
         ramki_blokow = getattr(self, "_ramki_blokow", {})

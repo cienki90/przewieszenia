@@ -278,7 +278,8 @@ def main(argv=None):
     szablon = a.arkusze if os.path.exists(a.arkusze) else a.baza
     W = Wyjscie(szablon)
     W.ramka = not a.bez_ramki        # ramka okalająca rzutnię na każdym arkuszu (domyślnie tak)
-    W.warstwa(rysunek_mod.WARSTWA_KONTROLI, rysunek_mod.KOLOR_KONTROLI)  # warstwa numerów kontroli
+    # warstwa numerów kontroli - widoczna w CAD, bez wydruku
+    W.warstwa(rysunek_mod.WARSTWA_KONTROLI, rysunek_mod.KOLOR_KONTROLI, drukuj=False)
     if W.arkusze:
         a0 = W.arkusze[0]
         SZER, WYS = a0["W"], a0["H"]
