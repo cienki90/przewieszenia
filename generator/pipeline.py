@@ -56,7 +56,7 @@ class Opcje:
     kroki: tuple = KROKI                         # które kroki wykonać
     # przewieszenia
     adresy: str = "uug,osm"                     # źródła nazw ulic ("brak" = bez internetu)
-    obrot_od: float = 50.0
+    obrot_od: float = 45.0
     zostaw_puste_arkusze: bool = False
     # obliczenia
     seed: int | None = None
@@ -905,7 +905,8 @@ def _krok_pdf_przewieszen(opcje: Opcje) -> WynikKroku:
     plik = opcje.plan
     if not plik or not os.path.isfile(plik):
         return WynikKroku("pdf", ok=False, blad=f"Nie ma rysunku przewieszeń: {plik}")
-    folder = opcje.pdf_folder or os.path.join(os.path.dirname(plik), "PDF")
+    # zawsze folder „PDF” obok rysunku - rysunek z innego projektu nie trafi do PDF otwartego projektu
+    folder = os.path.join(os.path.dirname(os.path.abspath(plik)), "PDF")
     (wynik, raport) = _przechwyc(lambda: mod_final.pdf_przewieszen(plik, folder, log=print))
     raport = (raport + "\n" + "\n".join(f"Uwaga: {u}" for u in wynik.uwagi)).strip()
     ok = bool(wynik.pliki)
@@ -999,7 +1000,7 @@ def main(argv=None):
                          f"{', '.join(MODULY_CLI)}")
     ap.add_argument("--adresy", default="uug,osm",
                     help="źródła nazw miejscowości/ulic: uug,osm lub 'brak' (bez internetu)")
-    ap.add_argument("--obrot-od", type=float, default=50.0,
+    ap.add_argument("--obrot-od", type=float, default=45.0,
                     help="przęsła dłuższe niż ta wartość [m] rysowane pionowo (0 = tylko gdy trzeba)")
     ap.add_argument("--zostaw-puste-arkusze", action="store_true")
     ap.add_argument("--seed", type=int, default=None,
