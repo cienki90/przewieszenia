@@ -999,6 +999,11 @@ class Aplikacja:
         self._podpowiedz(box, "(0 = tylko gdy rysunek nie mieści się poziomo w arkuszu)")
         self._pole_internetu(box)
         self._przycisk_generuj(f, "Utwórz przewieszenia", lambda: self._start_modul("przewieszenia"))
+        r = ttk.Frame(f)
+        r.pack(fill="x", pady=(8, 0))
+        ttk.Button(r, text="Zrób PDF przewieszeń", command=self._pdf_przewieszen).pack(side="left")
+        self._podpowiedz(f, "(z gotowego rysunku „!Przewieszenia …”: osobny PDF dla każdej stacji trafo "
+                            "i jeden zbiorczy — do folderu PDF projektu)")
 
     def _zakladka_zestawienie(self):
         f = self._strona("zestawienie", "Zestawienie", "Zestawienie słupów",
@@ -1138,6 +1143,25 @@ class Aplikacja:
             self.pdf_folder.set(os.path.join(proj, "PDF"))
         self._pisz(f"Zbiorczy PDF arkuszy PZT z: {plik}")
         self._uruchom(plik, ("pdf",))
+
+    def _pdf_przewieszen(self):
+        """PDF-y gotowego rysunku przewieszeń: na stację i zbiorczy - do folderu PDF projektu."""
+        from . import uklad_projektu as uklad
+        proj = self.projekt.get().strip() or self.katalog.get().strip()
+        plik = next((p for p in (self.final_przewieszenia.get().strip(),
+                                 uklad.znajdz(proj, "final_przewieszenia") if proj else None)
+                     if p and os.path.isfile(p)), None)
+        if not plik:
+            plik = filedialog.askopenfilename(parent=self.root, title="Rysunek przewieszeń (DXF/DWG)",
+                                              initialdir=proj or None,
+                                              filetypes=[("Rysunki", "*.dwg *.dxf"), ("Wszystkie", "*.*")])
+            if not plik:
+                return
+        plik = os.path.normpath(plik)
+        if not self.pdf_folder.get().strip() and proj:
+            self.pdf_folder.set(os.path.join(proj, "PDF"))
+        self._pisz(f"PDF przewieszeń z: {plik}")
+        self._uruchom(plik, ("pdf_przewieszenia",))
 
     def _pdf_z_gotowych(self):
         """PDF z istniejącego folderu rysunków (np. „rysunki stałe”) - bez generowania ich od nowa."""

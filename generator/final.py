@@ -246,4 +246,45 @@ def parsuj_stacje(tekst: str) -> list[int] | None:
     return nr or None
 
 
-__all__ = ["Zrodla", "Wynik", "CZESCI", "stacje", "zloz", "parsuj_stacje", "docx_do_pdf", "glob"]
+
+def pdf_przewieszen(przewieszenia: str, folder_wyj: str, log=print) -> Wynik:
+    """PDF-y rysunku przewieszeń (jak w FINALE): osobny „Przewieszenia ST <nr>.pdf” dla każdej stacji
+    (arkusze przypisane w „….stacje.json”) i zbiorczy PDF ze wszystkimi arkuszami."""
+    import pymupdf
+    wynik = Wynik()
+    os.makedirs(folder_wyj, exist_ok=True)
+    tmp = tempfile.mkdtemp(prefix="przew_pdf_")
+    rys = _Rysunki(tmp, log)
+    try:
+        dok, nazwy = rys.strony(przewieszenia)
+        if not nazwy:
+            raise ValueError("W rysunku przewieszeń nie ma arkuszy do wydruku.")
+        plik = os.path.join(folder_wyj, os.path.splitext(os.path.basename(przewieszenia))[0] + ".pdf")
+        dok.save(plik, garbage=3, deflate=True)
+        wynik.pliki.append(plik)
+        log(f"  wszystkie: {len(nazwy)} ark. -> {os.path.basename(plik)}")
+        przew_stacje = _stacje_przewieszen(przewieszenia)
+        if przew_stacje is None:
+            wynik.uwagi.append("Brak pliku „….stacje.json” - powstał tylko PDF zbiorczy "
+                               "(utwórz przewieszenia ponownie, żeby podzielić je na stacje).")
+            return wynik
+        for nr in sorted({n for st in przew_stacje.values() for n in st}):
+            jedna = pymupdf.open()
+            ile = rys.dolacz(jedna, przewieszenia, lambda n, nr=nr: nr in przew_stacje.get(n, set()))
+            if ile:
+                plik = os.path.join(folder_wyj, f"Przewieszenia ST {nr}.pdf")
+                jedna.save(plik, garbage=3, deflate=True)
+                wynik.pliki.append(plik)
+                log(f"  ST {nr}: {ile} ark.")
+            jedna.close()
+        bez = [n for n in nazwy if not przew_stacje.get(n)]
+        if bez:
+            wynik.uwagi.append("Arkusze bez stacji (tylko w PDF zbiorczym): " + ", ".join(bez))
+    finally:
+        for d, _n in rys.pdf.values():
+            d.close()
+        shutil.rmtree(tmp, ignore_errors=True)
+    return wynik
+
+
+__all__ = ["Zrodla", "Wynik", "CZESCI", "stacje", "zloz", "pdf_przewieszen", "parsuj_stacje", "docx_do_pdf", "glob"]
