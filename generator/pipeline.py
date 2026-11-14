@@ -349,6 +349,9 @@ def uruchom(opcje: Opcje) -> Wynik:
     if set(opcje.kroki) <= {"pdf"} and opcje.plan and os.path.isfile(opcje.plan)             and opcje.plan.lower().endswith((".dxf", ".dwg")):
         return Wynik(kroki=[_krok_pdf(os.path.dirname(opcje.plan), opcje, pliki=[opcje.plan],
                                       wybierz=functools.partial(operator.ne, mod_pzt.NAZWA_WZORCA))])
+    # PDF rysunku przewieszeń (osobno na stację + zbiorczy) - jak w FINALE, odnośniki z folderu oryginału
+    if tuple(opcje.kroki) == ("pdf_przewieszenia",):
+        return Wynik(kroki=[_krok_pdf_przewieszen(opcje)])
     # nazwa firmy w plikach wejściowych kroków i w innych etapach projektu - przed konwersją DWG,
     # żeby w komunikacie były prawdziwe nazwy plików
     przerwano = _sprawdz_firme(opcje)
@@ -894,6 +897,20 @@ def _krok_ppw(opcje: Opcje, wyjscie: str, zestawienie_plik, orient_zest) -> Wyni
     ok = bool(plik) and os.path.exists(plik)
     return WynikKroku("ppw", ok=ok, wyjscie=plik if ok else None, raport=raport,
                       blad=None if ok else "Nie utworzono pliku PPW .docx.")
+
+
+def _krok_pdf_przewieszen(opcje: Opcje) -> WynikKroku:
+    """PDF z gotowego rysunku przewieszeń: „Przewieszenia ST <nr>.pdf” na stację i zbiorczy."""
+    from . import final as mod_final
+    plik = opcje.plan
+    if not plik or not os.path.isfile(plik):
+        return WynikKroku("pdf", ok=False, blad=f"Nie ma rysunku przewieszeń: {plik}")
+    folder = opcje.pdf_folder or os.path.join(os.path.dirname(plik), "PDF")
+    (wynik, raport) = _przechwyc(lambda: mod_final.pdf_przewieszen(plik, folder, log=print))
+    raport = (raport + "\n" + "\n".join(f"Uwaga: {u}" for u in wynik.uwagi)).strip()
+    ok = bool(wynik.pliki)
+    return WynikKroku("pdf", ok=ok, wyjscie=folder if ok else None, raport=raport,
+                      dodatkowe=list(wynik.pliki), blad=None if ok else "Nie powstał żaden PDF.")
 
 
 def _krok_final(opcje: Opcje, katalog: str) -> WynikKroku:
