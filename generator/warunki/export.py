@@ -226,7 +226,8 @@ def zapisz_projektowa(slupy: list[Wierzcholek], plik: Path, cfg: Config, wt=None
                 xy = (round(w.geo_x, miejsca), round(w.geo_y, miejsca))
             else:
                 xy = w.wspolrzedne(True, cfg.miejsca_po_przecinku, cfg.miejsca_wgs84)
-            wartosci = [lp, w.miejscowosc or (s.miejscowosc if s else "") or "", w.ulica or "-", w.gmina or "",
+            wartosci = [lp, w.miejscowosc or (s.miejscowosc if s else "") or "",
+                        w.ulica or (s.ulica if s else "") or "-", w.gmina or "",
                         w.stacja_trafo or "", nr_slupa(w.nr_w_sieci or w.etykieta), xy[0], xy[1],
                         cfg.linie_swiatlowodowe, cfg.linie_abonenckie or None, w.rodzaj_slupa or ""]
         else:   # słup z WT niewykorzystany - dane z WT, wiersz przekreślony

@@ -287,6 +287,28 @@ def pdf_przewieszen(przewieszenia: str, folder_wyj: str, log=print) -> Wynik:
     return wynik
 
 
+def _dopisz_stacje(slupy, plan: str, log=print, tol: float = 1.0) -> None:
+    """Stacja trafo słupa wg logiki zestawienia (obszary !trafo_<nr>, opisy stacji, drzewo sieci) -
+    w pliku PZT nie ma obrysów !trafo, z których korzysta moduł warunków technicznych."""
+    from . import zestawienie as mod_zest
+    tmp = tempfile.mkdtemp(prefix="tabela_")
+    try:
+        dxf = mod_dwg.dwg_na_dxf(plan, os.path.join(tmp, "plan.dxf")) if mod_dwg.jest_dwg(plan) else plan
+        mapa = mod_zest.mapa_stacji_slupow(dxf)
+    except Exception as ex:  # noqa: BLE001
+        log(f"Uwaga: nie ustalono stacji trafo ({ex})")
+        return
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    n = 0
+    for w in slupy:
+        m = min(mapa, key=lambda t: (t[0] - w.x) ** 2 + (t[1] - w.y) ** 2, default=None)
+        if m and ((m[0] - w.x) ** 2 + (m[1] - w.y) ** 2) ** 0.5 <= tol:
+            w.stacja_trafo = m[3]
+            n += 1
+    log(f"Stacje trafo: przypisano {n} z {len(slupy)} słupów")
+
+
 def tabela_projektowa(plan: str, wt_plik: str | None, folder_wyj: str | None = None, adresy: bool = True,
                       log=print) -> str:
     """Tabela projektowa z gotowego (ponumerowanego) planu: numeracja i układ współrzędnych jak we
@@ -306,6 +328,7 @@ def tabela_projektowa(plan: str, wt_plik: str | None, folder_wyj: str | None = N
         p.geokoduj(lambda i, n: None)
     p.zastosuj_stan()
     p.planuj()
+    _dopisz_stacje(p.slupy, plan, log)
     folder = Path(folder_wyj or os.path.dirname(os.path.abspath(plan)))
     folder.mkdir(parents=True, exist_ok=True)
     cel = folder / (Path(plan).stem + "_tabela_projektowa.xlsx")
