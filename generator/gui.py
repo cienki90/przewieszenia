@@ -57,8 +57,16 @@ KOLORY = {
 }
 
 
-def _wybierz_plik(parent, var, tytul, typy=DXF_TYPY):
-    p = filedialog.askopenfilename(parent=parent, title=tytul, filetypes=typy)
+def _wybierz_plik(parent, var, tytul, typy=DXF_TYPY, folder=None, plik=None):
+    """Okno wyboru pliku. Otwiera się w folderze obecnego pliku pola, a gdy pole jest puste -
+    w folderze z układu projektu (folder), z podpowiedzianym plikiem (plik)."""
+    teraz = var.get().strip()
+    if teraz and os.path.isdir(os.path.dirname(teraz)):
+        folder, plik = os.path.dirname(teraz), os.path.basename(teraz)
+    opcje = {"initialdir": folder} if folder else {}
+    if plik:
+        opcje["initialfile"] = os.path.basename(plik)
+    p = filedialog.askopenfilename(parent=parent, title=tytul, filetypes=typy, **opcje)
     if p:
         var.set(os.path.normpath(p))
 
@@ -287,6 +295,7 @@ class Aplikacja:
         if hasattr(self, "log"):
             self._pisz(f"Projekt: {self.projekt.get()}")
         self._odepnij_obce()
+        self._uzupelnij_z_ukladu()
 
     def _odepnij_obce(self):
         """Pola wypełnione automatycznie plikami spoza folderu projektu (np. wyniki poprzedniego projektu,
@@ -331,6 +340,7 @@ class Aplikacja:
         self._podpiete.clear()
         if folder:
             self._ustaw_projekt(folder)
+            self._uzupelnij_z_ukladu()
             self._zapisz_projekt()
         else:
             self.projekt.set("")
@@ -500,10 +510,12 @@ class Aplikacja:
             if p and os.path.isfile(p):
                 self._ustaw_projekt(os.path.dirname(os.path.abspath(p)))
                 self._odepnij_obce()
+                self._uzupelnij_z_ukladu()
                 return
         if plik and os.path.isfile(plik):
             self._ustaw_projekt(os.path.dirname(os.path.abspath(plik)))
             self._odepnij_obce()
+            self._uzupelnij_z_ukladu()
 
     # ================================================================= ustawienia
     def _historia_wt(self) -> list:
@@ -749,8 +761,46 @@ class Aplikacja:
         f.pack(fill="x", pady=4)
         ttk.Label(f, text=etykieta, width=24).pack(side="left")
         ttk.Entry(f, textvariable=var).pack(side="left", fill="x", expand=True, padx=6)
-        ttk.Button(f, text="Wybierz…",
-                   command=lambda: _wybierz_plik(self.root, var, tytul, typy)).pack(side="left")
+        ttk.Button(f, text="Wybierz…", command=lambda: self._wybierz_wg_ukladu(var, tytul, typy)).pack(side="left")
+
+    def _klucz_pola(self, var):
+        return next((k for k, v in self._pola_projektu().items() if str(v) == str(var)), None)
+
+    def _wybierz_wg_ukladu(self, var, tytul, typy):
+        """„Wybierz…”: okno w miejscu, w którym w układzie projektu leży ten plik (np. szablon opisu -
+        <projekt>\opisy), z podpowiedzią pasującego pliku."""
+        from . import uklad_projektu as uklad
+        proj, klucz = self.projekt.get().strip(), self._klucz_pola(var)
+        folder = uklad.folder_pola(proj, klucz) if proj and klucz else None
+        plik = uklad.znajdz(proj, klucz) if proj and klucz else None
+        if plik and folder and os.path.normcase(os.path.dirname(plik)) != os.path.normcase(folder):
+            folder = os.path.dirname(plik)                  # plik leży gdzie indziej w projekcie
+        _wybierz_plik(self.root, var, tytul, typy, folder=folder, plik=plik)
+
+    def _uzupelnij_z_ukladu(self):
+        """Puste pola plików wypełnia plikami z folderu projektu wg jego układu (plan, „!PZT …”,
+        szablony w „opisy” i „rysunki stałe”, zestawienie stacji, tabela WT…). Pola wypełnione ręcznie
+        zostają; wpisane tu pliki są oznaczone jako podpięte przez program."""
+        from . import uklad_projektu as uklad
+        proj = self.projekt.get().strip()
+        if not proj or not os.path.isdir(proj):
+            return 0
+        pola = self._pola_projektu()
+        ile = 0
+        for klucz in uklad.UKLAD:
+            v = pola.get(klucz)
+            if v is None or str(v.get()).strip():
+                continue
+            plik = uklad.znajdz(proj, klucz)
+            if plik:
+                v.set(os.path.normpath(plik))
+                self._podpiete[str(v)] = v.get()
+                ile += 1
+                if hasattr(self, "log"):
+                    self._pisz(f"PODPIĘTO z folderu projektu: {klucz} ← {os.path.relpath(plik, proj)}")
+        if ile:
+            self._zapisz_projekt()
+        return ile
 
     def _pole_folderu(self, ramka, etykieta, var, tytul):
         """Pole z wyborem FOLDERU (jak „Katalog zapisu”)."""

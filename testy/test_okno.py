@@ -130,6 +130,50 @@ class TestOkno(unittest.TestCase):
             self.assertEqual(os.path.normcase(app._ostatni_katalog), os.path.normcase(oczekiwany))
             self.assertIn(oczekiwany, pyt.call_args.args[1])
 
+    def test_pliki_wg_ukladu_projektu(self):
+        """Układ jak w przykładowym projekcie: puste pola wypełniają się plikami z właściwych podfolderów,
+        a wypełnione ręcznie zostają; okno wyboru otwiera się w podfolderze z układu."""
+        from generator import uklad_projektu as uklad
+        P = os.path.join(self.tmp.name, "Projekt układu")
+        pliki = {"PW Test.dwg": None, "!ponumerowany PW Test.dwg": None, "!PZT PW Test.dwg": None,
+                 "DaneWektorowe_G.1.dwg": None, "warunki test_numeracja_uproszczona.xls": None,
+                 "zestawienie PW Test.xlsx": None, "Obliczenia - zestawienie PW Test.xlsx": None,
+                 os.path.join("opisy", "szablon.docx"): None, os.path.join("opisy", "PPW miński szablon.docx"): None,
+                 os.path.join("rysunki stałe", "szablon.dwg"): None,
+                 os.path.join("rysunki stałe", "rysunki stałe", "zestawienie_stacji.xlsx"): None}
+        for n in pliki:
+            _plik(P, n)
+        app = self.app
+        app._nowy_projekt(P)
+        self.root.update()
+        oczekiwane = {"plik_numeracja": "PW Test.dwg", "plik_pzt": "!ponumerowany PW Test.dwg",
+                      "plik_przewieszenia": "!ponumerowany PW Test.dwg", "orient_zasiegi": "!PZT PW Test.dwg",
+                      "plik_orientacje": os.path.join("rysunki stałe", "szablon.dwg"),
+                      "wt_plik": "warunki test_numeracja_uproszczona.xls",
+                      "opisy_szablon": os.path.join("opisy", "szablon.docx"),
+                      "ppw_szablon": os.path.join("opisy", "PPW miński szablon.docx"),
+                      "opisy_zestawienie": os.path.join("rysunki stałe", "rysunki stałe", "zestawienie_stacji.xlsx"),
+                      "opisy_obliczenia": "Obliczenia - zestawienie PW Test.xlsx",
+                      "ppw_zestawienie": "zestawienie PW Test.xlsx", "ppw_renumer_dxf": "!PZT PW Test.dwg"}
+        pola = app._pola_projektu()
+        for k, rel in oczekiwane.items():
+            self.assertEqual(os.path.normcase(pola[k].get()), os.path.normcase(os.path.join(P, rel)), k)
+        self.assertEqual(pola["pzt_wzorzec"].get(), "")
+        self.assertEqual(os.path.normcase(uklad.folder_pola(P, "opisy_szablon")),
+                         os.path.normcase(os.path.join(P, "opisy")))
+        # ręcznie wybrany plik nie jest nadpisywany
+        reczny = _plik(P, "inny szablon.docx")
+        app.opisy_szablon.set(reczny)
+        app._podpiete.pop(str(app.opisy_szablon), None)
+        app._uzupelnij_z_ukladu()
+        self.assertEqual(app.opisy_szablon.get(), reczny)
+        # okno wyboru: folder z układu i podpowiedziany plik
+        app.ppw_szablon.set("")
+        with mock.patch.object(self.gui.filedialog, "askopenfilename", return_value="") as okno:
+            app._wybierz_wg_ukladu(app.ppw_szablon, "t", self.gui.DOCX_TYPY)
+        self.assertEqual(os.path.normcase(okno.call_args.kwargs["initialdir"]), os.path.normcase(os.path.join(P, "opisy")))
+        self.assertEqual(okno.call_args.kwargs["initialfile"], "PPW miński szablon.docx")
+
     def test_nazwa_firmy_w_plikach_modulow(self):
         """Okno zbiera rysunki i dokumenty ze wszystkich modułów (oraz pismo WT) i pokazuje rozbieżność."""
         try:
@@ -164,8 +208,8 @@ class TestOkno(unittest.TestCase):
         app.opisy_szablon.set(szablon)
         app.wt_plik.set(wt)
         pliki = app._pliki_firmy()
-        self.assertEqual({os.path.basename(p) for _o, p in pliki}, {"plan firmy.dxf", "szablon opisu.docx",
-                                                                    "plan_pismo.docx", "plan_rozbudowana.xlsx"})
+        self.assertTrue({os.path.basename(p) for _o, p in pliki} >= {"plan firmy.dxf", "szablon opisu.docx",
+                                                                     "plan_pismo.docx", "plan_rozbudowana.xlsx"})
         self.assertIn(("Generator WT - pismo", pismo), pliki)
         with mock.patch.object(self.gui.messagebox, "showwarning") as ostrz:
             app._pokaz_firme()
