@@ -341,6 +341,12 @@ def uruchom(opcje: Opcje) -> Wynik:
     zostają jak dla oryginału). Przy opcje.eksport_dwg (domyślnie) rysunki wynikowe są
     zapisywane jako DWG; gdy nie wykryto konwertera (ODA), zostają w formacie DXF."""
     log = opcje.log or (lambda *_: None)
+    # PDF z JEDNEGO rysunku (zbiorczy PDF arkuszy PZT wszystkich stacji) - przed zamianą DWG na
+    # tymczasowy DXF, żeby odnośniki (XREF) i obrazy były szukane w folderze ORYGINAŁU;
+    # bez layoutu-wzorca „a”
+    if set(opcje.kroki) <= {"pdf"} and opcje.plan and os.path.isfile(opcje.plan)             and opcje.plan.lower().endswith((".dxf", ".dwg")):
+        return Wynik(kroki=[_krok_pdf(os.path.dirname(opcje.plan), opcje, pliki=[opcje.plan],
+                                      wybierz=lambda n: n != mod_pzt.NAZWA_WZORCA)])
     # nazwa firmy w plikach wejściowych kroków i w innych etapach projektu - przed konwersją DWG,
     # żeby w komunikacie były prawdziwe nazwy plików
     przerwano = _sprawdz_firme(opcje)
@@ -431,9 +437,6 @@ def _uruchom_kroki(opcje: Opcje) -> Wynik:
     tylko_pdf = set(kroki) <= {"pdf"} and os.path.isdir(plan)
     if tylko_pdf:
         return Wynik(kroki=[_krok_pdf(plan, opcje)])
-    # PDF z JEDNEGO rysunku (np. zbiorczy PDF arkuszy PZT wszystkich stacji)
-    if set(kroki) <= {"pdf"} and os.path.isfile(plan) and plan.lower().endswith((".dxf", ".dwg")):
-        return Wynik(kroki=[_krok_pdf(os.path.dirname(plan), opcje, pliki=[plan])])
     if not os.path.isfile(plan):
         if tylko_obliczenia_z_zest and os.path.isfile(opcje.obliczenia_zestawienie):
             plan = opcje.obliczenia_zestawienie
@@ -757,7 +760,7 @@ def _krok_orientacje(szablon: str, wyjscie_dir: str, opcje: Opcje, plan_slupow=N
                                            "(czy rysunek zawiera opisy STACJA TRAFO i obrysy !trafo?).")
 
 
-def _krok_pdf(folder: str, opcje: Opcje, pliki=None) -> WynikKroku:
+def _krok_pdf(folder: str, opcje: Opcje, pliki=None, wybierz=None) -> WynikKroku:
     """PDF z gotowych rysunków: każdy DXF/DWG z folderu -> PDF (strona na arkusz), w folderze
     opcje.pdf_folder albo obok rysunku. Pliki DWG są najpierw zamieniane na tymczasowy DXF
     (PDF dostaje nazwę oryginału, podkład szukany w folderze oryginału)."""
@@ -777,7 +780,7 @@ def _krok_pdf(folder: str, opcje: Opcje, pliki=None) -> WynikKroku:
         for p in pliki:
             dxf = wejscia.dxf(p)
             pdf = os.path.join(folder_pdf, os.path.splitext(os.path.basename(p))[0] + ".pdf")
-            u, b = _pdf_do(dxf, pdf, linie, folder_obrazow=folder)
+            u, b = _pdf_do(dxf, pdf, linie, folder_obrazow=folder, wybierz=wybierz)
             udane += u
             bledy += b
     except ImportError as ex:
@@ -789,10 +792,10 @@ def _krok_pdf(folder: str, opcje: Opcje, pliki=None) -> WynikKroku:
                       blad=None if udane else "Nie powstał żaden PDF.")
 
 
-def _pdf_do(dxf: str, pdf: str, linie: list, folder_obrazow: str | None = None):
+def _pdf_do(dxf: str, pdf: str, linie: list, folder_obrazow: str | None = None, wybierz=None):
     """DXF (np. tymczasowy z DWG) -> PDF pod wskazaną nazwą."""
     try:
-        _, stron = mod_dxf2pdf.dxf_do_pdf(dxf, pdf, folder_obrazow=folder_obrazow)
+        _, stron = mod_dxf2pdf.dxf_do_pdf(dxf, pdf, folder_obrazow=folder_obrazow, wybierz=wybierz)
         linie.append(f"  OK   {os.path.basename(pdf)}  ({stron} ark.)")
         return [pdf], []
     except ImportError:
