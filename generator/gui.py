@@ -1340,7 +1340,7 @@ class Aplikacja:
         ttk.Radiobutton(rf, text="PDF (.pdf)", variable=self.zakladki_format,
                         value="pdf").pack(side="left", padx=(12, 0))
         self._podpowiedz(box, "(.docx — edytowalny w Wordzie, wymaga biblioteki python-docx; "
-                              ".pdf — gotowy do druku, bez dodatkowych bibliotek)")
+                              ".pdf — gotowy do druku, bez dodatkowych bibliotek; PDF zapisuje się w folderze PDF)")
         self._pole_wt(box, self.zakladki_wt, "71/RE-5/KŚ/2026")
         self._przycisk_generuj(f, "Utwórz zakładki", self._start_zakladki)
 
