@@ -143,6 +143,7 @@ class Aplikacja:
         self.final_pzt = tk.StringVar()                    # plik PZT
         self.final_przewieszenia = tk.StringVar()          # rysunek przewieszeń
         self.przew_pdf = tk.StringVar()                    # rysunek przewieszeń do PDF (ostatnio utworzony)
+        self.pzt_pdf = tk.StringVar()                      # plik arkuszy PZT do PDF (ostatnio utworzony)
         self.final_stacje = tk.StringVar()                 # numery stacji (puste = wszystkie)
         self.final_jeden_plik = tk.BooleanVar(value=False)
         self.zakladki_format = tk.StringVar(value="docx")  # przełącznik formatu: docx / pdf
@@ -242,7 +243,7 @@ class Aplikacja:
                       "opisy_szablon", "opisy_zestawienie", "opisy_obliczenia", "ppw_szablon", "ppw_zestawienie",
                       "ppw_zestawienie_stacji", "ppw_renumer_dxf", "zakladki_zestawienie", "zakladki_format",
                       "adresy_on", "final_opisy", "final_rysunki", "final_pzt", "final_przewieszenia",
-                      "przew_pdf", "final_stacje", "final_jeden_plik"):
+                      "przew_pdf", "pzt_pdf", "final_stacje", "final_jeden_plik"):
             pola[nazwa] = getattr(self, nazwa)
         for m, v in self.wt.items():
             pola[f"wt_{m}"] = v
@@ -1106,11 +1107,13 @@ class Aplikacja:
                   style="Hint.TLabel").pack(side="left")
         ttk.Button(f, text="Nazwy miejscowości…", command=self._nazwy_miejscowosci).pack(anchor="w", pady=(10, 0))
         self._przycisk_generuj(f, "Utwórz arkusze PZT", lambda: self._start_modul("pzt"))
-        r = ttk.Frame(f)
-        r.pack(anchor="w", pady=(10, 0))
+        box = self._sekcja(f, "PDF arkuszy PZT")
+        self._pole_pliku(box, "Rysunek do PDF:", self.pzt_pdf, "Wybierz plik arkuszy PZT (DXF/DWG)")
+        self._podpowiedz(box, "(domyślnie ostatnio utworzony plik „!PZT …”; jeden PDF ze wszystkimi arkuszami "
+                              "wszystkich stacji trafo — do folderu PDF projektu)")
+        r = ttk.Frame(box)
+        r.pack(fill="x", pady=(6, 0))
         ttk.Button(r, text="Zrób zbiorcze PDF", command=self._pdf_zbiorczy_pzt).pack(side="left")
-        ttk.Label(r, text="(jeden PDF ze wszystkimi arkuszami PZT wszystkich stacji trafo - z gotowego pliku "
-                          "„!PZT …”, do folderu PDF projektu)").pack(side="left", padx=6)
 
     # ---- ręczne poprawki nazw miejscowości (okno „Nazwy miejscowości…”) ----
     def _plik_nazw(self):
@@ -1146,7 +1149,8 @@ class Aplikacja:
         """Jeden PDF z gotowego pliku arkuszy PZT (wszystkie stacje) - do folderu PDF projektu."""
         from . import uklad_projektu as uklad
         proj = self.projekt.get().strip() or self.katalog.get().strip()
-        plik = next((p for p in (self.final_pzt.get().strip(), uklad.znajdz(proj, "final_pzt") if proj else None)
+        plik = next((p for p in (self.pzt_pdf.get().strip(), self.final_pzt.get().strip(),
+                                 uklad.znajdz(proj, "final_pzt") if proj else None)
                      if p and os.path.isfile(p)), None)
         if not plik:
             plik = filedialog.askopenfilename(parent=self.root, title="Plik arkuszy PZT (DXF/DWG)",
@@ -1155,6 +1159,7 @@ class Aplikacja:
             if not plik:
                 return
         plik = os.path.normpath(plik)
+        self.pzt_pdf.set(plik)
         if not self.pdf_folder.get().strip() and proj:
             self.pdf_folder.set(os.path.join(proj, "PDF"))
         self._pisz(f"Zbiorczy PDF arkuszy PZT z: {plik}")
@@ -1757,9 +1762,9 @@ class Aplikacja:
         Pole jest wypełniane, gdy jest puste albo gdy poprzednio wypełnił je program (nowszy wynik
         zastępuje starszy) - ścieżki wybrane ręcznie przez użytkownika nie są nadpisywane."""
         podpiete = []
-        for k in udane:   # rysunek do PDF przewieszeń - zawsze ostatnio utworzony
-            if k.nazwa == "przewieszenia" and k.wyjscie and os.path.isfile(k.wyjscie):
-                self.przew_pdf.set(os.path.normpath(k.wyjscie))
+        for k in udane:   # rysunki do PDF (przewieszenia, PZT) - zawsze ostatnio utworzone
+            if k.nazwa in ("przewieszenia", "pzt") and k.wyjscie and os.path.isfile(k.wyjscie):
+                (self.przew_pdf if k.nazwa == "przewieszenia" else self.pzt_pdf).set(os.path.normpath(k.wyjscie))
         for k in udane:
             plik, odbiorcy = self._odbiorcy_wyniku(k.nazwa, k.wyjscie) if k.wyjscie else (None, [])
             if not plik or not os.path.isfile(plik):
