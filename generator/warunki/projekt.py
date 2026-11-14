@@ -547,7 +547,7 @@ class Projekt:
         self._wgs_jesli_trzeba()
         export.zapisz_uproszczone(self.plan, wyjscie, self.cfg, self.epsg)
 
-    def zapisz_projektowa(self, wyjscie: Path, operator: dict | None = None) -> None:
-        self._wgs_jesli_trzeba(zawsze=True)  # kolumna "Współrzędne GPS" - zawsze WGS 84
-        export.zapisz_projektowa(self.plan, wyjscie, self.cfg)
+    def zapisz_projektowa(self, wyjscie: Path, operator: dict | None = None, wt=None) -> None:
+        self._wgs_jesli_trzeba(zawsze=True)  # kolumna "Współrzędne GPS" - WGS 84 (albo układ WT)
+        export.zapisz_projektowa(self.plan, wyjscie, self.cfg, wt=wt)
         export.oznacz_firme(wyjscie, self._nazwa_operatora(operator))

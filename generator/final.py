@@ -287,4 +287,31 @@ def pdf_przewieszen(przewieszenia: str, folder_wyj: str, log=print) -> Wynik:
     return wynik
 
 
-__all__ = ["Zrodla", "Wynik", "CZESCI", "stacje", "zloz", "pdf_przewieszen", "parsuj_stacje", "docx_do_pdf", "glob"]
+def tabela_projektowa(plan: str, wt_plik: str | None, folder_wyj: str | None = None, adresy: bool = True,
+                      log=print) -> str:
+    """Tabela projektowa z gotowego (ponumerowanego) planu: numeracja i układ współrzędnych jak we
+    wcześniejszych warunkach technicznych (wt_plik), niewykorzystane słupy WT - wiersz przekreślony.
+    Zwraca ścieżkę zapisanego pliku „<plan>_tabela_projektowa.xlsx”."""
+    from pathlib import Path
+    from . import wt as mod_wt
+    from .warunki.config import Config
+    from .warunki.projekt import Projekt
+    wt = mod_wt.wczytaj_wt(wt_plik) if wt_plik else None
+    if wt:
+        log(f"Warunki techniczne: {len(wt)} słupów ({'PL-2000' if wt[0].uklad == 'pl2000' else 'WGS 84'})")
+    p = Projekt(Config())
+    p.wczytaj(plan)
+    log(f"Plan: {len(p.slupy)} słupów")
+    if adresy:
+        p.geokoduj(lambda i, n: None)
+    p.zastosuj_stan()
+    p.planuj()
+    folder = Path(folder_wyj or os.path.dirname(os.path.abspath(plan)))
+    folder.mkdir(parents=True, exist_ok=True)
+    cel = folder / (Path(plan).stem + "_tabela_projektowa.xlsx")
+    p.zapisz_projektowa(cel, wt=wt)
+    log(f"Zapisano: {cel}")
+    return str(cel)
+
+
+__all__ = ["Zrodla", "Wynik", "CZESCI", "stacje", "zloz", "tabela_projektowa", "pdf_przewieszen", "parsuj_stacje", "docx_do_pdf", "glob"]

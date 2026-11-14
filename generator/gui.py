@@ -1350,6 +1350,31 @@ class Aplikacja:
                         variable=self.final_jeden_plik).pack(anchor="w")
         self._pole_folderu(box, "Folder na PDF:", self.pdf_folder, "Folder na PDF")
         self._przycisk_generuj(f, "Utwórz komplet PDF", self._start_final)
+        box = self._sekcja(f, "Tabela projektowa")
+        self._pole_pliku(box, "Warunki techniczne:", self.wt_plik,
+                         "Wybierz plik Warunków Technicznych (.xls/.xlsx)", typy=XLSX_TYPY)
+        self._podpowiedz(box, "(z pliku PZT powyżej; Lp i układ współrzędnych jak we wcześniejszych WT, "
+                              "słup z WT niewykorzystany w projekcie — wiersz przekreślony, nowe słupy na końcu)")
+        r = ttk.Frame(box)
+        r.pack(fill="x", pady=(6, 0))
+        ttk.Button(r, text="Utwórz tabelę projektową", command=self._tabela_projektowa).pack(side="left")
+
+    def _tabela_projektowa(self):
+        """Tabela projektowa z pliku PZT, numeracja jak we wcześniejszych warunkach technicznych."""
+        from . import uklad_projektu as uklad
+        proj = self.projekt.get().strip() or self.katalog.get().strip()
+        plik = next((p for p in (self.final_pzt.get().strip(), uklad.znajdz(proj, "final_pzt") if proj else None)
+                     if p and os.path.isfile(p)), None)
+        if not plik:
+            messagebox.showwarning(TYTUL, "Wskaż plik PZT (ponumerowany plan z warstwą !tele).", parent=self.root)
+            return
+        if not os.path.isfile(self.wt_plik.get().strip()):
+            if not messagebox.askyesno(TYTUL, "Nie wskazano pliku warunków technicznych — tabela będzie "
+                                              "numerowana od 1, ze współrzędnymi WGS 84. Kontynuować?",
+                                       parent=self.root):
+                return
+        self._pisz(f"Tabela projektowa z: {plik}")
+        self._uruchom(os.path.normpath(plik), ("tabela_projektowa",))
 
     def _final_wczytaj_stacje(self):
         from . import final

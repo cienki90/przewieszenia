@@ -80,6 +80,8 @@ class SlupWT:
     ulica: str = ""
     nr: str = ""
     arkusz: str = ""    # arkusz skoroszytu (skoroszyt operatora: arkusz = numer WT)
+    uklad: str = "pl2000"   # układ współrzędnych w tabeli WT: "pl2000" albo "wgs84"
+    lp: int = 0             # kolejny numer w tabeli WT (1, 2, …)
 
 
 # ---------------------------------------------------------------------------
@@ -189,6 +191,7 @@ def wczytaj_wt(sciezka):
                 widziane.add(klucz)
                 s.arkusz = nazwa
                 wynik.append(s)
+                s.lp = len(wynik)
     if not wynik:
         raise ValueError(f"W pliku WT „{sciezka}” nie znaleziono słupów ze współrzędnymi "
                          "(tabela ze współrzędnymi PUWG 2000 lub WGS84).")
@@ -249,7 +252,8 @@ def _slupy_z_wierszy(rows, wymagaj_miejscowosci=True):
                 continue
             x, y = _os_easting_northing(vx, vy)
         # słup bez miejscowości zostaje: liczy się w kontroli zakresu, nazwy biorą tylko te z nazwą
-        slupy.append(SlupWT(x=x, y=y, miejscowosc=tekst(r, i_miejsc), ulica=tekst(r, i_ulica), nr=tekst(r, i_nr)))
+        slupy.append(SlupWT(x=x, y=y, miejscowosc=tekst(r, i_miejsc), ulica=tekst(r, i_ulica), nr=tekst(r, i_nr),
+                            uklad=uklad))
     return slupy
 
 

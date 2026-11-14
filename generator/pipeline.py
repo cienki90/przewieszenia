@@ -350,6 +350,8 @@ def uruchom(opcje: Opcje) -> Wynik:
         return Wynik(kroki=[_krok_pdf(os.path.dirname(opcje.plan), opcje, pliki=[opcje.plan],
                                       wybierz=functools.partial(operator.ne, mod_pzt.NAZWA_WZORCA))])
     # PDF rysunku przewieszeń (osobno na stację + zbiorczy) - jak w FINALE, odnośniki z folderu oryginału
+    if tuple(opcje.kroki) == ("tabela_projektowa",):
+        return Wynik(kroki=[_krok_tabela_projektowa(opcje)])
     if tuple(opcje.kroki) == ("pdf_przewieszenia",):
         return Wynik(kroki=[_krok_pdf_przewieszen(opcje)])
     # nazwa firmy w plikach wejściowych kroków i w innych etapach projektu - przed konwersją DWG,
@@ -897,6 +899,25 @@ def _krok_ppw(opcje: Opcje, wyjscie: str, zestawienie_plik, orient_zest) -> Wyni
     ok = bool(plik) and os.path.exists(plik)
     return WynikKroku("ppw", ok=ok, wyjscie=plik if ok else None, raport=raport,
                       blad=None if ok else "Nie utworzono pliku PPW .docx.")
+
+
+def _krok_tabela_projektowa(opcje: Opcje) -> WynikKroku:
+    """Tabela projektowa z gotowego planu (PZT): numeracja i układ współrzędnych jak w WT."""
+    from . import final as mod_final
+    plik = opcje.plan
+    if not plik or not os.path.isfile(plik):
+        return WynikKroku("tabela_projektowa", ok=False, blad=f"Nie ma pliku planu: {plik}")
+    wt = opcje.wt_plik if opcje.wt_plik and os.path.isfile(opcje.wt_plik) else None
+    try:
+        (cel, raport) = _przechwyc(lambda: mod_final.tabela_projektowa(
+            plik, wt, adresy=opcje.adresy != "brak", log=print))
+    except Exception as ex:  # noqa: BLE001
+        return WynikKroku("tabela_projektowa", ok=False, blad=str(ex))
+    if not wt:
+        raport = (raport + "\nUwaga: bez pliku warunków technicznych - numeracja od 1, współrzędne WGS 84.").strip()
+    ok = bool(cel) and os.path.isfile(cel)
+    return WynikKroku("tabela_projektowa", ok=ok, wyjscie=cel if ok else None, raport=raport,
+                      blad=None if ok else "Nie udało się zapisać tabeli projektowej.")
 
 
 def _krok_pdf_przewieszen(opcje: Opcje) -> WynikKroku:

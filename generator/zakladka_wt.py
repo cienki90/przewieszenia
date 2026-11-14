@@ -198,7 +198,6 @@ class ZakladkaWT:
                              ("pismo", "Pismo – zapytanie o dostęp (*_pismo.docx)"),
                              ("rozb", "Zestawienie rozbudowane (*_rozbudowana.xlsx)"),
                              ("upr", "Zestawienie uproszczone (*_uproszczona.xls)"),
-                             ("proj", "Tabela projektowa (*_tabela_projektowa.xlsx)"),
                              ("orient", "Plan orientacyjny (*_orientacja.dwg/.dxf + jpg)")):
             ttk.Checkbutton(box, text=tekst, variable=self.wyn[klucz]).pack(anchor="w")
         r = ttk.Frame(box)
@@ -696,8 +695,7 @@ class ZakladkaWT:
             zadania.append(("rozbudowana.xlsx", lambda f: p.zapisz_rozbudowana(f, operator)))
         if w["upr"]:
             zadania.append(("uproszczona.xls", p.zapisz_uproszczona))
-        if w["proj"]:
-            zadania.append(("tabela_projektowa.xlsx", lambda f: p.zapisz_projektowa(f, operator)))
+        # tabela projektowa - w module FINAŁ (numeracja i układ współrzędnych jak w warunkach technicznych)
         if w["orient"]:
             pdf_or = p.sciezka(kat, "orientacja.pdf") if w["pdf_orient"] else None
 

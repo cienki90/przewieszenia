@@ -173,9 +173,14 @@ def zapisz_uproszczone(slupy: list[Wierzcholek], plik: Path, cfg: Config,
 
 # ------------------------------------------------------------------ tabela projektowa
 
-def zapisz_projektowa(slupy: list[Wierzcholek], plik: Path, cfg: Config) -> None:
+def zapisz_projektowa(slupy: list[Wierzcholek], plik: Path, cfg: Config, wt=None, tol: float = 5.0) -> None:
     """Tabela projektowa wg szablonu: nagłówek (wiersz 1) z szablonu, wiersze danych
-    formatowane jak pierwszy wiersz danych. Współrzędne GPS zawsze w WGS 84."""
+    formatowane jak pierwszy wiersz danych. Współrzędne GPS w WGS 84.
+
+    wt - słupy z wcześniejszych warunków technicznych (generator.wt.wczytaj_wt): tabela zachowuje
+    ich numerację (Lp jak w WT) i układ współrzędnych WT; słup z WT niewykorzystany w projekcie
+    zostaje z numerem, a cały wiersz jest przekreślony; nowe słupy (spoza WT) - na końcu."""
+    from openpyxl.styles import Font
     wb = load_workbook(cfg.szablon_projektowa)
     ws = wb.worksheets[0]
     wzor = 2
@@ -186,23 +191,62 @@ def zapisz_projektowa(slupy: list[Wierzcholek], plik: Path, cfg: Config) -> None
             ws.unmerge_cells(str(zakres))
     if ws.max_row >= wzor:
         ws.delete_rows(wzor, ws.max_row - wzor + 1)
-    for lp, w in enumerate(slupy, start=1):
-        r = wzor + lp - 1
-        lat, lon = w.wspolrzedne(True, cfg.miejsca_po_przecinku, cfg.miejsca_wgs84)
-        nr = w.nr_w_sieci or w.etykieta
+    pl2000 = bool(wt) and wt[0].uklad == "pl2000"
+    if pl2000:
+        ws.cell(1, 7).value = "Współrzędne PL-2000"
+    miejsca = cfg.miejsca_po_przecinku if pl2000 else cfg.miejsca_wgs84
+
+    def nr_slupa(nr):
         try:
-            nr = int(nr)  # "51" -> 51, "9.1" zostaje tekstem
+            return int(nr)  # "51" -> 51, "9.1" zostaje tekstem
         except (TypeError, ValueError):
-            pass
-        wartosci = [lp, w.miejscowosc or "", w.ulica or "-", w.gmina or "",
-                    w.stacja_trafo or "", nr, lat, lon, cfg.linie_swiatlowodowe,
-                    cfg.linie_abonenckie or None, w.rodzaj_slupa or ""]
+            return nr
+
+    # wiersze: (lp, słup projektu albo None, słup WT albo None)
+    wiersze = []
+    if wt:
+        wolne = list(slupy)
+        for s in wt:
+            w = min(wolne, key=lambda v: (v.x - s.x) ** 2 + (v.y - s.y) ** 2, default=None)
+            if w is not None and ((w.x - s.x) ** 2 + (w.y - s.y) ** 2) ** 0.5 > tol:
+                w = None
+            if w is not None:
+                wolne.remove(w)
+            wiersze.append((s.lp, w, s))
+        nast = max((s.lp for s in wt), default=0)
+        for i, w in enumerate(wolne, start=1):
+            wiersze.append((nast + i, w, None))
+    else:
+        wiersze = [(lp, w, None) for lp, w in enumerate(slupy, start=1)]
+
+    for i, (lp, w, s) in enumerate(wiersze):
+        r = wzor + i
+        if w is not None:
+            if pl2000:
+                xy = (round(w.geo_x, miejsca), round(w.geo_y, miejsca))
+            else:
+                xy = w.wspolrzedne(True, cfg.miejsca_po_przecinku, cfg.miejsca_wgs84)
+            wartosci = [lp, w.miejscowosc or (s.miejscowosc if s else "") or "", w.ulica or "-", w.gmina or "",
+                        w.stacja_trafo or "", nr_slupa(w.nr_w_sieci or w.etykieta), xy[0], xy[1],
+                        cfg.linie_swiatlowodowe, cfg.linie_abonenckie or None, w.rodzaj_slupa or ""]
+        else:   # słup z WT niewykorzystany - dane z WT, wiersz przekreślony
+            if pl2000:
+                xy = (round(s.y, miejsca), round(s.x, miejsca))      # X = północna, Y = wschodnia
+            else:
+                from .. import orientacje as _ori
+                lat, lon = _ori.pl2000_to_wgs84(s.x, s.y, _ori.pl2000_zone_from_easting(s.x))
+                xy = (round(lat, miejsca), round(lon, miejsca))
+            wartosci = [lp, s.miejscowosc or "", s.ulica or "-", "", "", nr_slupa(s.nr) if s.nr else "",
+                        xy[0], xy[1], None, None, ""]
         for k, v in enumerate(wartosci, start=1):
             c = ws.cell(r, k, v)
             if k in styl:
                 c._style = copy.copy(styl[k])
             if k in (7, 8):
-                c.number_format = "0." + "0" * cfg.miejsca_wgs84
+                c.number_format = "0." + "0" * miejsca
+            if w is None:
+                f = copy.copy(c.font)
+                c.font = Font(name=f.name, size=f.size, bold=f.bold, italic=f.italic, color=f.color, strike=True)
         ws.row_dimensions[r].height = wys
     ws.freeze_panes = "A2"
     ws.print_title_rows = "1:1"
