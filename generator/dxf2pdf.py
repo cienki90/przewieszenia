@@ -44,18 +44,79 @@ def pomin_niedrukowalne(doc) -> list:
     Zmiana dotyczy tylko pamięci, plik DXF nie jest zapisywany. Zwraca nazwy ukrytych warstw."""
     niedrukowalne = {w.dxf.name.lower() for w in doc.layers
                      if w.dxf.get("plot", 1) == 0 or w.dxf.name.lower() == "defpoints"}
-    if not niedrukowalne:
-        return []
     for arkusz in doc.layouts:
         if arkusz.name == "Model":
             continue
         for vp in arkusz.query("VIEWPORT"):
             if vp.dxf.layer.lower() in niedrukowalne:
                 vp.dxf.layer = "0"
+                vp.dxf.color = 0                    # znacznik: ramki nie drukujemy
     for w in doc.layers:
         if w.dxf.name.lower() in niedrukowalne:
             w.off()
+    _ramki_rzutni(doc)
     return sorted(niedrukowalne)
+
+
+def _ramki_rzutni(doc) -> int:
+    """Ramki rzutni - CAD drukuje obrys rzutni leżącej na drukowalnej warstwie, ezdxf go nie rysuje.
+    Dodaje prostokąt (w pamięci) na warstwie rzutni; pomija arkusz papieru (status 1 / id 1),
+    rzutnie z obrysem z innego obiektu i rzutnie przeniesione z warstw niedrukowalnych."""
+    n = 0
+    for arkusz in doc.layouts:
+        if arkusz.name == "Model":
+            continue
+        for vp in list(arkusz.query("VIEWPORT")):
+            if vp.dxf.get("id", 0) == 1 or vp.dxf.get("color", 256) == 0:
+                continue
+            if vp.dxf.get("clipping_boundary_handle", "0") not in ("0", "", None):
+                continue
+            w, h = vp.dxf.width / 2, vp.dxf.height / 2
+            if w <= 0 or h <= 0:
+                continue
+            x, y = vp.dxf.center.x, vp.dxf.center.y
+            arkusz.add_lwpolyline([(x - w, y - h), (x + w, y - h), (x + w, y + h), (x - w, y + h)], close=True,
+                                  dxfattribs={"layer": vp.dxf.layer})
+            n += 1
+    return n
+
+
+def _stany_warstw_odnosnikow(doc) -> int:
+    """Po wczytaniu odnośnika jego warstwy nazywają się „<odnośnik>$0$<warstwa>” i mają ustawienia
+    z pliku odnośnika; w rysunku głównym ustawienia tych warstw (wyłączona, zamrożona, bez
+    wydruku, kolor) zapisane są pod „<odnośnik>|<warstwa>” - przenosimy je na nowe warstwy."""
+    stany = {w.dxf.name.lower(): w for w in doc.layers if "|" in w.dxf.name}
+    n = 0
+    for w in doc.layers:
+        nazwa = w.dxf.name
+        if "$0$" not in nazwa:
+            continue
+        odn, _, war = nazwa.partition("$0$")
+        wzor = stany.get(f"{odn}|{war}".lower())
+        if wzor is None:
+            continue
+        w.dxf.plot = wzor.dxf.get("plot", 1)
+        w.dxf.flags = wzor.dxf.get("flags", 0)
+        w.dxf.color = wzor.dxf.get("color", 7)
+        n += 1
+    return n
+
+
+def _usun_odnosniki_niedrukowalne(doc) -> int:
+    """Wstawienia odnośników zewnętrznych (XREF) leżące na warstwach niedrukowalnych - usuwane
+    (w pamięci) przed wczytaniem odnośników, żeby nie trafiły na wydruk."""
+    niedrukowalne = {w.dxf.name.lower() for w in doc.layers
+                     if w.dxf.get("plot", 1) == 0 or w.dxf.name.lower() == "defpoints"}
+    odn = {b.name.lower() for b in doc.blocks if b.block_record.is_xref}
+    if not niedrukowalne or not odn:
+        return 0
+    n = 0
+    for blok in list(doc.blocks):
+        for e in list(blok.query("INSERT")):
+            if e.dxf.name.lower() in odn and e.dxf.layer.lower() in niedrukowalne:
+                blok.delete_entity(e)
+                n += 1
+    return n
 
 
 def _napraw_rzutnie(doc) -> int:
@@ -237,6 +298,7 @@ def _wczytaj_odnosniki(doc, dxf: str, folder: str | None = None, log=None) -> li
     from . import dwg as mod_dwg
 
     bledy = []
+    _usun_odnosniki_niedrukowalne(doc)
     tmp = tempfile.mkdtemp(prefix="xref_")
 
     def wczytaj(sciezka):
@@ -271,6 +333,7 @@ def _wczytaj_odnosniki(doc, dxf: str, folder: str | None = None, log=None) -> li
     finally:
         import shutil
         shutil.rmtree(tmp, ignore_errors=True)
+    _stany_warstw_odnosnikow(doc)
     if bledy and log:
         log("Nie wczytano odnośników zewnętrznych: " + "; ".join(bledy))
     return bledy
