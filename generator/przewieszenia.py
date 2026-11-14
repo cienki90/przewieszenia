@@ -25,7 +25,7 @@ try:  # uruchomienie jako część pakietu: python -m generator.pipeline / okno
     from . import rysunek as rysunek_mod
     from . import zestawienie as zestawienie_mod
     from .baza import Baza
-    from .geokod import Geokoder
+    from .geokod import Geokoder, skroc_ulice
     from .plan import Plan
     from .rysunek import SKALA_X, Dane, obwiednia, zbuduj
     from .zapis import Wyjscie
@@ -38,7 +38,7 @@ except ImportError:  # uruchomienie bezpośrednie: python generator/przewieszeni
     import rysunek as rysunek_mod
     import zestawienie as zestawienie_mod
     from baza import Baza
-    from geokod import Geokoder
+    from geokod import Geokoder, skroc_ulice
     from plan import Plan
     from rysunek import SKALA_X, Dane, obwiednia, zbuduj
     from zapis import Wyjscie
@@ -51,6 +51,7 @@ POLA = ["nr", "x", "y", "slup_l", "typ_l", "slup_p", "typ_p", "rozpietosc",
 POLA_Z_RYSUNKU = ("slup_l", "typ_l", "slup_p", "typ_p", "rozpietosc")
 # Pola, które użytkownik może ręcznie poprawić w CSV (opisowe + ewentualna korekta stacji/obwodu).
 POLA_Z_CSV = ("stacja", "obwod", "stacja2", "obwod2", "miejscowosc", "ulica")
+TOL_WT = 5.0        # [m] słup z tabeli WT = słup przęsła, gdy leży nie dalej (jak w kontroli zakresu WT)
 
 
 def _norm_stacja(st):
@@ -171,6 +172,9 @@ def main(argv=None):
     ap.add_argument("--adresy", default="uug,osm",
                     help="źródła nazw miejscowości/ulic z internetu: uug (GUGiK), osm (OpenStreetMap); "
                          "'brak' = bez internetu (domyślnie uug,osm)")
+    ap.add_argument("--wt", default=None,
+                    help="plik warunków technicznych (.xlsx/.xls) - miejscowość i ulica słupów przęsła "
+                         "z tabeli WT (pierwszeństwo przed internetem i plikiem opisów CSV)")
     ap.add_argument("--odswiez-adresy", action="store_true",
                     help="pobierz miejscowości i ulice ponownie dla wszystkich przewieszeń (nadpisuje CSV)")
     ap.add_argument("--nazwy", default=None,
@@ -223,6 +227,29 @@ def main(argv=None):
         # wspólna pamięć adresów programu + dawny plik pamięci obok planu (tylko odczyt)
         G = Geokoder(zrodla=a.adresy.lower().split(","),
                      dodatkowe_pamieci=[os.path.splitext(a.plan)[0] + "_adresy.json"])
+    # miejscowość i ulica z warunków technicznych: słup WT w miejscu słupa przęsła (do TOL_WT m)
+    adres_wt = None
+    if a.wt:
+        try:
+            from . import wt as wt_mod
+        except ImportError:          # bezpośrednie uruchomienie skryptu
+            import wt as wt_mod
+        slupy_wt = [s for s in wt_mod.wczytaj_wt(a.wt) if s.miejscowosc]
+        if not slupy_wt:
+            print(f"Uwaga: tabela WT {os.path.basename(a.wt)} nie ma miejscowości - nazwy z internetu.",
+                  file=sys.stderr)
+        else:
+            najblizszy_wt = wt_mod._szukacz(slupy_wt, TOL_WT)
+
+            def adres_wt(z):
+                """(miejscowość, ulica) ze słupa WT przy lewym albo prawym słupie przęsła; None = brak."""
+                for s in (z.slup_l, z.slup_p):
+                    w = najblizszy_wt((s.x, s.y))
+                    if w is not None:
+                        return w.miejscowosc.strip(), skroc_ulice(w.ulica)
+                return None
+    n_wt = 0
+    zmienione_wt = []
     # ręczne poprawki nazw miejscowości stacji - uzupełniają miejscowość, gdy geokodowanie jej nie dało
     nazwy_stacji = {}
     if a.nazwy:
@@ -279,8 +306,17 @@ def main(argv=None):
                               f"- użyto stacji z zestawienia (popraw CSV, jeśli to pomyłka).")
                 P.ostrzezenia.append(self_ostrz)
             auto["stacja"] = "ST " + pewna
+        # miejscowość i ulica z warunków technicznych - urzędowe nazwy z wniosku, pierwszeństwo przed
+        # internetem i wcześniejszym CSV (pusta ulica w WT = miejscowość bez ulic)
+        z_wt = adres_wt(z) if adres_wt else None
+        if z_wt:
+            n_wt += 1
+            if r and (auto["miejscowosc"], auto["ulica"]) != z_wt and (auto["miejscowosc"] or auto["ulica"]):
+                zmienione_wt.append(f"{z.nr}: {auto['miejscowosc']} {auto['ulica']}".rstrip()
+                                    + f" -> {z_wt[0]} {z_wt[1]}".rstrip())
+            auto["miejscowosc"], auto["ulica"] = z_wt
         # miejscowość i ulica z internetu: gdy brak wiersza w CSV, pusta miejscowość lub --odswiez-adresy
-        if G and (a.odswiez_adresy or not r or not auto["miejscowosc"]):
+        elif G and (a.odswiez_adresy or not r or not auto["miejscowosc"]):
             adr = G.adres(z.x, z.y)
             if adr:
                 auto["miejscowosc"] = adr[0]
@@ -345,6 +381,11 @@ def main(argv=None):
 
     W.zapisz(wynik, usun_puste_arkusze=not a.zostaw_puste_arkusze)
     zapisz_opisy(opisy_path, wiersze)
+    if a.wt:
+        print(f"Miejscowości i ulice z warunków technicznych: {n_wt} z {len(lista)} przewieszeń"
+              + (f" (pozostałe: {'z internetu' if G else 'z pliku opisów'})" if n_wt < len(lista) else "") + ".")
+        for zm_ in zmienione_wt:
+            print(f"  zmieniono wg WT - przewieszenie {zm_}")
     if G:
         G.zapisz()
         if G.bledy:
