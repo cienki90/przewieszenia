@@ -137,6 +137,13 @@ class Aplikacja:
         self.ppw_renumer_dxf = tk.StringVar()              # DXF do renumeracji numerów rysunku
         # opcje zakładek (strony-przekładki: nr stacji / miejscowość / WT)
         self.zakladki_zestawienie = tk.StringVar()         # xlsx (puste = z Rysunków stałych)
+        # FINAŁ - kompletny PDF dla stacji
+        self.final_opisy = tk.StringVar()                  # folder z opisami <nr>.docx
+        self.final_rysunki = tk.StringVar()                # folder z rysunkami stałymi <nr>.dwg
+        self.final_pzt = tk.StringVar()                    # plik PZT
+        self.final_przewieszenia = tk.StringVar()          # rysunek przewieszeń
+        self.final_stacje = tk.StringVar()                 # numery stacji (puste = wszystkie)
+        self.final_jeden_plik = tk.BooleanVar(value=False)
         self.zakladki_format = tk.StringVar(value="docx")  # przełącznik formatu: docx / pdf
 
         # numery WT (ręcznie) - zapamiętywane między uruchomieniami; pusty moduł dostaje
@@ -233,7 +240,8 @@ class Aplikacja:
                       "orient_zasiegi", "orient_podklad", "orient_pdf", "pdf_folder", "pzt_wzorzec", "pzt_zaklad", "wt_plik",
                       "opisy_szablon", "opisy_zestawienie", "opisy_obliczenia", "ppw_szablon", "ppw_zestawienie",
                       "ppw_zestawienie_stacji", "ppw_renumer_dxf", "zakladki_zestawienie", "zakladki_format",
-                      "adresy_on"):
+                      "adresy_on", "final_opisy", "final_rysunki", "final_pzt", "final_przewieszenia",
+                      "final_stacje", "final_jeden_plik"):
             pola[nazwa] = getattr(self, nazwa)
         for m, v in self.wt.items():
             pola[f"wt_{m}"] = v
@@ -337,7 +345,8 @@ class Aplikacja:
         # czyszczone są pola plików; opcje i numery WT zostają jak były
         pliki = ("katalog", "obl_zestawienie", "orient_szablon", "orient_zasiegi", "pzt_wzorzec", "wt_plik",
                  "opisy_szablon", "opisy_zestawienie", "opisy_obliczenia", "ppw_szablon", "ppw_zestawienie",
-                 "ppw_zestawienie_stacji", "ppw_renumer_dxf", "zakladki_zestawienie", "pdf_folder", "wt_plan")
+                 "ppw_zestawienie_stacji", "ppw_renumer_dxf", "zakladki_zestawienie", "pdf_folder", "wt_plan",
+                 "final_opisy", "final_rysunki", "final_pzt", "final_przewieszenia", "final_stacje")
         for k, v in self._pola_projektu().items():
             if k.startswith("plik_") or k in pliki:
                 v.set("")
@@ -383,6 +392,8 @@ class Aplikacja:
             ("ppw", "PPW", [("Zestawienie", self.ppw_zestawienie), ("Miejscowości", self.ppw_zestawienie_stacji),
                             ("Szablon PPW", self.ppw_szablon), ("Plik do renumeracji", self.ppw_renumer_dxf)]),
             ("zakladki", "Zakładki", [("Zestawienie", self.zakladki_zestawienie)]),
+            ("final", "FINAŁ", [("Opisy (folder)", self.final_opisy), ("Rysunki stałe (folder)", self.final_rysunki),
+                                ("Plik PZT", self.final_pzt), ("Rysunek przewieszeń", self.final_przewieszenia)]),
         ]
 
     def _pliki_firmy(self):
@@ -699,6 +710,7 @@ class Aplikacja:
         self._zakladka_przewieszenia()
         self._zakladka_ppw()
         self._zakladka_zakladki()
+        self._zakladka_final()
 
         start = self.ust.get("modul")
         self._pokaz(start if start in self._strony else next(iter(self._strony)))
@@ -803,6 +815,17 @@ class Aplikacja:
                 ile += 1
                 if hasattr(self, "log"):
                     self._pisz(f"PODPIĘTO z folderu projektu: {klucz} ← {os.path.relpath(plik, proj)}")
+        for klucz in uklad.FOLDERY:
+            v = pola.get(klucz)
+            if v is None or str(v.get()).strip():
+                continue
+            folder = uklad.znajdz_folder(proj, klucz)
+            if folder:
+                v.set(os.path.normpath(folder))
+                self._podpiete[str(v)] = v.get()
+                ile += 1
+                if hasattr(self, "log"):
+                    self._pisz(f"PODPIĘTO z folderu projektu: {klucz} ← {os.path.relpath(folder, proj)}")
         if ile:
             self._zapisz_projekt()
         return ile
@@ -1252,6 +1275,55 @@ class Aplikacja:
                 return
         self._uruchom(zest, ("zakladki",), wt=self.zakladki_wt.get())
 
+    def _zakladka_final(self):
+        f = self._strona("final", "FINAŁ", "FINAŁ (kompletny PDF projektu)",
+                         "Kompletny PDF dla każdej stacji trafo, w kolejności: 1. opis techniczny, 2. plan "
+                         "orientacyjny, 3. arkusze PZT stacji, 4. rysunki 3.1–3.4, 5. przewieszenia tej stacji. "
+                         "Pliki wypełniają się same z folderu projektu; wynik trafia do folderu PDF.")
+        self._pole_folderu(f, "Opisy (folder):", self.final_opisy, "Folder z opisami <nr>.docx")
+        self._podpowiedz(f, "(opisy stacji „<nr>.docx” — np. opisy\\opisy; do PDF zapisuje je Microsoft Word)")
+        self._pole_folderu(f, "Rysunki stałe (folder):", self.final_rysunki, "Folder z rysunkami stałymi <nr>.dwg")
+        self._podpowiedz(f, "(rysunki stacji „<nr>.dwg” — arkusz „1” to plan orientacyjny, „3.1”–„3.4” rysunki)")
+        self._pole_pliku(f, "Plik PZT:", self.final_pzt, "Wybierz plik PZT (DXF/DWG)")
+        self._pole_pliku(f, "Rysunek przewieszeń:", self.final_przewieszenia, "Wybierz rysunek przewieszeń (DXF/DWG)")
+        self._podpowiedz(f, "(„!Przewieszenia …” — przewieszenia trafiają do stacji, gdy rysunek powstał w tej "
+                            "wersji programu; starszy utwórz ponownie)")
+        box = self._sekcja(f, "Stacje")
+        r = ttk.Frame(box)
+        r.pack(fill="x", pady=4)
+        ttk.Label(r, text="Numery stacji:", width=24).pack(side="left")
+        ttk.Entry(r, textvariable=self.final_stacje).pack(side="left", fill="x", expand=True, padx=6)
+        ttk.Button(r, text="Wszystkie z projektu", command=self._final_wczytaj_stacje).pack(side="left")
+        self._podpowiedz(box, "(np. „565, 1495”; puste = wszystkie stacje z opisów i rysunków stałych)")
+        ttk.Checkbutton(box, text="Jeden PDF dla wszystkich wybranych stacji (zamiast osobnego pliku na stację)",
+                        variable=self.final_jeden_plik).pack(anchor="w")
+        self._pole_folderu(box, "Folder na PDF:", self.pdf_folder, "Folder na PDF")
+        self._przycisk_generuj(f, "Utwórz komplet PDF", self._start_final)
+
+    def _final_wczytaj_stacje(self):
+        from . import final
+        z = final.Zrodla(opisy=self.final_opisy.get().strip() or None,
+                         rysunki_stale=self.final_rysunki.get().strip() or None)
+        nr = final.stacje(z)
+        self.final_stacje.set(", ".join(str(n) for n in nr))
+        if not nr:
+            messagebox.showinfo(TYTUL, "W folderach opisów i rysunków stałych nie ma plików stacji "
+                                       "(<nr>.docx / <nr>.dwg).", parent=self.root)
+
+    def _start_final(self):
+        if not any(os.path.isdir(v.get().strip()) for v in (self.final_opisy, self.final_rysunki)) and \
+                not os.path.isfile(self.final_pzt.get().strip()):
+            messagebox.showwarning(TYTUL, "Wskaż folder opisów, folder rysunków stałych albo plik PZT.",
+                                   parent=self.root)
+            return
+        for v, opis in ((self.final_pzt, "Plik PZT"), (self.final_przewieszenia, "Rysunek przewieszeń")):
+            if v.get().strip() and not os.path.isfile(v.get().strip()):
+                messagebox.showwarning(TYTUL, f"{opis} nie istnieje.", parent=self.root)
+                return
+        plik = next((p for p in (self.final_pzt.get().strip(), self.final_przewieszenia.get().strip())
+                     if p and os.path.isfile(p)), None) or os.path.join(self.projekt.get() or ".", "projekt")
+        self._uruchom(plik, ("final",))
+
     # ---------------------------------------------------------------- dół okna
     def _dol(self, root):
         dol = ttk.Frame(root, padding=(20, 6, 20, 6))
@@ -1518,6 +1590,12 @@ class Aplikacja:
             zakladki_zestawienie=(self.zakladki_zestawienie.get().strip() or None),
             zakladki_format=(self.zakladki_format.get().strip() or "docx"),
             zakladki_wt=self.zakladki_wt.get().strip(),
+            final_opisy=(self.final_opisy.get().strip() or None),
+            final_rysunki=(self.final_rysunki.get().strip() or None),
+            final_pzt=(self.final_pzt.get().strip() or None),
+            final_przewieszenia=(self.final_przewieszenia.get().strip() or None),
+            final_stacje=self.final_stacje.get().strip(),
+            final_jeden_plik=self.final_jeden_plik.get(),
             eksport_dwg=self.eksport_dwg.get(),
             nazwy_plik=self._plik_nazw() if os.path.isfile(self._plik_nazw() or "") else None,
             log=lambda t="": self._kolejka.put(("log", t)),

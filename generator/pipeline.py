@@ -39,7 +39,7 @@ from . import zestawienie as mod_zestawienie
 # nazwy kroków (kolejność ma znaczenie) - „numeracja” jako pierwszy (projektant najpierw
 # numeruje słupy w planie, potem robi resztę; krok tworzy osobny plik „!ponumerowany <plan>.dxf”)
 KROKI = ("numeracja", "przewieszenia", "zestawienie", "obliczenia", "orientacje", "pzt", "opisy",
-         "ppw", "zakladki", "ppw_renumer", "pdf")
+         "ppw", "zakladki", "ppw_renumer", "pdf", "final")
 # moduły wybierane w CLI przez --tylko (jeden na uruchomienie); „ppw_renumer” to osobna
 # akcja wywoływana przez --ppw-renumeruj
 MODULY_CLI = tuple(k for k in KROKI if k != "ppw_renumer")
@@ -98,6 +98,13 @@ class Opcje:
     # nazwa firmy (inwestora): pliki z innych etapów projektu [(opis, ścieżka)] porównywane z plikami
     # wejściowymi uruchamianych kroków (okno podaje tu pliki ze wszystkich modułów)
     firma_pliki: tuple = ()
+    # FINAŁ - kompletny PDF dla stacji (opis, plan orientacyjny, PZT, rysunki 3.1-3.4, przewieszenia)
+    final_opisy: str | None = None               # folder z opisami <nr>.docx
+    final_rysunki: str | None = None             # folder z rysunkami stałymi <nr>.dwg/.dxf
+    final_pzt: str | None = None                 # plik PZT
+    final_przewieszenia: str | None = None       # rysunek przewieszeń (+ „….stacje.json”)
+    final_stacje: str = ""                       # numery stacji („565, 1495”); puste = wszystkie
+    final_jeden_plik: bool = False               # wszystkie wybrane stacje w jednym PDF
 
 
 class _Przerwano(Exception):
@@ -524,6 +531,8 @@ def _uruchom_kroki(opcje: Opcje) -> Wynik:
                 r = _krok_ppw(opcje, wyj["ppw"], zestawienie_plik, orient_zest)
             elif krok == "zakladki":
                 r = _krok_zakladki(opcje, wyj["zakladki"], orient_zest)
+            elif krok == "final":
+                r = _krok_final(opcje, katalog)
             elif krok == "ppw_renumer":
                 r = _krok_ppw_renumer(opcje, plan, wyj["ppw_renumer"])
             elif krok == "pdf":
@@ -877,6 +886,24 @@ def _krok_ppw(opcje: Opcje, wyjscie: str, zestawienie_plik, orient_zest) -> Wyni
     ok = bool(plik) and os.path.exists(plik)
     return WynikKroku("ppw", ok=ok, wyjscie=plik if ok else None, raport=raport,
                       blad=None if ok else "Nie utworzono pliku PPW .docx.")
+
+
+def _krok_final(opcje: Opcje, katalog: str) -> WynikKroku:
+    """FINAŁ: kompletny PDF dla każdej stacji (albo jeden dla wszystkich wybranych) w folderze PDF."""
+    from . import final as mod_final
+    zrodla = mod_final.Zrodla(opisy=opcje.final_opisy, rysunki_stale=opcje.final_rysunki,
+                              pzt=opcje.final_pzt, przewieszenia=opcje.final_przewieszenia)
+    folder = opcje.pdf_folder or os.path.join(katalog, "PDF")
+    nazwa = os.path.basename(os.path.normpath(katalog))
+
+    def uruchom():
+        return mod_final.zloz(zrodla, folder, mod_final.parsuj_stacje(opcje.final_stacje), opcje.final_jeden_plik,
+                              nazwa_projektu=nazwa, log=print)
+    (wynik, raport) = _przechwyc(uruchom)
+    raport = (raport + "\n" + "\n".join(f"Uwaga: {u}" for u in wynik.uwagi)).strip()
+    ok = bool(wynik.pliki)
+    return WynikKroku("final", ok=ok, wyjscie=folder if ok else None, raport=raport,
+                      dodatkowe=list(wynik.pliki), blad=None if ok else "Nie złożono żadnego PDF.")
 
 
 def _krok_zakladki(opcje: Opcje, wyjscie: str, orient_zest) -> WynikKroku:

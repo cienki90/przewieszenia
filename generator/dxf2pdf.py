@@ -163,23 +163,22 @@ def zaokraglij_wektory(pdf) -> None:
             pdf.update_stream(xref, _LICZBA.sub(krotsza, tresc))
 
 
-def dxf_do_pdf(dxf: str, pdf_wyj: str | None = None, folder_obrazow: str | None = None) -> tuple[str, int]:
-    """Jeden plik DXF -> PDF (strona na każdy arkusz). Zwraca (ścieżka PDF, liczba stron).
-    `folder_obrazow` - gdzie jeszcze szukać obrazu podkładu (np. folder oryginalnego DWG)."""
+def arkusze_do_pdf(dxf: str, folder_obrazow: str | None = None, wybierz=None):
+    """Rysuje arkusze (layouty papieru) rysunku do dokumentu PDF w pamięci.
+    `wybierz(nazwa) -> bool` - które arkusze (None = wszystkie). Zwraca (dokument pymupdf, [nazwy stron])."""
     pymupdf = _biblioteki()
     from ezdxf import recover
     from ezdxf.addons.drawing import Frontend, RenderContext, config, layout
     from ezdxf.addons.drawing import pymupdf as backend_pdf
 
-    pdf_wyj = pdf_wyj or os.path.splitext(dxf)[0] + ".pdf"
     doc, _audyt = recover.readfile(dxf)
     _napraw_obrazy(doc, dxf, folder_obrazow)
     pomin_niedrukowalne(doc)
     _napraw_rzutnie(doc)
-    konf =config.Configuration(image_policy=config.ImagePolicy.DISPLAY)
-    wynik = pymupdf.open()
+    konf = config.Configuration(image_policy=config.ImagePolicy.DISPLAY)
+    wynik, nazwy = pymupdf.open(), []
     for nazwa in doc.layout_names_in_taborder():
-        if nazwa == "Model":
+        if nazwa == "Model" or (wybierz is not None and not wybierz(nazwa)):
             continue
         arkusz = doc.paperspace(nazwa)
         backend = backend_pdf.PyMuPdfBackend()
@@ -187,6 +186,15 @@ def dxf_do_pdf(dxf: str, pdf_wyj: str | None = None, folder_obrazow: str | None 
         strona = layout.Page.from_dxf_layout(arkusz)
         with pymupdf.open("pdf", backend.get_pdf_bytes(strona)) as jedna:
             wynik.insert_pdf(jedna)
+        nazwy.append(nazwa)
+    return wynik, nazwy
+
+
+def dxf_do_pdf(dxf: str, pdf_wyj: str | None = None, folder_obrazow: str | None = None) -> tuple[str, int]:
+    """Jeden plik DXF -> PDF (strona na każdy arkusz). Zwraca (ścieżka PDF, liczba stron).
+    `folder_obrazow` - gdzie jeszcze szukać obrazu podkładu (np. folder oryginalnego DWG)."""
+    pdf_wyj = pdf_wyj or os.path.splitext(dxf)[0] + ".pdf"
+    wynik, _nazwy = arkusze_do_pdf(dxf, folder_obrazow)
     if wynik.page_count == 0:
         raise ValueError("rysunek nie ma arkuszy (layoutów papieru)")
     obrazy_do_jpg(wynik)

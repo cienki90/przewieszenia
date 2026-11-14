@@ -13,6 +13,7 @@ w wierszu poleceń) — program nie ma łańcucha „wszystko naraz”:
 | **Arkusze PZT** | komplet arkuszy A3 1:1000 dla każdej stacji (minimalna liczba, zakład 50 m) | `!PZT <plan>.dxf` |
 | **Opisy techniczne** | osobny opis techniczny `.docx` dla każdej stacji (z szablonu Word) | `opisy/<nr>.docx` |
 | **Zakładki** | strony-przekładki (nr stacji / miejscowość / WT) dla każdej stacji | `zakladki.docx` lub `zakladki.pdf` |
+| **FINAŁ** | kompletny PDF dla stacji: opis (przez Microsoft Word), plan orientacyjny, arkusze PZT, rysunki 3.1–3.4, przewieszenia stacji; osobno na stację albo jeden plik | `PDF/FINAŁ ST <nr>.pdf` |
 
 > **Podgląd i przesuwanie arkuszy PZT.** W zakładce „Arkusze PZT” przycisk „Podgląd i przesuwanie
 > arkuszy…” otwiera (tylko na żądanie) mapę poglądową wybranej stacji: zasięg, trasę `!tele` i arkusze
