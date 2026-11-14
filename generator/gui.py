@@ -380,7 +380,7 @@ class Aplikacja:
         for _klucz, modul, pola in self._pola_modulow():
             for etykieta, zmienna in pola:
                 p = zmienna.get().strip()
-                if p and os.path.isfile(p) and os.path.splitext(p)[1].lower() in (".dxf", ".dwg", ".docx"):
+                if p and os.path.isfile(p) and os.path.splitext(p)[1].lower() in (".dxf", ".dwg", ".docx", ".xlsx"):
                     pliki.append((f"{modul} - {etykieta}", p))
         wt = self.wt_plik.get().strip()
         if wt and os.path.isfile(wt):
@@ -1580,6 +1580,12 @@ class Aplikacja:
             return
         udane = [k for k in wynik.kroki if k.ok]
         nieudane = [k for k in wynik.kroki if not k.ok]
+        # „Otwórz folder z wynikami” ma otwierać miejsce, w którym wynik faktycznie powstał (opisy
+        # trafiają do folderu szablonu, a nie obok zestawienia z Rysunków stałych)
+        for k in reversed(udane):
+            if k.wyjscie and os.path.exists(k.wyjscie):
+                self._ostatni_katalog = k.wyjscie if os.path.isdir(k.wyjscie) else os.path.dirname(k.wyjscie)
+                break
         self._pisz("\n" + "=" * 50)
         self._pisz("PODSUMOWANIE:")
         for k in wynik.kroki:
