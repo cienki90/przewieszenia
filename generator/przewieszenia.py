@@ -143,6 +143,22 @@ def zapisz_opisy(path, wiersze):
         w.writerows(wiersze)
 
 
+def plik_stacji_arkuszy(wynik: str) -> str:
+    """Plik obok rysunku przewieszeń z przypisaniem arkuszy do stacji („… .stacje.json”) - na
+    rysunku tego nie da się odczytać (teksty czcionką kreskową), a FINAŁ składa PDF per stacja."""
+    return os.path.splitext(wynik)[0] + ".stacje.json"
+
+
+def zapisz_stacje_arkuszy(wynik: str, stacje_arkuszy: dict) -> None:
+    import json
+    try:
+        with open(plik_stacji_arkuszy(wynik), "w", encoding="utf-8") as f:
+            json.dump({"arkusze": {k: list(dict.fromkeys(v)) for k, v in stacje_arkuszy.items()}}, f,
+                      ensure_ascii=False, indent=1)
+    except OSError as ex:
+        print(f"Uwaga: nie zapisano przypisania arkuszy do stacji ({ex}).", file=sys.stderr)
+
+
 def main(argv=None):
     for strumien in (sys.stdout, sys.stderr):  # konsola Windows (cp1252/cp852) - polskie znaki
         try:
@@ -272,6 +288,7 @@ def main(argv=None):
     DY_GORA, DY_DOL = 8.37, -9.51   # położenie rysunków względem środka widoku arkusza
     wiersze = []
     rozmieszczenie = []             # (nr przewieszenia, nazwa arkusza)
+    stacje_arkuszy = {}             # nazwa arkusza -> [stacja] (zapisywane obok wyniku - dla FINAŁU)
 
     def srodek(i):
         if W.arkusze:
@@ -369,17 +386,20 @@ def main(argv=None):
                 P.ostrzezenia.append(f"Przewieszenie {z.nr} nie mieści się w całości w arkuszu {nazwa}")
             W.dodaj(R, cx + (v0 + v1) / 2, cy - (u0 + u1) / 2, rot=90)
             rozmieszczenie.append((z.nr, nazwa))
+            stacje_arkuszy.setdefault(nazwa, []).append(st)
             ark, slot = ark + 1, 0
         else:
             cx, cy, nazwa = srodek(ark)
             W.dodaj(R, cx - w / 2, cy + (DY_GORA if slot == 0 else DY_DOL), rot=0)
             rozmieszczenie.append((z.nr, nazwa))
+            stacje_arkuszy.setdefault(nazwa, []).append(st)
             if slot == 0:
                 slot = 1
             else:
                 ark, slot = ark + 1, 0
 
     W.zapisz(wynik, usun_puste_arkusze=not a.zostaw_puste_arkusze)
+    zapisz_stacje_arkuszy(wynik, stacje_arkuszy)
     zapisz_opisy(opisy_path, wiersze)
     if a.wt:
         print(f"Miejscowości i ulice z warunków technicznych: {n_wt} z {len(lista)} przewieszeń"

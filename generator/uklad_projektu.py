@@ -72,7 +72,21 @@ UKLAD = {
     "ppw_renumer_dxf": ("", [lambda n: _np.czy_pzt(n) and _rysunek(n)]),
     "zakladki_zestawienie": ("rysunki stałe/rysunki stałe", [lambda n: n == "zestawienie_stacji.xlsx"]),
     "pzt_wzorzec": ("", []),             # puste = wzorzec z planu - nie podpinamy
+    "final_pzt": ("", [lambda n: _np.czy_pzt(n) and _rysunek(n)]),
+    "final_przewieszenia": ("", [lambda n: _rysunek(n) and n.startswith(_np.PRZEWIESZENIA.lower() + " ")]),
 }
+# pola z FOLDEREM: pole -> podfolder z układu (wpisywany, gdy istnieje)
+FOLDERY = {
+    "final_opisy": "opisy/opisy",
+    "final_rysunki": "rysunki stałe/rysunki stałe",
+}
+
+
+def znajdz_folder(projekt: str, pole: str) -> str | None:
+    if not projekt or pole not in FOLDERY:
+        return None
+    f = os.path.join(projekt, *FOLDERY[pole].split("/"))
+    return f if os.path.isdir(f) else None
 GLEBOKOSC = 2
 
 
