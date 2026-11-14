@@ -30,6 +30,7 @@ import sys
 PLIKI_PROGRAMU = [
     "generator/",
     "generator_gui.py",
+    "generator_gui.pyw",
     "generator_cli.py",
     "uruchom.bat",
     "generuj.bat",
