@@ -431,6 +431,9 @@ def _uruchom_kroki(opcje: Opcje) -> Wynik:
     tylko_pdf = set(kroki) <= {"pdf"} and os.path.isdir(plan)
     if tylko_pdf:
         return Wynik(kroki=[_krok_pdf(plan, opcje)])
+    # PDF z JEDNEGO rysunku (np. zbiorczy PDF arkuszy PZT wszystkich stacji)
+    if set(kroki) <= {"pdf"} and os.path.isfile(plan) and plan.lower().endswith((".dxf", ".dwg")):
+        return Wynik(kroki=[_krok_pdf(os.path.dirname(plan), opcje, pliki=[plan])])
     if not os.path.isfile(plan):
         if tylko_obliczenia_z_zest and os.path.isfile(opcje.obliczenia_zestawienie):
             plan = opcje.obliczenia_zestawienie
@@ -754,12 +757,12 @@ def _krok_orientacje(szablon: str, wyjscie_dir: str, opcje: Opcje, plan_slupow=N
                                            "(czy rysunek zawiera opisy STACJA TRAFO i obrysy !trafo?).")
 
 
-def _krok_pdf(folder: str, opcje: Opcje) -> WynikKroku:
+def _krok_pdf(folder: str, opcje: Opcje, pliki=None) -> WynikKroku:
     """PDF z gotowych rysunków: każdy DXF/DWG z folderu -> PDF (strona na arkusz), w folderze
     opcje.pdf_folder albo obok rysunku. Pliki DWG są najpierw zamieniane na tymczasowy DXF
     (PDF dostaje nazwę oryginału, podkład szukany w folderze oryginału)."""
-    pliki = sorted(os.path.join(folder, f) for f in os.listdir(folder)
-                   if f.lower().endswith((".dxf", ".dwg")))
+    pliki = list(pliki) if pliki else sorted(os.path.join(folder, f) for f in os.listdir(folder)
+                                             if f.lower().endswith((".dxf", ".dwg")))
     # ten sam rysunek w DXF i DWG - wystarczy jeden (DXF)
     dxf_nazwy = {os.path.splitext(p)[0].lower() for p in pliki if p.lower().endswith(".dxf")}
     pliki = [p for p in pliki if p.lower().endswith(".dxf") or os.path.splitext(p)[0].lower() not in dxf_nazwy]

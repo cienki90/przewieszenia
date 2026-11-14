@@ -1085,6 +1085,11 @@ class Aplikacja:
                   style="Hint.TLabel").pack(side="left")
         ttk.Button(f, text="Nazwy miejscowości…", command=self._nazwy_miejscowosci).pack(anchor="w", pady=(10, 0))
         self._przycisk_generuj(f, "Utwórz arkusze PZT", lambda: self._start_modul("pzt"))
+        r = ttk.Frame(f)
+        r.pack(anchor="w", pady=(10, 0))
+        ttk.Button(r, text="Zrób zbiorcze PDF", command=self._pdf_zbiorczy_pzt).pack(side="left")
+        ttk.Label(r, text="(jeden PDF ze wszystkimi arkuszami PZT wszystkich stacji trafo - z gotowego pliku "
+                          "„!PZT …”, do folderu PDF projektu)").pack(side="left", padx=6)
 
     # ---- ręczne poprawki nazw miejscowości (okno „Nazwy miejscowości…”) ----
     def _plik_nazw(self):
@@ -1115,6 +1120,24 @@ class Aplikacja:
         zest = next((p.strip() for p in kandydaci if p and os.path.isfile(p.strip())), None)
         from .okno_nazw import OknoNazw
         OknoNazw(self.root, csv_nazw, zest, log=self._pisz)
+
+    def _pdf_zbiorczy_pzt(self):
+        """Jeden PDF z gotowego pliku arkuszy PZT (wszystkie stacje) - do folderu PDF projektu."""
+        from . import uklad_projektu as uklad
+        proj = self.projekt.get().strip() or self.katalog.get().strip()
+        plik = next((p for p in (self.final_pzt.get().strip(), uklad.znajdz(proj, "final_pzt") if proj else None)
+                     if p and os.path.isfile(p)), None)
+        if not plik:
+            plik = filedialog.askopenfilename(parent=self.root, title="Plik arkuszy PZT (DXF/DWG)",
+                                              initialdir=proj or None,
+                                              filetypes=[("Rysunki", "*.dwg *.dxf"), ("Wszystkie", "*.*")])
+            if not plik:
+                return
+        plik = os.path.normpath(plik)
+        if not self.pdf_folder.get().strip() and proj:
+            self.pdf_folder.set(os.path.join(proj, "PDF"))
+        self._pisz(f"Zbiorczy PDF arkuszy PZT z: {plik}")
+        self._uruchom(plik, ("pdf",))
 
     def _pdf_z_gotowych(self):
         """PDF z istniejącego folderu rysunków (np. „rysunki stałe”) - bez generowania ich od nowa."""
