@@ -248,8 +248,8 @@ def parsuj_stacje(tekst: str) -> list[int] | None:
 
 
 def pdf_przewieszen(przewieszenia: str, folder_wyj: str, log=print) -> Wynik:
-    """PDF-y rysunku przewieszeń (jak w FINALE): osobny „Przewieszenia ST <nr>.pdf” dla każdej stacji
-    (arkusze przypisane w „….stacje.json”) i zbiorczy PDF ze wszystkimi arkuszami."""
+    """PDF-y rysunku przewieszeń (jak w FINALE): osobny „<nr>p.pdf” dla każdej stacji (skrócony numer,
+    np. 856p.pdf; arkusze przypisane w „….stacje.json”). Bez przypisania - jeden PDF z całego rysunku."""
     import pymupdf
     wynik = Wynik()
     os.makedirs(folder_wyj, exist_ok=True)
@@ -259,27 +259,27 @@ def pdf_przewieszen(przewieszenia: str, folder_wyj: str, log=print) -> Wynik:
         dok, nazwy = rys.strony(przewieszenia)
         if not nazwy:
             raise ValueError("W rysunku przewieszeń nie ma arkuszy do wydruku.")
-        plik = os.path.join(folder_wyj, os.path.splitext(os.path.basename(przewieszenia))[0] + ".pdf")
-        dok.save(plik, garbage=3, deflate=True)
-        wynik.pliki.append(plik)
-        log(f"  wszystkie: {len(nazwy)} ark. -> {os.path.basename(plik)}")
         przew_stacje = _stacje_przewieszen(przewieszenia)
         if przew_stacje is None:
-            wynik.uwagi.append("Brak pliku „….stacje.json” - powstał tylko PDF zbiorczy "
+            # bez przypisania do stacji - jeden PDF z całego rysunku
+            plik = os.path.join(folder_wyj, os.path.splitext(os.path.basename(przewieszenia))[0] + ".pdf")
+            dok.save(plik, garbage=3, deflate=True)
+            wynik.pliki.append(plik)
+            wynik.uwagi.append("Brak pliku „….stacje.json” - powstał jeden PDF z całego rysunku "
                                "(utwórz przewieszenia ponownie, żeby podzielić je na stacje).")
             return wynik
         for nr in sorted({n for st in przew_stacje.values() for n in st}):
             jedna = pymupdf.open()
             ile = rys.dolacz(jedna, przewieszenia, lambda n, nr=nr: nr in przew_stacje.get(n, set()))
             if ile:
-                plik = os.path.join(folder_wyj, f"Przewieszenia ST {nr}.pdf")
+                plik = os.path.join(folder_wyj, f"{nr}p.pdf")       # np. 856p.pdf
                 jedna.save(plik, garbage=3, deflate=True)
                 wynik.pliki.append(plik)
                 log(f"  ST {nr}: {ile} ark.")
             jedna.close()
         bez = [n for n in nazwy if not przew_stacje.get(n)]
         if bez:
-            wynik.uwagi.append("Arkusze bez stacji (tylko w PDF zbiorczym): " + ", ".join(bez))
+            wynik.uwagi.append("Arkusze bez przypisanej stacji (pominięte w PDF): " + ", ".join(bez))
     finally:
         for d, _n in rys.pdf.values():
             d.close()
