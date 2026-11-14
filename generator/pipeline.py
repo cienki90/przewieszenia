@@ -971,6 +971,10 @@ def _krok_zakladki(opcje: Opcje, wyjscie: str, orient_zest) -> WynikKroku:
     # dopasuj rozszerzenie pliku wynikowego do wybranego formatu
     rdzen = os.path.splitext(wyjscie)[0]
     wyjscie = rdzen + "." + ("pdf" if fmt == "pdf" else "docx")
+    if fmt == "pdf":      # PDF domyślnie do folderu „PDF” (wskazanego albo w katalogu wyników)
+        folder = opcje.pdf_folder or os.path.join(os.path.dirname(wyjscie), "PDF")
+        os.makedirs(folder, exist_ok=True)
+        wyjscie = os.path.join(folder, os.path.basename(wyjscie))
 
     def uruchom():
         return mod_zakladki.generuj(zestawienie, wyjscie, format=fmt,
