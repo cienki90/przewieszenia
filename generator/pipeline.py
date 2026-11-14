@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import argparse
 import io
+import functools
+import operator
 import os
 import sys
 import tempfile
@@ -346,7 +348,7 @@ def uruchom(opcje: Opcje) -> Wynik:
     # bez layoutu-wzorca „a”
     if set(opcje.kroki) <= {"pdf"} and opcje.plan and os.path.isfile(opcje.plan)             and opcje.plan.lower().endswith((".dxf", ".dwg")):
         return Wynik(kroki=[_krok_pdf(os.path.dirname(opcje.plan), opcje, pliki=[opcje.plan],
-                                      wybierz=lambda n: n != mod_pzt.NAZWA_WZORCA)])
+                                      wybierz=functools.partial(operator.ne, mod_pzt.NAZWA_WZORCA))])
     # nazwa firmy w plikach wejściowych kroków i w innych etapach projektu - przed konwersją DWG,
     # żeby w komunikacie były prawdziwe nazwy plików
     przerwano = _sprawdz_firme(opcje)

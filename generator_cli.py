@@ -12,4 +12,6 @@ import sys
 from generator.pipeline import main
 
 if __name__ == "__main__":
+    import multiprocessing
+    multiprocessing.freeze_support()   # rysowanie PDF w kilku procesach (także w .exe)
     sys.exit(main())
