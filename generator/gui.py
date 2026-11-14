@@ -107,7 +107,7 @@ class Aplikacja:
         self.we = {k: tk.StringVar() for k in pipeline.KROKI}
 
         # opcje przewieszeń
-        self.pw_obrot = tk.StringVar(value="50")
+        self.pw_obrot = tk.StringVar(value="45")
         # opcje obliczeń
         self.obl_seed = tk.StringVar()
         self.obl_kabel = tk.StringVar(value=str(pipeline.mod_obliczenia.DOMYSLNY_KABEL))
@@ -142,6 +142,7 @@ class Aplikacja:
         self.final_rysunki = tk.StringVar()                # folder z rysunkami stałymi <nr>.dwg
         self.final_pzt = tk.StringVar()                    # plik PZT
         self.final_przewieszenia = tk.StringVar()          # rysunek przewieszeń
+        self.przew_pdf = tk.StringVar()                    # rysunek przewieszeń do PDF (ostatnio utworzony)
         self.final_stacje = tk.StringVar()                 # numery stacji (puste = wszystkie)
         self.final_jeden_plik = tk.BooleanVar(value=False)
         self.zakladki_format = tk.StringVar(value="docx")  # przełącznik formatu: docx / pdf
@@ -239,7 +240,7 @@ class Aplikacja:
                       "opisy_szablon", "opisy_zestawienie", "opisy_obliczenia", "ppw_szablon", "ppw_zestawienie",
                       "ppw_zestawienie_stacji", "ppw_renumer_dxf", "zakladki_zestawienie", "zakladki_format",
                       "adresy_on", "final_opisy", "final_rysunki", "final_pzt", "final_przewieszenia",
-                      "final_stacje", "final_jeden_plik"):
+                      "przew_pdf", "final_stacje", "final_jeden_plik"):
             pola[nazwa] = getattr(self, nazwa)
         for m, v in self.wt.items():
             pola[f"wt_{m}"] = v
@@ -1001,9 +1002,13 @@ class Aplikacja:
         self._przycisk_generuj(f, "Utwórz przewieszenia", lambda: self._start_modul("przewieszenia"))
         r = ttk.Frame(f)
         r.pack(fill="x", pady=(8, 0))
+        box = self._sekcja(f, "PDF przewieszeń")
+        self._pole_pliku(box, "Rysunek do PDF:", self.przew_pdf, "Wybierz rysunek przewieszeń (DXF/DWG)")
+        self._podpowiedz(box, "(domyślnie ostatnio utworzony rysunek przewieszeń; osobny PDF dla każdej stacji "
+                              "trafo i jeden zbiorczy — do folderu „PDF” obok rysunku)")
+        r = ttk.Frame(box)
+        r.pack(fill="x", pady=(6, 0))
         ttk.Button(r, text="Zrób PDF przewieszeń", command=self._pdf_przewieszen).pack(side="left")
-        self._podpowiedz(f, "(z gotowego rysunku „!Przewieszenia …”: osobny PDF dla każdej stacji trafo "
-                            "i jeden zbiorczy — do folderu PDF projektu)")
 
     def _zakladka_zestawienie(self):
         f = self._strona("zestawienie", "Zestawienie", "Zestawienie słupów",
@@ -1148,7 +1153,7 @@ class Aplikacja:
         """PDF-y gotowego rysunku przewieszeń: na stację i zbiorczy - do folderu PDF projektu."""
         from . import uklad_projektu as uklad
         proj = self.projekt.get().strip() or self.katalog.get().strip()
-        plik = next((p for p in (self.final_przewieszenia.get().strip(),
+        plik = next((p for p in (self.przew_pdf.get().strip(), self.final_przewieszenia.get().strip(),
                                  uklad.znajdz(proj, "final_przewieszenia") if proj else None)
                      if p and os.path.isfile(p)), None)
         if not plik:
@@ -1158,8 +1163,7 @@ class Aplikacja:
             if not plik:
                 return
         plik = os.path.normpath(plik)
-        if not self.pdf_folder.get().strip() and proj:
-            self.pdf_folder.set(os.path.join(proj, "PDF"))
+        self.przew_pdf.set(plik)
         self._pisz(f"PDF przewieszeń z: {plik}")
         self._uruchom(plik, ("pdf_przewieszenia",))
 
@@ -1602,7 +1606,7 @@ class Aplikacja:
         opcje = pipeline.Opcje(
             plan=plik, katalog=katalog, kroki=kroki,
             adresy="uug,osm" if self.adresy_on.get() else "brak",
-            obrot_od=_float(self.pw_obrot.get(), 50.0),
+            obrot_od=_float(self.pw_obrot.get(), 45.0),
             seed=_int_or_none(self.obl_seed.get()),
             kabel=_int(self.obl_kabel.get(), pipeline.mod_obliczenia.DOMYSLNY_KABEL),
             obliczenia_zestawienie=(self.obl_zestawienie.get().strip() or None),
@@ -1717,6 +1721,9 @@ class Aplikacja:
         Pole jest wypełniane, gdy jest puste albo gdy poprzednio wypełnił je program (nowszy wynik
         zastępuje starszy) - ścieżki wybrane ręcznie przez użytkownika nie są nadpisywane."""
         podpiete = []
+        for k in udane:   # rysunek do PDF przewieszeń - zawsze ostatnio utworzony
+            if k.nazwa == "przewieszenia" and k.wyjscie and os.path.isfile(k.wyjscie):
+                self.przew_pdf.set(os.path.normpath(k.wyjscie))
         for k in udane:
             plik, odbiorcy = self._odbiorcy_wyniku(k.nazwa, k.wyjscie) if k.wyjscie else (None, [])
             if not plik or not os.path.isfile(plik):

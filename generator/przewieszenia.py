@@ -182,7 +182,7 @@ def main(argv=None):
                     help="plik CSV z opisami (domyślnie <plan>_opisy.csv); tworzony gdy nie istnieje")
     ap.add_argument("--warstwa", default=plan_mod.WARSTWA_PRZEWIESZEN, help="warstwa z okręgami")
     ap.add_argument("--warstwa-trasy", default=plan_mod.WARSTWA_TRASY, help="warstwa trasy światłowodu")
-    ap.add_argument("--obrot-od", type=float, default=50.0,
+    ap.add_argument("--obrot-od", type=float, default=45.0,
                     help="przęsła dłuższe niż ta wartość [m] rysowane są pionowo (obrót 90°); 0 = tylko gdy "
                          "rysunek nie mieści się poziomo w arkuszu")
     ap.add_argument("--adresy", default="uug,osm",
