@@ -209,7 +209,8 @@ class Aplikacja:
                     "opisy": self.opisy_obliczenia if nazwa.startswith("obliczenia") else self.opisy_zestawienie,
                     "ppw": self.ppw_zestawienie_stacji if "zestawienie_stacji" in nazwa else self.ppw_zestawienie,
                     "zakladki": self.zakladki_zestawienie,
-                    "pzt": self.wt_plik, "orientacje": self.wt_plik, "wt": self.wt_plik}.get(strona)
+                    "pzt": self.wt_plik, "orientacje": self.wt_plik, "wt": self.wt_plik,
+                    "przewieszenia": self.wt_plik}.get(strona)
         if ext == ".docx":
             return {"opisy": self.opisy_szablon, "ppw": self.ppw_szablon}.get(strona)
         return None
@@ -362,7 +363,8 @@ class Aplikacja:
             ("opisy", "Opisy techniczne", [("Zestawienie", self.opisy_zestawienie),
                                            ("Szablon opisu", self.opisy_szablon),
                                            ("Obliczenia", self.opisy_obliczenia)]),
-            ("przewieszenia", "Przewieszenia", [("Plik planu", self.we["przewieszenia"])]),
+            ("przewieszenia", "Przewieszenia", [("Plik planu", self.we["przewieszenia"]),
+                                                ("Warunki techniczne", self.wt_plik)]),
             ("ppw", "PPW", [("Zestawienie", self.ppw_zestawienie), ("Miejscowości", self.ppw_zestawienie_stacji),
                             ("Szablon PPW", self.ppw_szablon), ("Plik do renumeracji", self.ppw_renumer_dxf)]),
             ("zakladki", "Zakładki", [("Zestawienie", self.zakladki_zestawienie)]),
@@ -912,6 +914,10 @@ class Aplikacja:
                          "Rysunki zwisów przęseł linii nN ze światłowodem. Dodatkowo powstaje kopia planu "
                          "z numerami przewieszeń (kontrola) i sprawdzane jest przypisanie stacji trafo.")
         self._pole_pliku(f, "Plik planu DXF/DWG:", self.we["przewieszenia"], "Wybierz plik planu (DXF/DWG)")
+        self._pole_pliku(f, "Warunki techniczne:", self.wt_plik,
+                         "Wybierz plik Warunków Technicznych (.xls/.xlsx)", typy=XLSX_TYPY)
+        self._podpowiedz(f, "(opcjonalnie — miejscowość i ulica przewieszenia ze słupów tabeli WT zamiast "
+                            "z internetu; to samo pole co w Arkuszach PZT i Rysunkach stałych)")
         box = self._sekcja(f, "Opcje")
         r = ttk.Frame(box)
         r.pack(fill="x", pady=4)
