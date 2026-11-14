@@ -225,42 +225,49 @@ def zaokraglij_wektory(pdf) -> None:
 
 
 def _rozbij_odnosniki_opisowe(doc) -> int:
-    """Odnośniki opisowe (MULTILEADER) rozbijane (w pamięci) na linie i MTEXT - tak jak w CAD:
-      * maska tła „w kolorze okna” jest białą maską (ezdxf malował ją czarnym prostokątem),
-      * ramka tekstu (has_text_frame) jest rysowana - ezdxf jej nie rysuje."""
+    """Odnośniki opisowe (MULTILEADER) rozbijane (w pamięci) tak, jak wyglądają w CAD.
+
+    Najpierw grafika zastępcza (proxy) zapisana przez CAD - ma dokładne położenie i wielkość tekstu
+    oraz ramki; jej maska tła to kreskowanie bez koloru (ezdxf malował je na czarno) - dostaje
+    biały kolor papieru, a części leżą na warstwie odnośnika. Bez grafiki zastępczej - odnośnik
+    budowany z jego danych (ramka tekstu i biała maska ustawiane w MTEXT)."""
     from ezdxf.render import mleader as mod_mleader
     n = 0
     for blok in list(doc.blocks):
         for ml in list(blok.query("MULTILEADER")):
+            warstwa = ml.dxf.layer
+            try:
+                czesci = list(ml.virtual_entities()) if ml.proxy_graphic else []
+                z_proxy = bool(czesci)
+                if not z_proxy:
+                    czesci = list(mod_mleader.virtual_entities(ml, proxy_graphic=False))
+            except Exception:  # noqa: BLE001 - nierozbijalny zostaje jak był
+                continue
             tekst = ml.context.mtext
             maska = bool(tekst is not None and tekst.has_bg_fill and tekst.use_window_bg_color)
             ramka = bool(ml.dxf.get("has_text_frame", 0))
-            try:
-                # z danych odnośnika, nie z zapisanej grafiki zastępczej (proxy) - ta ma maskę jako
-                # czarne kreskowanie i teksty jednoliniowe
-                czesci = list(mod_mleader.virtual_entities(ml, proxy_graphic=False))
-            except Exception:  # noqa: BLE001 - nierozbijalny zostaje jak był
-                continue
             for e in czesci:
+                if z_proxy:
+                    e.dxf.layer = warstwa
+                    if e.dxftype() == "HATCH":                 # maska tła - biały papier
+                        e.dxf.color = 7
+                        e.dxf.true_color = 0xFFFFFF
                 if e.dxf.get("color", 256) == 0:                 # „ByBlock” = kolor samego odnośnika
                     e.dxf.color = ml.dxf.get("color", 256)
                     if ml.dxf.hasattr("true_color"):
                         e.dxf.true_color = ml.dxf.true_color
+                if not z_proxy and e.dxftype() == "MTEXT":
+                    flagi = e.dxf.get("bg_fill", 0)
+                    if maska:
+                        flagi = 1
+                        e.dxf.bg_fill_color = 7
+                        e.dxf.bg_fill_true_color = 0xFFFFFF
+                    if ramka:
+                        flagi |= 16
+                    if flagi:
+                        e.dxf.bg_fill = flagi
                 blok.add_entity(e)
             blok.delete_entity(ml)
-            for e in czesci:
-                if e.dxftype() != "MTEXT":
-                    continue
-                flagi = e.dxf.get("bg_fill", 0)
-                if maska:
-                    flagi = 1                                  # tło okna = biały papier
-                    e.dxf.bg_fill_color = 7
-                    e.dxf.bg_fill_true_color = 0xFFFFFF
-                if ramka:
-                    flagi |= 16
-                if flagi:
-                    e.dxf.bg_fill = flagi
-                    e.dxf.box_fill_scale = e.dxf.get("box_fill_scale", 1.5) or 1.5
             n += 1
     return n
 
