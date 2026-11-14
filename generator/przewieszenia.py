@@ -373,11 +373,14 @@ def main(argv=None):
     # --- Faza 2: segreguj po stacji (po numerze) i układaj - na arkuszu tylko jedna stacja ---
     pozycje.sort(key=lambda p: p[0])
     ark, slot, biez_stacja = -1, 0, None
+    zajety = True                      # bieżący arkusz ma już rysunek (na starcie: brak arkusza)
     for _klucz, z, R, pionowo, w, st in pozycje:
-        if st != biez_stacja:          # nowa stacja -> zacznij nowy arkusz
-            ark += 1
+        if st != biez_stacja:          # nowa stacja -> nowy arkusz (gdy bieżący jest już zajęty)
+            if zajety:
+                ark += 1
             slot = 0
             biez_stacja = st
+        zajety = True
         if pionowo:
             if slot == 1:
                 ark, slot = ark + 1, 0
@@ -388,7 +391,7 @@ def main(argv=None):
             W.dodaj(R, cx + (v0 + v1) / 2, cy - (u0 + u1) / 2, rot=90)
             rozmieszczenie.append((z.nr, nazwa))
             stacje_arkuszy.setdefault(nazwa, []).append(st)
-            ark, slot = ark + 1, 0
+            ark, slot, zajety = ark + 1, 0, False
         else:
             cx, cy, nazwa = srodek(ark)
             W.dodaj(R, cx - w / 2, cy + (DY_GORA if slot == 0 else DY_DOL), rot=0)
@@ -397,7 +400,7 @@ def main(argv=None):
             if slot == 0:
                 slot = 1
             else:
-                ark, slot = ark + 1, 0
+                ark, slot, zajety = ark + 1, 0, False
 
     W.zapisz(wynik, usun_puste_arkusze=not a.zostaw_puste_arkusze)
     zapisz_stacje_arkuszy(wynik, stacje_arkuszy)

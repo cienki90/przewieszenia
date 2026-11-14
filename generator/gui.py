@@ -1005,7 +1005,7 @@ class Aplikacja:
         box = self._sekcja(f, "PDF przewieszeń")
         self._pole_pliku(box, "Rysunek do PDF:", self.przew_pdf, "Wybierz rysunek przewieszeń (DXF/DWG)")
         self._podpowiedz(box, "(domyślnie ostatnio utworzony rysunek przewieszeń; osobny PDF dla każdej stacji "
-                              "trafo i jeden zbiorczy — do folderu „PDF” obok rysunku)")
+                              "trafo, np. „856p.pdf” — do folderu „PDF” obok rysunku)")
         r = ttk.Frame(box)
         r.pack(fill="x", pady=(6, 0))
         ttk.Button(r, text="Zrób PDF przewieszeń", command=self._pdf_przewieszen).pack(side="left")
