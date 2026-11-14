@@ -172,22 +172,108 @@ def arkusze_do_pdf(dxf: str, folder_obrazow: str | None = None, wybierz=None):
     from ezdxf.addons.drawing import pymupdf as backend_pdf
 
     doc, _audyt = recover.readfile(dxf)
+    _wczytaj_odnosniki(doc, dxf, folder_obrazow)
     _napraw_obrazy(doc, dxf, folder_obrazow)
     pomin_niedrukowalne(doc)
     _napraw_rzutnie(doc)
     konf = config.Configuration(image_policy=config.ImagePolicy.DISPLAY)
+    # wierzch: białe „tło ekranu” (teksty z tłem w kolorze ekranu są białe, nie czarne); prostokąt tła
+    # strony jest potem usuwany, żeby warstwa była przezroczysta
+    konf_wierzch = config.Configuration(image_policy=config.ImagePolicy.DISPLAY,
+                                        background_policy=config.BackgroundPolicy.WHITE)
     wynik, nazwy = pymupdf.open(), []
     for nazwa in doc.layout_names_in_taborder():
         if nazwa == "Model" or (wybierz is not None and not wybierz(nazwa)):
             continue
         arkusz = doc.paperspace(nazwa)
+        strona = layout.Page.from_dxf_layout(arkusz)
+        # papier 1:1 (bez dopasowania do strony) - obie warstwy muszą leżeć dokładnie na sobie
+        ustaw = layout.Settings(fit_page=False, scale=arkusz.get_plot_unit_scale_factor())
         backend = backend_pdf.PyMuPdfBackend()
         Frontend(RenderContext(doc), backend, config=konf).draw_layout(arkusz)
-        strona = layout.Page.from_dxf_layout(arkusz)
-        with pymupdf.open("pdf", backend.get_pdf_bytes(strona)) as jedna:
-            wynik.insert_pdf(jedna)
+        obrys = backend.player().bbox()                # obszar całego arkusza - wspólny dla obu warstw
+        jedna = pymupdf.open("pdf", backend.get_pdf_bytes(strona, settings=ustaw, render_box=obrys))
+        # elementy arkusza (ramka, tabelka i legenda z białym tłem) jeszcze raz NAD zawartością rzutni - jak
+        # w CAD-zie, gdzie tabelka zasłania rysunek; rysowanie ezdxf kładzie rzutnię na wierzchu
+        papier = [e for e in arkusz if e.dxftype() != "VIEWPORT"]
+        if papier and any(e.dxftype() == "VIEWPORT" for e in arkusz):
+            be = backend_pdf.PyMuPdfBackend()
+            ctx = RenderContext(doc)
+            ctx.set_current_layout(arkusz)            # biały papier: kolor 7 = czarny, jak przy całym arkuszu
+            front = Frontend(ctx, be, config=konf_wierzch)
+            front.draw_entities(papier)
+            with pymupdf.open("pdf", be.get_pdf_bytes(strona, settings=ustaw, render_box=obrys)) as wierzch:
+                _usun_tlo_strony(wierzch)
+                jedna[0].show_pdf_page(jedna[0].rect, wierzch, 0)
+        wynik.insert_pdf(jedna)
+        jedna.close()
         nazwy.append(nazwa)
     return wynik, nazwy
+
+
+# czarny/biały prostokąt tła strony, który backend PyMuPDF kładzie na początku strumienia
+_TLO_STRONY = re.compile(rb"q\s+0 0 [\d.]+ [\d.]+ re\s+h\s+[\d.]+ [\d.]+ [\d.]+ rg f\s+Q")
+
+
+def _usun_tlo_strony(pdf) -> None:
+    """Warstwa wierzchnia ma być przezroczysta - bez prostokąta tła strony."""
+    strona = pdf[0]
+    for xref in strona.get_contents():
+        raw = pdf.xref_stream(xref)
+        nowy = _TLO_STRONY.sub(b"", raw, count=1)
+        if nowy != raw:
+            pdf.update_stream(xref, nowy)
+            return
+
+
+def _wczytaj_odnosniki(doc, dxf: str, folder: str | None = None, log=None) -> list:
+    """Wczytuje do rysunku odnośniki zewnętrzne (XREF) - np. podkład mapowy dołączony jako osobny DWG.
+    Ścieżki względne szukane w folderze oryginału (folder) i rysunku; DWG zamieniane na DXF (ODA).
+    Zwraca listę nazw odnośników, których nie udało się wczytać (rysunek bez nich, jak dotąd)."""
+    import tempfile
+
+    import ezdxf
+    from ezdxf import xref as ezxref
+    from . import dwg as mod_dwg
+
+    bledy = []
+    tmp = tempfile.mkdtemp(prefix="xref_")
+
+    def wczytaj(sciezka):
+        sciezka = str(sciezka)
+        if sciezka.lower().endswith(".dwg"):
+            sciezka = mod_dwg.dwg_na_dxf(sciezka, os.path.join(tmp, f"x{len(os.listdir(tmp))}.dxf"))
+        from ezdxf import recover
+        d, _ = recover.readfile(sciezka)
+        return d
+
+    foldery = [f for f in (folder, os.path.dirname(os.path.abspath(dxf))) if f]
+    try:
+        for _proba in range(3):                       # odnośniki zagnieżdżone - kilka przebiegów
+            odn = [b for b in doc.blocks if b.block_record.is_xref]
+            if not odn:
+                break
+            for blok in odn:
+                sciezka = (blok.block.dxf.get("xref_path", "") or "").strip()
+                nazwa_pliku = os.path.basename(sciezka.replace("\\", "/"))
+                kand = [sciezka] if os.path.isabs(sciezka) else []
+                kand += [os.path.normpath(os.path.join(f, sciezka)) for f in foldery]
+                kand += [os.path.join(f, nazwa_pliku) for f in foldery]
+                plik = next((k for k in kand if k and os.path.isfile(k)), None)
+                try:
+                    if plik is None:
+                        raise FileNotFoundError(sciezka)
+                    ezxref.embed(blok, load_fn=lambda _p, plik=plik: wczytaj(plik),
+                                 search_paths=[os.path.dirname(plik)])
+                except Exception as ex:  # noqa: BLE001 - brak odnośnika nie zatrzymuje PDF-u
+                    bledy.append(f"{blok.name} ({ex})")
+                    blok.block.dxf.flags &= ~0x0C          # dalej zwykły (pusty) blok, nie odnośnik
+    finally:
+        import shutil
+        shutil.rmtree(tmp, ignore_errors=True)
+    if bledy and log:
+        log("Nie wczytano odnośników zewnętrznych: " + "; ".join(bledy))
+    return bledy
 
 
 def dxf_do_pdf(dxf: str, pdf_wyj: str | None = None, folder_obrazow: str | None = None) -> tuple[str, int]:
