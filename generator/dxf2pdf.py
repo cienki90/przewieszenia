@@ -389,11 +389,12 @@ def _wczytaj_odnosniki(doc, dxf: str, folder: str | None = None, log=None) -> li
     return bledy
 
 
-def dxf_do_pdf(dxf: str, pdf_wyj: str | None = None, folder_obrazow: str | None = None) -> tuple[str, int]:
+def dxf_do_pdf(dxf: str, pdf_wyj: str | None = None, folder_obrazow: str | None = None,
+               wybierz=None) -> tuple[str, int]:
     """Jeden plik DXF -> PDF (strona na każdy arkusz). Zwraca (ścieżka PDF, liczba stron).
     `folder_obrazow` - gdzie jeszcze szukać obrazu podkładu (np. folder oryginalnego DWG)."""
     pdf_wyj = pdf_wyj or os.path.splitext(dxf)[0] + ".pdf"
-    wynik, _nazwy = arkusze_do_pdf(dxf, folder_obrazow)
+    wynik, _nazwy = arkusze_do_pdf(dxf, folder_obrazow, wybierz)
     if wynik.page_count == 0:
         raise ValueError("rysunek nie ma arkuszy (layoutów papieru)")
     obrazy_do_jpg(wynik)
