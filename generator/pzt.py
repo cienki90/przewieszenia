@@ -49,7 +49,7 @@ ZAKLAD = 50.0                       # wspólny odcinek trasy sąsiednich arkuszy
 MARGINES_MM = 10.0                  # odstęp trasy od ramki i tabelki [mm papieru = m terenu w 1:1000]
 GESTOSC = 5.0                       # próbkowanie trasy [m]
 KROK = 15.0                         # siatka kandydatów na arkusze [m]
-BB_LIMIT = 20000                    # limit dokładnego przeszukiwania
+BB_LIMIT = 200000                   # limit dokładnego przeszukiwania (liczba sprawdzonych układów)
 
 RE_STACJA = re.compile(r"(\d{2,3}-\d{3,4}|\d{3,4})")   # "03-0494" lub "0494"/"494"
 # opis stacji na warstwie bez „trafo” w nazwie (np. multileader wstawiony na „0”): „STACJA TRAFO <nr>”
@@ -172,9 +172,10 @@ def _w_uzyt(px, py, W, H, m, zx0, zy1):
 def _pokrycie(x0, y0, P, W, H, m, zx0, zy1, zaklad):
     """Maska: które próbki trasy pokrywa arkusz o narożniku (x0,y0).
 
-    Próbka jest pokryta, gdy leży w obszarze użytkowym i jest dalej niż `zaklad`
-    (wzdłuż trasy) od miejsca, w którym trasa wychodzi z arkusza - dzięki temu
-    sąsiednie arkusze mają wspólny odcinek trasy ~zaklad."""
+    Próbka jest pokryta, gdy leży w obszarze użytkowym i jest dalej niż pół `zaklad`
+    (wzdłuż trasy) od miejsca, w którym trasa wychodzi z arkusza. Następny arkusz musi więc
+    zacząć się co najmniej pół zakładu przed końcem pokrycia poprzedniego - razem sąsiednie
+    arkusze mają wspólny odcinek trasy co najmniej `zaklad`."""
     wew = [_w_uzyt(x - x0, y - y0, W, H, m, zx0, zy1) for (x, y, _c, _t) in P]
     if zaklad <= 0 or not any(wew):
         return wew
@@ -184,7 +185,7 @@ def _pokrycie(x0, y0, P, W, H, m, zx0, zy1, zaklad):
             tg = (P[k][3] + P[k + 1][3]) / 2
             ch = P[k][2]
             for j, (_x, _y, c, t) in enumerate(P):
-                if c == ch and abs(t - tg) < zaklad:
+                if c == ch and abs(t - tg) < zaklad / 2:
                     wyn[j] = False
     return wyn
 
@@ -218,6 +219,58 @@ def _wybierz_zachlannie(maski, n_prob):
                 zmiana = True
                 break
     return wybrane
+
+
+def _wybierz_minimalnie(maski, n_prob, limit=None):
+    """Najmniejsza liczba arkuszy pokrywająca wszystkie próbki: wynik zachłanny poprawiany
+    przeszukiwaniem z nawrotami (do `limit` sprawdzonych układów - wynik jest powtarzalny).
+    Zwraca indeksy wybranych masek."""
+    limit = BB_LIMIT if limit is None else limit
+    start = _wybierz_zachlannie(maski, n_prob)
+    if len(start) <= 1:
+        return start
+    bity = [sum(1 << i for i, v in enumerate(m) if v) for m in maski]
+    pelna = 0
+    for j in start:
+        pelna |= bity[j]
+    # arkusz, którego pokrycie zawiera się w pokryciu innego, nigdy nie jest potrzebny
+    kolej = sorted(range(len(bity)), key=lambda j: -bity[j].bit_count())
+    maks = []
+    for j in kolej:
+        b = bity[j] & pelna
+        if b and not any(b & ~bity[k] == 0 for k in maks):
+            maks.append(j)
+    wg_probki = {}
+    for j in maks:
+        b = bity[j] & pelna
+        while b:
+            i = (b & -b).bit_length() - 1
+            wg_probki.setdefault(i, []).append(j)
+            b &= b - 1
+    najw = max(bity[j].bit_count() for j in maks)
+    stan = {"najl": list(start), "licznik": 0}
+
+    def szukaj(pokryte, wybrane):
+        stan["licznik"] += 1
+        if stan["licznik"] > limit:
+            return
+        if pokryte == pelna:
+            if len(wybrane) < len(stan["najl"]):
+                stan["najl"] = list(wybrane)
+            return
+        brak = pelna & ~pokryte
+        if len(wybrane) + -(-brak.bit_count() // najw) >= len(stan["najl"]):
+            return
+        i = (brak & -brak).bit_length() - 1          # pierwsza niepokryta próbka (kolejno wzdłuż trasy)
+        for j in sorted(wg_probki[i], key=lambda k: -(bity[k] & brak).bit_count()):
+            wybrane.append(j)
+            szukaj(pokryte | bity[j], wybrane)
+            wybrane.pop()
+            if len(wybrane) + 1 >= len(stan["najl"]):
+                return
+
+    szukaj(0, [])
+    return stan["najl"]
 
 
 def _rozmiesc_skupisko(linie, W, H, zakazane, m, zaklad, krok, gestosc):
@@ -271,7 +324,7 @@ def _rozmiesc_skupisko(linie, W, H, zakazane, m, zaklad, krok, gestosc):
     maski = [maski[j] for j in idx]
 
     # --- 2. wybór arkuszy (minimalna liczba)
-    wybrane = _wybierz_zachlannie(maski, n)
+    wybrane = _wybierz_minimalnie(maski, n)
     ark = [XY[j] for j in wybrane]
     pk = [maski[j] for j in wybrane]
 
@@ -325,8 +378,75 @@ def _rozmiesc_skupisko(linie, W, H, zakazane, m, zaklad, krok, gestosc):
     return [ark[a] for a in kolej]
 
 
-def rozmiesc(linie, W, H, zakazane, m=MARGINES_MM, zaklad=ZAKLAD, krok=KROK, gestosc=GESTOSC):
-    """Dzieli trasę na skupiska (dalej niż przekątna arkusza od siebie) i rozmieszcza osobno."""
+def _kolejnosc_od_stacji(narozniki, linie, W, H, zakazane, m, gestosc, start=None):
+    """Arkusze w kolejności oddalania się od stacji trafo: wg drogi WZDŁUŻ trasy od punktu
+    `start` (stacja; None = początek pierwszej linii) do najbliższego fragmentu trasy na arkuszu.
+    Odgałęzienia łączone są w sieć w miejscach styku; osobne kawałki trasy idą po kolei od
+    najbliższego stacji."""
+    import heapq
+    P = _probkuj(linie, gestosc)
+    if len(narozniki) < 2 or not P:
+        return list(narozniki)
+    n = len(P)
+    sas = [[] for _ in range(n)]
+    for i in range(n - 1):
+        if P[i][2] == P[i + 1][2]:
+            d = _dist(P[i], P[i + 1])
+            sas[i].append((i + 1, d))
+            sas[i + 1].append((i, d))
+    konce = [i for i in range(n) if i == 0 or i == n - 1 or P[i][2] != P[i - 1][2] or P[i][2] != P[i + 1][2]]
+    for i in konce:                                   # koniec linii przy innej linii = odgałęzienie
+        j = min((k for k in range(n) if P[k][2] != P[i][2]), key=lambda k: _dist(P[i], P[k]), default=None)
+        if j is not None and _dist(P[i], P[j]) <= gestosc + 1.0:
+            d = _dist(P[i], P[j])
+            sas[i].append((j, d))
+            sas[j].append((i, d))
+    start = start or P[0][:2]
+    zx0, zy1 = zakazane[0] - m, zakazane[3] + m
+    na_ark = [[i for i in range(n) if _w_uzyt(P[i][0] - x0, P[i][1] - y0, W, H, m, zx0, zy1)]
+              for x0, y0 in narozniki]
+
+    def drogi(zrodla):
+        """Droga wzdłuż trasy od `zrodla` [(próbka, odległość początkowa)] do każdej próbki;
+        kawałki bez połączenia - po kolei od najbliższego, zawsze dalej niż wszystko dotąd."""
+        droga = [None] * n
+        kopiec = list(zrodla)
+        heapq.heapify(kopiec)
+        przesun = 0.0
+        while True:
+            while kopiec:
+                d, i = heapq.heappop(kopiec)
+                if droga[i] is not None:
+                    continue
+                droga[i] = d
+                przesun = max(przesun, d)
+                for j, dl in sas[i]:
+                    if droga[j] is None:
+                        heapq.heappush(kopiec, (d + dl, j))
+            wolne = [i for i in range(n) if droga[i] is None]
+            if not wolne:
+                return droga
+            gotowe = [i for i in range(n) if droga[i] is not None]
+            i0 = min(wolne, key=lambda i: min(_dist(P[i], P[g]) for g in gotowe))
+            kopiec = [(przesun + min(_dist(P[i0], P[g]) for g in gotowe), i0)]
+
+    # od stacji do końca odgałęzienia, potem powrót do najbliższego nieponumerowanego arkusza
+    i0 = min(range(n), key=lambda i: _dist(P[i], start))
+    droga = drogi([(_dist(P[i0], start), i0)])
+    zostalo = list(range(len(narozniki)))
+    kolej = []
+    while zostalo:
+        a = min(zostalo, key=lambda k: min((droga[i] for i in na_ark[k]), default=float("inf")))
+        kolej.append(a)
+        zostalo.remove(a)
+        if na_ark[a]:
+            droga = drogi([(0.0, i) for i in na_ark[a]])
+    return [narozniki[a] for a in kolej]
+
+
+def rozmiesc(linie, W, H, zakazane, m=MARGINES_MM, zaklad=ZAKLAD, krok=KROK, gestosc=GESTOSC, start=None):
+    """Dzieli trasę na skupiska (dalej niż przekątna arkusza od siebie) i rozmieszcza osobno.
+    `start` - punkt stacji trafo: arkusze numerowane są w kolejności oddalania się od niego."""
     if not linie:
         return []
     r = math.hypot(W, H) / 2
@@ -348,7 +468,7 @@ def rozmiesc(linie, W, H, zakazane, m=MARGINES_MM, zaklad=ZAKLAD, krok=KROK, ges
     for g in grupy:
         for (x0, y0) in _rozmiesc_skupisko([linie[j] for j in g], W, H, zakazane, m, zaklad, krok, gestosc):
             wynik.append((x0, y0))
-    return wynik
+    return _kolejnosc_od_stacji(wynik, linie, W, H, zakazane, m, gestosc, start)
 
 
 # ============================================================ odczyt DXF
@@ -573,6 +693,7 @@ class DaneStacji:
     oznaczenie: str         # pełne oznaczenie, np. "05-0565"
     poligony: list          # [[(x, y), ...], ...] zasięg stacji
     linie: list             # [[(x, y), ...], ...] trasa !tele w zasięgu
+    punkt: tuple | None = None   # położenie stacji (grot opisu STACJA TRAFO) - początek numeracji arkuszy
 
 
 def sprawdz_prefiksy_stacji(we: Wejscie) -> None:
@@ -608,7 +729,8 @@ def dane_stacji(we: Wejscie, ostrzezenia=None):
         linie = []
         for poly in polys:
             linie += _trasa_w_poligonie(we.trasy, poly)
-        wynik.append(DaneStacji(nr, oznaczenia.get(nr, nr), polys, linie))
+        punkt = next((tuple(p[:2]) for n, p in we.stacje if _norm_nr(n) == nr), None)
+        wynik.append(DaneStacji(nr, oznaczenia.get(nr, nr), polys, linie, punkt))
     return wynik, poligony_stacji
 
 
@@ -693,7 +815,7 @@ def zaplanuj(we: Wejscie, miejscowosci_stacji=None, tylko=None, zaklad=ZAKLAD, u
                 ostrzezenia.append(f"Stacja {st.oznaczenie}: ręczny układ arkuszy nie pokrywa ok. "
                                    f"{len(luki) * GESTOSC:.0f} m trasy - sprawdź w podglądzie.")
         else:
-            narozniki = rozmiesc(st.linie, W, H, we.wzor_zakazane, zaklad=zaklad)
+            narozniki = rozmiesc(st.linie, W, H, we.wzor_zakazane, zaklad=zaklad, start=st.punkt)
             zrodlo = ""
         for i, (x0, y0) in enumerate(narozniki, 1):
             a = Arkusz(x0, y0, W, H, stacja=st.oznaczenie, nr_stacji=nr,

@@ -179,7 +179,7 @@ class PodgladPZT(tk.Toplevel):
         W, H = self.we.wzor_okno
 
         def licz():
-            return pzt.rozmiesc(st.linie, W, H, self.we.wzor_zakazane, zaklad=self.zaklad)
+            return pzt.rozmiesc(st.linie, W, H, self.we.wzor_zakazane, zaklad=self.zaklad, start=st.punkt)
 
         def po(narozniki):
             self.auto[nr] = narozniki
