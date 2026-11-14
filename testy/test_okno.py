@@ -112,6 +112,24 @@ class TestOkno(unittest.TestCase):
         self.assertIn("• opisy: " + blad, okno.call_args.args[1])
         self.assertEqual(self.gui._skroc("x" * 500, 300), "x" * 299 + "…")
 
+    def test_otworz_folder_tam_gdzie_powstal_wynik(self):
+        """Opisy i PPW trafiają do folderu szablonu, a nie obok zestawienia z Rysunków stałych -
+        „Otwórz folder z wynikami” ma otwierać folder wyniku."""
+        from generator import pipeline
+        app = self.app
+        opisy = os.path.join(self.A, "opisy", "opisy")
+        os.makedirs(opisy, exist_ok=True)
+        ppw = _plik(self.A, "opisy", "PPW.docx")
+        for wyjscie, oczekiwany in ((opisy, opisy), (ppw, os.path.dirname(ppw))):
+            app._ostatni_katalog = os.path.join(self.A, "rysunki stałe")       # folder pliku wejściowego
+            wynik = pipeline.Wynik([pipeline.WynikKroku("opisy", ok=True, wyjscie=wyjscie)])
+            with mock.patch.object(app, "_zapisz_projekt"), mock.patch.object(app, "_zapisz_dziennik", return_value=None), \
+                    mock.patch.object(app, "_odswiez_stan_projektu"), mock.patch.object(app, "_podepnij_wyniki"), \
+                    mock.patch.object(self.gui.messagebox, "askyesno", return_value=False) as pyt:
+                app._zakoncz(wynik)
+            self.assertEqual(os.path.normcase(app._ostatni_katalog), os.path.normcase(oczekiwany))
+            self.assertIn(oczekiwany, pyt.call_args.args[1])
+
     def test_nazwa_firmy_w_plikach_modulow(self):
         """Okno zbiera rysunki i dokumenty ze wszystkich modułów (oraz pismo WT) i pokazuje rozbieżność."""
         try:
@@ -147,7 +165,7 @@ class TestOkno(unittest.TestCase):
         app.wt_plik.set(wt)
         pliki = app._pliki_firmy()
         self.assertEqual({os.path.basename(p) for _o, p in pliki}, {"plan firmy.dxf", "szablon opisu.docx",
-                                                                    "plan_pismo.docx"})
+                                                                    "plan_pismo.docx", "plan_rozbudowana.xlsx"})
         self.assertIn(("Generator WT - pismo", pismo), pliki)
         with mock.patch.object(self.gui.messagebox, "showwarning") as ostrz:
             app._pokaz_firme()

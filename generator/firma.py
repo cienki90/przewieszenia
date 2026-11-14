@@ -3,6 +3,8 @@
 Skąd czytana:
   * rysunki DXF/DWG - tabelka: tekst bezpośrednio pod etykietą „INWESTOR” (plan z układem-wzorcem
     „a”, arkusze PZT, szablon i rysunki stałe, arkusze Generatora WT),
+  * skoroszyty .xlsx (zestawienia, obliczenia, tabele warunków) - ukryta właściwość dokumentu,
+    którą program zapisuje przy tworzeniu pliku (oznacz_xlsx); nie widać jej w arkuszach,
   * dokumenty .docx - akapit po nagłówku „Inwestor:”, „Inwestor i zleceniodawca”, „dla inwestora:”
     (opisy, PPW - także gdy szablon poprawiono tylko w jednym z tych miejsc) albo wiersz „Pełna
     nazwa” (pismo o warunki techniczne).
@@ -29,6 +31,7 @@ _RE_AKAPIT = re.compile(r"^\s*" + _POLE + r"\s*[:\t]\s*(\S.*)$", re.I)
 _RE_NAGLOWEK = re.compile(r"^\s*" + _POLE + r"\s*:?\s*$", re.I)
 _FORMY = ((r"spolka\s+z\s+ograniczona\s+odpowiedzialnoscia", "sp z o o"), (r"spolka\s+akcyjna", "s a"),
           (r"spolka\s+jawna", "sp j"), (r"spolka\s+komandytowa", "sp k"))
+ROZSZERZENIA = (".dxf", ".dwg", ".docx", ".xlsx")
 _PAMIEC: dict[tuple, list[str]] = {}            # (ścieżka, mtime, rozmiar) -> nazwy
 
 
@@ -144,6 +147,8 @@ def nazwy_z_pliku(sciezka: str) -> list[str] | None:
     try:
         if roz == ".docx":
             wynik = nazwy_z_docx(sciezka)
+        elif roz == ".xlsx":
+            wynik = nazwy_z_xlsx(sciezka)
         elif roz == ".dxf":
             wynik = nazwy_z_dxf(sciezka)
         elif roz == ".dwg":
@@ -158,6 +163,79 @@ def nazwy_z_pliku(sciezka: str) -> list[str] | None:
     return wynik
 
 
+# ---------------------------------------------------------------- skoroszyty Excela
+# Nazwa firmy w skoroszycie (.xlsx) jest zapisana jako niestandardowa właściwość dokumentu
+# (docProps/custom.xml) - nie ma jej w żadnej komórce ani na wydruku; Excel pokazuje ją tylko
+# w Plik > Informacje > Właściwości > Zaawansowane > Niestandardowe.
+WLASCIWOSC = "GeneratorNN.firma"
+_CUSTOM = "docProps/custom.xml"
+_TYP_CUSTOM = "application/vnd.openxmlformats-officedocument.custom-properties+xml"
+_REL_CUSTOM = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/custom-properties"
+_RE_WLASC = re.compile(r'<property[^>]*name="' + re.escape(WLASCIWOSC) + r'"[^>]*>\s*<vt:lpwstr>(.*?)</vt:lpwstr>', re.S)
+
+
+def oznacz_xlsx(sciezka: str, nazwa: str | None) -> bool:
+    """Zapisuje w skoroszycie .xlsx ukrytą nazwę firmy (właściwość dokumentu). Zwraca True, gdy
+    zapisano. Nie rusza arkuszy; plik bez nazwy / nie-xlsx / otwarty w Excelu zostaje bez zmian."""
+    import zipfile
+    from xml.sax.saxutils import escape
+    nazwa = _czysta(nazwa or "")
+    if not nazwa or not str(sciezka).lower().endswith(".xlsx") or not os.path.isfile(sciezka):
+        return False
+    wlasc = (f'<property fmtid="{{D5CDD505-2E9C-101B-9397-08002B2CF9AE}}" pid="2" name="{WLASCIWOSC}">'
+             f'<vt:lpwstr>{escape(nazwa)}</vt:lpwstr></property>')
+    try:
+        with zipfile.ZipFile(sciezka) as z:
+            pliki = [(i, z.read(i.filename)) for i in z.infolist()]
+        nazwy = {i.filename for i, _ in pliki}
+        if _CUSTOM in nazwy and WLASCIWOSC not in dict((i.filename, d) for i, d in pliki)[_CUSTOM].decode("utf-8"):
+            return False                              # cudze właściwości niestandardowe - nie mieszamy
+        custom = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+                  '<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/custom-properties" '
+                  'xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">'
+                  + wlasc + '</Properties>').encode("utf-8")
+        tmp = sciezka + ".tmp_firma"
+        with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as z:
+            for info, dane in pliki:
+                if info.filename == _CUSTOM:
+                    continue
+                if info.filename == "[Content_Types].xml" and _CUSTOM not in nazwy:
+                    dane = dane.replace(b"</Types>", f'<Override PartName="/{_CUSTOM}" ContentType="{_TYP_CUSTOM}"/></Types>'.encode())
+                if info.filename == "_rels/.rels" and _CUSTOM not in nazwy:
+                    dane = dane.replace(b"</Relationships>", f'<Relationship Id="rIdFirma" Type="{_REL_CUSTOM}" Target="{_CUSTOM}"/></Relationships>'.encode())
+                z.writestr(info, dane)
+            z.writestr(_CUSTOM, custom)
+        os.replace(tmp, sciezka)
+        return True
+    except (OSError, zipfile.BadZipFile, KeyError):
+        try:
+            os.remove(sciezka + ".tmp_firma")
+        except OSError:
+            pass
+        return False
+
+
+def nazwy_z_xlsx(sciezka: str) -> list[str]:
+    """Ukryta nazwa firmy zapisana w skoroszycie przez oznacz_xlsx ([] gdy jej nie ma)."""
+    import zipfile
+    from xml.sax.saxutils import unescape
+    with zipfile.ZipFile(sciezka) as z:
+        if _CUSTOM not in z.namelist():
+            return []
+        m = _RE_WLASC.search(z.read(_CUSTOM).decode("utf-8"))
+    nazwa = _czysta(unescape(m.group(1))) if m else None
+    return [nazwa] if nazwa else []
+
+
+def firma_z_plikow(*sciezki) -> str | None:
+    """Pierwsza nazwa firmy znaleziona w podanych plikach (rysunek, dokument, skoroszyt)."""
+    for s in sciezki:
+        nazwy = nazwy_z_pliku(s) if s else None
+        if nazwy:
+            return nazwy[0]
+    return None
+
+
 # ---------------------------------------------------------------- porównanie
 @dataclass
 class Wpis:
@@ -170,7 +248,7 @@ def zbierz(pliki) -> list[Wpis]:
     """[(opis, ścieżka)] -> wpisy z nazwami firm; ten sam plik podany kilka razy czytany jest raz."""
     wynik, bylo = [], {}
     for opis, sciezka in pliki:
-        if not sciezka or os.path.splitext(sciezka)[1].lower() not in (".dxf", ".dwg", ".docx"):
+        if not sciezka or os.path.splitext(sciezka)[1].lower() not in ROZSZERZENIA:
             continue
         k = os.path.normcase(os.path.abspath(sciezka))
         if k in bylo:

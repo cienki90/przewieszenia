@@ -265,7 +265,36 @@ def pliki_firmy_krokow(opcje: Opcje) -> list:
                       opcje.ppw_szablon or zasoby.szablon_ppw_docx()))
     if "ppw_renumer" in kroki and opcje.ppw_renumer_dxf:
         pliki.append(("PPW - plik do renumeracji", opcje.ppw_renumer_dxf))
+    # skoroszyty z ukrytą nazwą firmy (zapisaną przy ich tworzeniu)
+    if "obliczenia" in kroki:
+        pliki.append(("Obliczenia - własne zestawienie", opcje.obliczenia_zestawienie))
+    if kroki & {"pzt", "orientacje"}:
+        pliki.append(("Warunki techniczne", opcje.wt_plik))
+    if "opisy" in kroki:
+        pliki += [("Opisy techniczne - zestawienie", opcje.opisy_zestawienie),
+                  ("Opisy techniczne - obliczenia", opcje.opisy_obliczenia)]
+    if "ppw" in kroki:
+        pliki += [("PPW - zestawienie", opcje.ppw_zestawienie), ("PPW - miejscowości", opcje.ppw_zestawienie_stacji)]
+    if "zakladki" in kroki:
+        pliki.append(("Zakładki - zestawienie", opcje.zakladki_zestawienie))
     return [(o, p) for o, p in pliki if p]
+
+
+def _oznacz_firme_w_wyniku(krok: str, wyjscie: str, opcje: Opcje, plan: str, zestawienie_plik) -> None:
+    """Zapisuje w skoroszycie wynikowym (zestawienie, obliczenia, zestawienie stacji) ukrytą nazwę
+    firmy wziętą z rysunku, z którego powstał - po niej sprawdzanie nazwy firmy rozpoznaje potem
+    ten plik w kolejnych etapach. Niczego nie zmienia w arkuszach; kłopot z zapisem jest pomijany."""
+    try:
+        from . import firma as mod_firma
+        if krok == "zestawienie":
+            mod_firma.oznacz_xlsx(wyjscie, mod_firma.firma_z_plikow(plan))
+        elif krok == "obliczenia":
+            mod_firma.oznacz_xlsx(wyjscie, mod_firma.firma_z_plikow(zestawienie_plik, plan))
+        elif krok == "orientacje":
+            mod_firma.oznacz_xlsx(os.path.join(wyjscie, "zestawienie_stacji.xlsx"),
+                                  mod_firma.firma_z_plikow(opcje.orient_szablon, plan))
+    except Exception:  # noqa: BLE001 - znacznik pomocniczy; wynik kroku jest już zapisany
+        pass
 
 
 def _sprawdz_firme(opcje: Opcje) -> str | None:
@@ -521,6 +550,8 @@ def _uruchom_kroki(opcje: Opcje) -> Wynik:
             log(reszta.rstrip())
         if r.ok and not tymczasowy and r.wyjscie:
             log(f"-> zapisano: {r.wyjscie}")
+        if r.ok and r.wyjscie:
+            _oznacz_firme_w_wyniku(krok, r.wyjscie, opcje, plan, zestawienie_plik)
         # krok tymczasowy (zestawienie pomocnicze) nie trafia do podsumowania
         if not tymczasowy:
             wynik.kroki.append(r)

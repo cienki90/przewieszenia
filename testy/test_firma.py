@@ -86,6 +86,41 @@ class TestFirma(unittest.TestCase):
         self.assertIn("„Inna Firma S.A.”", tekst)
         self.assertIn("PPW - szablon: ppw.docx", tekst)
 
+    def test_ukryta_nazwa_w_skoroszycie(self):
+        """Zestawienie i obliczenia dostają nazwę firmy z planu jako właściwość dokumentu - nie ma jej
+        w komórkach, a sprawdzanie nazwy firmy ją odczytuje."""
+        import openpyxl
+        plan = os.path.join(KORZEN, "przyklady", "przewieszenia plan.dxf")
+        kopia = shutil.copy2(plan, os.path.join(self.kat, "plan.dxf"))
+        firma_planu = firma.firma_z_plikow(kopia)
+        wynik = pipeline.uruchom(pipeline.Opcje(plan=kopia, katalog=self.kat, kroki=("zestawienie", "obliczenia"),
+                                                eksport_dwg=False, seed=1, log=lambda *_: None))
+        self.assertTrue(all(k.ok for k in wynik.kroki))
+        for k in wynik.kroki:
+            self.assertEqual(firma.nazwy_z_pliku(k.wyjscie), [firma_planu] if firma_planu else [])
+        # ręcznie: zapis, nadpisanie, znaki specjalne; komórki bez zmian i bez nazwy firmy
+        p = os.path.join(self.kat, "tabela.xlsx")
+        wb = openpyxl.Workbook()
+        wb.active.append(["Lp", "Nr słupa"])
+        wb.save(p)
+        self.assertEqual(firma.nazwy_z_pliku(p), [])
+        self.assertTrue(firma.oznacz_xlsx(p, "Firma <A> & Syn sp. z o. o.\nul. Testowa 1"))
+        self.assertEqual(firma.nazwy_z_xlsx(p), ["Firma <A> & Syn sp. z o. o."])
+        self.assertTrue(firma.oznacz_xlsx(p, "Inna Firma S.A."))
+        self.assertEqual(firma.nazwy_z_xlsx(p), ["Inna Firma S.A."])
+        wb = openpyxl.load_workbook(p)
+        komorki = [c for ws in wb.worksheets for r in ws.iter_rows(values_only=True) for c in r if c]
+        self.assertEqual(komorki, ["Lp", "Nr słupa"])
+        self.assertFalse(firma.oznacz_xlsx(p, ""))
+        self.assertFalse(firma.oznacz_xlsx(os.path.join(self.kat, "nie ma.xlsx"), "X sp."))
+        # skoroszyt z inną firmą niż szablon opisu - pytanie przed modułem
+        szablon = self._dokument("szablon3.docx", "Firma A sp. z o. o.")
+        pytania = []
+        op = pipeline.Opcje(plan="", kroki=("opisy",), opisy_szablon=szablon, opisy_obliczenia=p,
+                            log=lambda *_: None, pytaj=lambda t, x: pytania.append(x) or False)
+        self.assertIn("różne nazwy firmy", pipeline._sprawdz_firme(op))
+        self.assertIn("Opisy techniczne - obliczenia: tabela.xlsx", pytania[0])
+
     def test_pytanie_przed_modulem(self):
         szablon = self._dokument("szablon.docx", "Inna Firma S.A.")
         plan = self._rysunek("plan.dxf", "Firma A sp. z o. o.")
