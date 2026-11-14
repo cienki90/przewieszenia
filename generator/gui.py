@@ -43,6 +43,7 @@ PLIK_DZIENNIKA = "dziennik GeneratorNN.txt"        # przebieg uruchomień (w kat
 DXF_TYPY = [("Rysunek DXF / DWG", "*.dxf *.dwg"), ("Rysunek DXF", "*.dxf"), ("Rysunek DWG", "*.dwg"),
             ("Wszystkie pliki", "*.*")]
 DOCX_TYPY = [("Dokument Word", "*.docx"), ("Wszystkie pliki", "*.*")]
+PPW_PDF_TYPY = [("PPW .docx / rysunek DXF, DWG", "*.docx *.dxf *.dwg"), ("Wszystkie pliki", "*.*")]
 XLSX_TYPY = [("Skoroszyt Excel", "*.xlsx *.xls"), ("Wszystkie pliki", "*.*")]
 
 # moduły z polem numeru WT (klucz w ustawieniach)
@@ -144,6 +145,7 @@ class Aplikacja:
         self.final_przewieszenia = tk.StringVar()          # rysunek przewieszeń
         self.przew_pdf = tk.StringVar()                    # rysunek przewieszeń do PDF (ostatnio utworzony)
         self.pzt_pdf = tk.StringVar()                      # plik arkuszy PZT do PDF (ostatnio utworzony)
+        self.ppw_pdf = tk.StringVar()                      # PPW .docx / „!PPW …” do PDF (ostatnio utworzony)
         self.final_stacje = tk.StringVar()                 # numery stacji (puste = wszystkie)
         self.final_jeden_plik = tk.BooleanVar(value=False)
         self.zakladki_format = tk.StringVar(value="docx")  # przełącznik formatu: docx / pdf
@@ -243,7 +245,7 @@ class Aplikacja:
                       "opisy_szablon", "opisy_zestawienie", "opisy_obliczenia", "ppw_szablon", "ppw_zestawienie",
                       "ppw_zestawienie_stacji", "ppw_renumer_dxf", "zakladki_zestawienie", "zakladki_format",
                       "adresy_on", "final_opisy", "final_rysunki", "final_pzt", "final_przewieszenia",
-                      "przew_pdf", "pzt_pdf", "final_stacje", "final_jeden_plik"):
+                      "przew_pdf", "pzt_pdf", "ppw_pdf", "final_stacje", "final_jeden_plik"):
             pola[nazwa] = getattr(self, nazwa)
         for m, v in self.wt.items():
             pola[f"wt_{m}"] = v
@@ -1273,6 +1275,29 @@ class Aplikacja:
                          "Wybierz plik (DXF/DWG) z arkuszami STACJA-ARKUSZ")
         self._przycisk_generuj(ren, "Renumeruj rysunki", self._start_renumer)
 
+        box = self._sekcja(f, "PDF PPW")
+        self._pole_pliku(box, "Plik do PDF:", self.ppw_pdf, "Wybierz PPW .docx albo rysunek „!PPW …” (DXF/DWG)",
+                         typy=PPW_PDF_TYPY)
+        self._podpowiedz(box, "(domyślnie ostatnio utworzony PPW .docx albo przenumerowany rysunek „!PPW …”; "
+                              "rysunek — jeden PDF ze wszystkimi arkuszami; PDF do folderu „PDF” obok pliku)")
+        r = ttk.Frame(box)
+        r.pack(fill="x", pady=(6, 0))
+        ttk.Button(r, text="Zrób PDF PPW", command=self._pdf_ppw).pack(side="left")
+
+    def _pdf_ppw(self):
+        """PDF z wyniku PPW (opis .docx albo rysunek „!PPW …”) - do folderu „PDF” obok pliku."""
+        proj = self.projekt.get().strip() or self.katalog.get().strip()
+        plik = self.ppw_pdf.get().strip()
+        if not plik or not os.path.isfile(plik):
+            plik = filedialog.askopenfilename(parent=self.root, title="PPW .docx albo rysunek „!PPW …”",
+                                              initialdir=proj or None, filetypes=PPW_PDF_TYPY)
+            if not plik:
+                return
+        plik = os.path.normpath(plik)
+        self.ppw_pdf.set(plik)
+        self._pisz(f"PDF PPW z: {plik}")
+        self._uruchom(plik, ("pdf_ppw",))
+
     def _start_renumer(self):
         dxf = self.ppw_renumer_dxf.get().strip()
         if not dxf or not os.path.isfile(dxf):
@@ -1762,9 +1787,11 @@ class Aplikacja:
         Pole jest wypełniane, gdy jest puste albo gdy poprzednio wypełnił je program (nowszy wynik
         zastępuje starszy) - ścieżki wybrane ręcznie przez użytkownika nie są nadpisywane."""
         podpiete = []
-        for k in udane:   # rysunki do PDF (przewieszenia, PZT) - zawsze ostatnio utworzone
-            if k.nazwa in ("przewieszenia", "pzt") and k.wyjscie and os.path.isfile(k.wyjscie):
-                (self.przew_pdf if k.nazwa == "przewieszenia" else self.pzt_pdf).set(os.path.normpath(k.wyjscie))
+        for k in udane:   # pliki do PDF (przewieszenia, PZT, PPW) - zawsze ostatnio utworzone
+            pole = {"przewieszenia": self.przew_pdf, "pzt": self.pzt_pdf,
+                    "ppw": self.ppw_pdf, "ppw_renumer": self.ppw_pdf}.get(k.nazwa)
+            if pole is not None and k.wyjscie and os.path.isfile(k.wyjscie):
+                pole.set(os.path.normpath(k.wyjscie))
         for k in udane:
             plik, odbiorcy = self._odbiorcy_wyniku(k.nazwa, k.wyjscie) if k.wyjscie else (None, [])
             if not plik or not os.path.isfile(plik):

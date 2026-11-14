@@ -354,6 +354,9 @@ def uruchom(opcje: Opcje) -> Wynik:
         return Wynik(kroki=[_krok_tabela_projektowa(opcje)])
     if tuple(opcje.kroki) == ("pdf_przewieszenia",):
         return Wynik(kroki=[_krok_pdf_przewieszen(opcje)])
+    # PDF wyniku PPW: opis PPW .docx (Word) albo rysunek „!PPW …” (wszystkie arkusze) - do „PDF” obok pliku
+    if tuple(opcje.kroki) == ("pdf_ppw",):
+        return Wynik(kroki=[_krok_pdf_ppw(opcje)])
     # nazwa firmy w plikach wejściowych kroków i w innych etapach projektu - przed konwersją DWG,
     # żeby w komunikacie były prawdziwe nazwy plików
     przerwano = _sprawdz_firme(opcje)
@@ -933,6 +936,28 @@ def _krok_pdf_przewieszen(opcje: Opcje) -> WynikKroku:
     ok = bool(wynik.pliki)
     return WynikKroku("pdf", ok=ok, wyjscie=folder if ok else None, raport=raport,
                       dodatkowe=list(wynik.pliki), blad=None if ok else "Nie powstał żaden PDF.")
+
+
+def _krok_pdf_ppw(opcje: Opcje) -> WynikKroku:
+    """PDF z wyniku modułu PPW: dokument .docx (przez Worda) albo rysunek DXF/DWG (wszystkie arkusze
+    w jednym PDF, bez layoutu-wzorca) - zawsze do folderu „PDF” obok wskazanego pliku."""
+    plik = opcje.plan
+    if not plik or not os.path.isfile(plik):
+        return WynikKroku("pdf", ok=False, blad=f"Nie ma pliku PPW: {plik}")
+    folder = os.path.join(os.path.dirname(os.path.abspath(plik)), "PDF")
+    if plik.lower().endswith((".dxf", ".dwg")):
+        return _krok_pdf(os.path.dirname(plik), replace(opcje, pdf_folder=folder), pliki=[plik],
+                         wybierz=functools.partial(operator.ne, mod_pzt.NAZWA_WZORCA))
+    if not plik.lower().endswith(".docx"):
+        return WynikKroku("pdf", ok=False, blad="PDF powstaje z pliku .docx albo rysunku DXF/DWG.")
+    from . import final as mod_final
+    os.makedirs(folder, exist_ok=True)
+    pdf = os.path.join(folder, os.path.splitext(os.path.basename(plik))[0] + ".pdf")
+    try:
+        mod_final.docx_do_pdf(plik, pdf)
+    except Exception as ex:  # noqa: BLE001 - np. brak Worda
+        return WynikKroku("pdf", ok=False, blad=f"Nie udało się zapisać PDF: {ex}")
+    return WynikKroku("pdf", ok=True, wyjscie=folder, raport=f"  OK   {os.path.basename(pdf)}", dodatkowe=[pdf])
 
 
 def _krok_final(opcje: Opcje, katalog: str) -> WynikKroku:
