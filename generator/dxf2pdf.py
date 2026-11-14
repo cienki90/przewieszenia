@@ -274,7 +274,68 @@ def _rozbij_odnosniki_opisowe(doc) -> int:
 
 def arkusze_do_pdf(dxf: str, folder_obrazow: str | None = None, wybierz=None):
     """Rysuje arkusze (layouty papieru) rysunku do dokumentu PDF w pamięci.
-    `wybierz(nazwa) -> bool` - które arkusze (None = wszystkie). Zwraca (dokument pymupdf, [nazwy stron])."""
+    `wybierz(nazwa) -> bool` - które arkusze (None = wszystkie). Zwraca (dokument pymupdf, [nazwy stron]).
+    Przy wielu arkuszach rysuje je równolegle w kilku procesach (każdy przygotowuje rysunek sam)."""
+    pymupdf = _biblioteki()
+    procesy = _ile_procesow(dxf, wybierz)
+    if procesy > 1:
+        try:
+            import concurrent.futures as cf
+            with cf.ProcessPoolExecutor(procesy) as pula:
+                czesci = list(pula.map(_czesc_pdf, [(dxf, folder_obrazow, wybierz, k, procesy)
+                                                     for k in range(procesy)]))
+            wynik, nazwy = pymupdf.open(), []
+            # strony z części przeplatają się (arkusz i trafia do części i % procesy) - złóż w kolejności
+            strony = [(i, k, j, n) for k, (_d, nz, idx) in enumerate(czesci)
+                      for j, (n, i) in enumerate(zip(nz, idx))]
+            otwarte = [pymupdf.open("pdf", c[0]) for c in czesci]
+            for i, k, j, n in sorted(strony):
+                wynik.insert_pdf(otwarte[k], from_page=j, to_page=j)
+                nazwy.append(n)
+            for o in otwarte:
+                o.close()
+            return wynik, nazwy
+        except Exception:  # noqa: BLE001 - np. brak procesów potomnych -> rysuj po kolei
+            pass
+    wynik, nazwy, _idx = _rysuj_arkusze(dxf, folder_obrazow, wybierz)
+    return wynik, nazwy
+
+
+def _ile_procesow(dxf: str, wybierz) -> int:
+    """Ile procesów do rysowania: po jednym na ~2 arkusze, najwyżej połowa rdzeni; 1 = po kolei."""
+    import pickle
+    if os.environ.get("PGE_PDF_PROCESY") == "1":
+        return 1
+    try:
+        pickle.dumps(wybierz)
+        n = sum(1 for _ in _nazwy_arkuszy(dxf, wybierz))
+    except Exception:  # noqa: BLE001
+        return 1
+    if n < 3:
+        return 1
+    return max(1, min((n + 1) // 2, (os.cpu_count() or 2) // 2, 6))
+
+
+def _nazwy_arkuszy(dxf: str, wybierz):
+    """Nazwy wybranych arkuszy papieru."""
+    from ezdxf import recover
+    doc, _a = recover.readfile(dxf)
+    for nazwa in doc.layout_names_in_taborder():
+        if nazwa != "Model" and (wybierz is None or wybierz(nazwa)):
+            yield nazwa
+
+
+def _czesc_pdf(arg):
+    """Proces potomny: rysuje co `n`-ty arkusz (od `k`), zwraca (bajty PDF, nazwy, numery arkuszy)."""
+    dxf, folder, wybierz, k, n = arg
+    wynik, nazwy, idx = _rysuj_arkusze(dxf, folder, wybierz, lambda i: i % n == k)
+    dane = wynik.tobytes(garbage=3, deflate=True)
+    wynik.close()
+    return dane, nazwy, idx
+
+
+def _rysuj_arkusze(dxf: str, folder_obrazow, wybierz, ktore=None):
+    """Rysowanie arkuszy po kolei; `ktore(i)` wybiera numery (wśród wybranych arkuszy) do narysowania."""
     pymupdf = _biblioteki()
     from ezdxf import recover
     from ezdxf.addons.drawing import Frontend, RenderContext, config, layout
@@ -292,9 +353,13 @@ def arkusze_do_pdf(dxf: str, folder_obrazow: str | None = None, wybierz=None):
     # strony jest potem usuwany, żeby warstwa była przezroczysta
     konf_wierzch = config.Configuration(image_policy=config.ImagePolicy.DISPLAY,
                                         background_policy=config.BackgroundPolicy.WHITE)
-    wynik, nazwy = pymupdf.open(), []
+    wynik, nazwy, idx = pymupdf.open(), [], []
+    i = -1
     for nazwa in doc.layout_names_in_taborder():
         if nazwa == "Model" or (wybierz is not None and not wybierz(nazwa)):
+            continue
+        i += 1
+        if ktore is not None and not ktore(i):
             continue
         arkusz = doc.paperspace(nazwa)
         strona = layout.Page.from_dxf_layout(arkusz)
@@ -319,7 +384,8 @@ def arkusze_do_pdf(dxf: str, folder_obrazow: str | None = None, wybierz=None):
         wynik.insert_pdf(jedna)
         jedna.close()
         nazwy.append(nazwa)
-    return wynik, nazwy
+        idx.append(i)
+    return wynik, nazwy, idx
 
 
 # czarny/biały prostokąt tła strony, który backend PyMuPDF kładzie na początku strumienia

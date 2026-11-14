@@ -8,4 +8,6 @@ from __future__ import annotations
 from generator.gui import main
 
 if __name__ == "__main__":
+    import multiprocessing
+    multiprocessing.freeze_support()   # rysowanie PDF w kilku procesach (także w .exe)
     main()
