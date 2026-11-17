@@ -21,3 +21,13 @@ def test_logo_w_prawym_gornym_rogu_ramki():
     assert abs((x0 + szer) - (sz.ramka[2] - ark.LOGO_ODSTEP)) < 1e-6
     assert abs((y0 + wys) - (sz.ramka[3] - ark.LOGO_ODSTEP)) < 1e-6
     assert x0 > sz.ramka[0] and y0 > sz.ramka[1]
+
+
+def test_nazwy_plikow_wt():
+    from pathlib import Path
+    from generator.warunki.projekt import Projekt
+    p = Projekt()
+    p.plik = Path(r"C:\x\PW Cyganka.dwg")
+    assert p.sciezka(Path(r"C:\x"), "numeracja.dwg").name == "WT PW Cyganka.dwg"
+    assert p.sciezka(Path(r"C:\x"), "numeracja.pdf").name == "WT PW Cyganka.pdf"
+    assert p.sciezka(Path(r"C:\x"), "pismo.docx").name == "PW Cyganka_pismo.docx"

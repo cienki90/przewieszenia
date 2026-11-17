@@ -24,7 +24,7 @@ except ImportError:  # bezpośrednie uruchomienie
     import nazwy_plikow as _np
 
 RYSUNKI = (".dwg", ".dxf")
-POMIJANE_PLANY = ("danewektorowe", "warunki ", "szablon")     # podkłady geodezyjne, rysunki WT, szablony
+POMIJANE_PLANY = ("danewektorowe", "warunki ", "wt ", "szablon")     # podkłady geodezyjne, rysunki WT, szablony
 
 
 def _rysunek(n):

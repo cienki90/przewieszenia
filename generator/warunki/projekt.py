@@ -332,6 +332,10 @@ class Projekt:
         return dxf_writer.istniejaca_numeracja(self.doc, self.cfg) if self.doc else 0
 
     def sciezka(self, katalog: Path, przyrostek: str) -> Path:
+        """Plik wynikowy: rysunek z numeracją (i jego PDF) = „WT <projekt>.dwg/.pdf”,
+        pozostałe = „<projekt>_<przyrostek>”."""
+        if przyrostek.startswith("numeracja."):
+            return Path(katalog) / f"WT {self.plik.stem}{przyrostek[len('numeracja'):]}"
         return Path(katalog) / f"{self.plik.stem}_{przyrostek}"
 
     @property

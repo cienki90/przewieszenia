@@ -195,9 +195,9 @@ class ZakladkaWT:
 
         # wyniki
         box = self._sekcja("Wyniki")
-        for klucz, tekst in (("dxf", "Rysunek z numeracją (*_numeracja.dwg/.dxf)"),
+        for klucz, tekst in (("dxf", "Rysunek z numeracją (WT *.dwg/.dxf)"),
                              ("arkusze", "    + arkusze 1:1000 (układy 1, 2, 3…)"),
-                             ("pdf_num", "    + arkusze jako PDF (*_numeracja.pdf)"),
+                             ("pdf_num", "    + arkusze jako PDF (WT *.pdf)"),
                              ("pismo", "Pismo – zapytanie o dostęp (*_pismo.docx)"),
                              ("rozb", "Zestawienie rozbudowane (*_rozbudowana.xlsx)"),
                              ("upr", "Zestawienie uproszczone (*_uproszczona.xls)"),
