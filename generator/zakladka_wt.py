@@ -63,6 +63,23 @@ def przygotuj_dane(log=print, katalogi_wt=()) -> None:
 
 BRAK_LOGO = "brak"
 
+
+def _sciezka_excela() -> str | None:
+    """EXCEL.EXE z rejestru (App Paths) - None, gdy Excela nie ma."""
+    try:
+        import winreg
+    except ImportError:
+        return None
+    for gal in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+        try:
+            with winreg.OpenKey(gal, r"Software\Microsoft\Windows\CurrentVersion\App Paths\excel.exe") as k:
+                sc = winreg.QueryValue(k, None).strip('"')
+        except OSError:
+            continue
+        if sc and os.path.isfile(sc):
+            return sc
+    return None
+
 class ZakladkaWT:
     def __init__(self, app, ramka):
         self.app = app
@@ -280,8 +297,17 @@ class ZakladkaWT:
         plik = Config().plik_slownikow
         if not plik.exists():
             self.wczytaj_listy()
+        # osobne okno Excela (/x): gdy Excel jest już otwarty i np. edytuje komórkę albo ma otwarte
+        # okno dialogowe, zwykłe otwarcie pliku przez skojarzenie nic nie robi
+        excel = _sciezka_excela()
         try:
-            os.startfile(plik)  # noqa: S606
+            if excel:
+                import subprocess
+                subprocess.Popen([excel, "/x", str(plik)])
+            else:
+                os.startfile(plik)  # noqa: S606
+            self.app._pisz(f"Otwieram listy operatorów i rejonów: {plik}\n"
+                           "Po zapisaniu zmian w Excelu kliknij „Odśwież listy”.")
         except OSError as ex:
             messagebox.showinfo("Warunki techniczne", f"Plik list: {plik}\n({ex})", parent=self.root)
 
