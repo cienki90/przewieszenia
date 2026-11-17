@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import math
+from pathlib import Path
 import re
 from dataclasses import dataclass, field
 
@@ -69,6 +70,7 @@ class SzablonUkladu:
     vp_atrybuty: dict
     zakazane: tuple[float, float, float, float]  # tabelka+legenda wzgl. lewego dolnego rogu rzutni
     encje: list = field(default_factory=list)    # encje układu poza rzutniami
+    ramka: tuple[float, float, float, float] | None = None   # obwiednia ramki arkusza [mm papieru]
 
 
 def _bez_formatow(t: str) -> str:
@@ -109,7 +111,33 @@ def wczytaj_szablon(doc: Drawing, nazwa_ukladu: str) -> SzablonUkladu:
     atr = {k: v for k, v in uk.dxf_layout.dxfattribs().items() if k not in pomin}
     vatr = {k: v for k, v in vp.dxfattribs().items()
             if k in ("flags", "status", "circle_zoom", "render_mode", "ucs_icon")}
-    return SzablonUkladu(nazwa_ukladu, atr, (cx, cy), (w, h), vatr, zak, encje)
+    ext_r = bbox.extents([ramka]) if ramka is not None else None
+    obw = ((ext_r.extmin.x, ext_r.extmin.y, ext_r.extmax.x, ext_r.extmax.y)
+           if ext_r is not None and ext_r.has_data else (x0, y0, x0 + w, y0 + h))
+    return SzablonUkladu(nazwa_ukladu, atr, (cx, cy), (w, h), vatr, zak, encje, obw)
+
+
+LOGO_SZER = 150.0      # szerokość paska logotypów [mm papieru]
+LOGO_ODSTEP = 1.0      # odstęp od ramki [mm]
+WARSTWA_LOGO = "WT_logotypy"
+
+
+def dodaj_logo(doc: Drawing, uk, ramka, plik, szer: float = LOGO_SZER, odstep: float = LOGO_ODSTEP):
+    """Pasek logotypów (obraz JPG/PNG) w prawym górnym rogu ramki arkusza, wewnątrz ramki."""
+    from PIL import Image
+    with Image.open(plik) as img:
+        px, py = img.size
+    wys = szer * py / px
+    x1, y1 = ramka[2] - odstep, ramka[3] - odstep
+    if WARSTWA_LOGO not in doc.layers:
+        doc.layers.add(WARSTWA_LOGO, color=7)
+    nazwa = Path(plik).stem
+    idef = next((d for d in doc.objects.query("IMAGEDEF")
+                 if Path(d.dxf.filename).name == Path(plik).name), None)
+    if idef is None:
+        idef = doc.add_image_def(filename=str(plik), size_in_pixel=(px, py), name=nazwa)
+    return uk.add_image(idef, insert=(x1 - szer, y1 - wys), size_in_units=(szer, wys), rotation=0,
+                        dxfattribs={"layer": WARSTWA_LOGO})
 
 
 # ====================================================================== rozmieszczanie
@@ -643,7 +671,7 @@ def dodaj_uklady(doc: Drawing, szablon_doc: Drawing, szablon: SzablonUkladu,
                  inwestor: str | None, opracowal: str | None, data: str | None,
                  dodatkowe_teksty: list[str] | None = None,
                  zamrozone: list[str] | None = None,
-                 wysokosc_branzy: float | None = None, log=None) -> None:
+                 wysokosc_branzy: float | None = None, logo=None, log=None) -> None:
     """Tworzy układy papieru (po jednym na arkusz) na wzór układu szablonu."""
     imp = Importer(szablon_doc, doc)
     nowe = []
@@ -679,6 +707,8 @@ def dodaj_uklady(doc: Drawing, szablon_doc: Drawing, szablon: SzablonUkladu,
             vp.dxf.set(k, v)
         if zamrozone:
             vp.frozen_layers = zamrozone
+        if logo:
+            dodaj_logo(doc, uk, szablon.ramka, logo)
         for i, t in enumerate(dodatkowe_teksty or []):
             uk.add_mtext(t, dxfattribs={"char_height": 1.8, "style": styl, "layer": "0",
                                         "insert": (x0p + 3, y0p + 3 + i * 3)})

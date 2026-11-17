@@ -9,6 +9,15 @@ from pathlib import Path
 import os
 
 SZABLONY = Path(__file__).resolve().parent / "szablony"
+LOGOTYPY = SZABLONY / "logotypy"        # paski logotypów do prawego górnego rogu arkuszy (JPG/PNG)
+
+
+def logotypy() -> dict[str, Path]:
+    """Dostępne logotypy: {nazwa pliku bez rozszerzenia: ścieżka}."""
+    if not LOGOTYPY.is_dir():
+        return {}
+    return {p.stem: p for p in sorted(LOGOTYPY.iterdir())
+            if p.suffix.lower() in (".jpg", ".jpeg", ".png")}
 DANE = Path(os.environ.get("LOCALAPPDATA") or Path.home() / ".config") / "GeneratorNN" / "warunki"
 KATALOG = DANE      # zgodność z oryginałem (autotest itp.)
 

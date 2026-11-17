@@ -61,6 +61,8 @@ def przygotuj_dane(log=print, katalogi_wt=()) -> None:
     log(f"Warunki techniczne: utworzono pusty plik list operatorów i rejonów: {cel}")
 
 
+BRAK_LOGO = "brak"
+
 class ZakladkaWT:
     def __init__(self, app, ramka):
         self.app = app
@@ -100,6 +102,7 @@ class ZakladkaWT:
         self.skala_or = tk.StringVar(value="10000")
         self.zrodlo_or = tk.StringVar(value="osm")
         self.wgs84 = tk.StringVar(value="pl2000")
+        self.logo = tk.StringVar(value=app.ust.get("wt_logo") or BRAK_LOGO)
         self.katalog = tk.StringVar()
         self._buduj()
 
@@ -213,6 +216,12 @@ class ZakladkaWT:
         ttk.Label(r, text="Współrzędne w piśmie i zestawieniach:").pack(side="left")
         ttk.Radiobutton(r, text="PL-2000", variable=self.wgs84, value="pl2000").pack(side="left", padx=(8, 0))
         ttk.Radiobutton(r, text="WGS 84", variable=self.wgs84, value="wgs84").pack(side="left", padx=(8, 0))
+        r = ttk.Frame(box)
+        r.pack(fill="x", pady=(6, 2))
+        ttk.Label(r, text="Logotypy w prawym górnym rogu arkuszy:").pack(side="left")
+        from .warunki.config import logotypy
+        ttk.Combobox(r, textvariable=self.logo, values=(BRAK_LOGO, *logotypy()), width=22,
+                     state="readonly").pack(side="left", padx=(8, 0))
         app._pole_folderu(box, "Folder wyników:", self.katalog, "Folder wyników warunków technicznych")
         app._podpowiedz(box, "(puste = folder pliku projektu)")
         self.b_gen = ttk.Button(f, text="▶  Numeruj i generuj dokumenty", command=self.generuj,
@@ -660,11 +669,14 @@ class ZakladkaWT:
             self.app._pisz("Warunki techniczne: przerwano – nic nie zapisano.")
             return
         p.cfg.wgs84 = self.wgs84.get() == "wgs84"
+        from .warunki.config import logotypy
+        p.logo = logotypy().get(self.logo.get())
         operator = self._wybrany(self.operatorzy, self.operator.get())
         opracowal = self.opracowal.get().strip() or None
         data_rys = self.data_rys.get().strip() or None
         data_od, data_do = self.data_od.get().strip(), self.data_do.get().strip() or "-"
-        self.app.ust.update(wt_opracowal=self.opracowal.get().strip(), wt_operator=self.operator.get(),
+        self.app.ust.update(wt_logo=self.logo.get(),
+                            wt_opracowal=self.opracowal.get().strip(), wt_operator=self.operator.get(),
                             wt_rejon=self.rejon.get())
         self.app._zaplanuj_zapis()
         p.zapisz_ustawienia({"prefiks": cfg.prefiks, "numer_startowy": cfg.numer_startowy,

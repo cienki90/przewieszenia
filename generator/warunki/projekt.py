@@ -34,6 +34,7 @@ class Projekt:
     def __init__(self, cfg: Config | None = None):
         self.cfg = cfg or Config()
         self.plik: Path | None = None
+        self.logo: Path | None = None        # pasek logotypów w prawym górnym rogu arkuszy (None = brak)
         self.doc: Drawing | None = None
         self.slupy: list[Wierzcholek] = []
         self.bledne_kliki: list[BlednyKlik] = []
@@ -376,6 +377,18 @@ class Projekt:
                                      adres) if x)
 
     # ------------------------------------------------------------ zapis
+    def _logo_obok(self, wyjscie: Path) -> Path | None:
+        """Kopia logotypu obok zapisywanego rysunku (obraz dołączony do DWG jest plikiem
+        zewnętrznym - musi być przy projekcie, nie w folderze programu)."""
+        if not self.logo or not Path(self.logo).is_file():
+            return None
+        import shutil
+        cel = Path(wyjscie).resolve().parent / Path(self.logo).name
+        if cel != Path(self.logo).resolve():
+            cel.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(self.logo, cel)
+        return cel
+
     def zapisz_dxf(self, wyjscie: Path, arkusze: bool = False, operator: dict | None = None,
                    opracowal: str | None = None, data: str | None = None) -> None:
         dxf_writer.usun_numeracje(self.doc, self.cfg)
@@ -395,7 +408,7 @@ class Projekt:
                              opracowal, data,
                              zamrozone=[self.cfg.warstwa_obrysow] + (
                                  [self.cfg.warstwa_uwag] if self.uwag_na_rysunku else []),
-                             wysokosc_branzy=self.cfg.wysokosc_branzy)
+                             wysokosc_branzy=self.cfg.wysokosc_branzy, logo=self._logo_obok(wyjscie))
             ark.rysuj_obrysy(self.doc, self.arkusze, self.cfg.warstwa_obrysow,
                              drukowalna=False, wys_tekstu=20.0)
         dwg.zapisz(self.doc, wyjscie, self.cfg.oda_sciezka or None)  # DWG albo DXF
@@ -477,7 +490,7 @@ class Projekt:
         ark.dodaj_uklady(doc, szd, sz, orient, mianownik, self.cfg.nazwa_orientacji,
                          self.tekst_inwestora(operator), opracowal, data,
                          dodatkowe_teksty=[podklad.ATRYBUCJA[z] for z in dict.fromkeys(zrodla)],
-                         wysokosc_branzy=self.cfg.wysokosc_branzy)
+                         wysokosc_branzy=self.cfg.wysokosc_branzy, logo=self._logo_obok(wyjscie))
         for n in domyslne:  # pusty układ 'Layout1' tworzony przez ezdxf
             doc.layouts.delete(n)
         dwg.zapisz(doc, wyjscie, self.cfg.oda_sciezka or None)  # DWG albo DXF

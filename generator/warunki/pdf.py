@@ -164,7 +164,25 @@ def _rysuj_strone(doc: Drawing, psp, ctx, obrazy_tla, pymupdf):
         _usun_tlo_strony(wierzch)
         strona[0].show_pdf_page(strona[0].rect, wierzch, 0)
         wierzch.close()
+    _wklej_obrazy_papieru(strona[0], psp, page, na_pt)
     return strona
+
+
+def _wklej_obrazy_papieru(strona, psp, page, na_pt) -> None:
+    """Obrazy IMAGE z przestrzeni papieru (np. pasek logotypów) - na wierzch strony.
+    Render ezdxf pomija obrazy (ImagePolicy.IGNORE), więc wklejamy je z pliku."""
+    import pymupdf
+    for e in psp.query("IMAGE"):
+        idef = e.image_def
+        plik = Path(idef.dxf.filename) if idef is not None else None
+        if plik is None or not plik.is_file():
+            continue
+        u, v = e.dxf.u_pixel, e.dxf.v_pixel
+        szer, wys = u.x * e.dxf.image_size.x, v.y * e.dxf.image_size.y
+        x0, y0 = e.dxf.insert.x, e.dxf.insert.y
+        gora = page.height - (y0 + wys)
+        strona.insert_image(pymupdf.Rect(x0 * na_pt, gora * na_pt, (x0 + szer) * na_pt, (gora + wys) * na_pt),
+                            filename=str(plik), keep_proportion=False)
 
 
 def _prostokat_rzutni_pt(psp, page, na_pt, pymupdf):
