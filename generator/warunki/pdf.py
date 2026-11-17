@@ -60,10 +60,18 @@ def _nazwy_ukladow(doc: Drawing, nazwy=None) -> list[str]:
 
 
 def _strona_ukladu(psp):
-    """Strona PDF i ustawienia wiernego odwzorowania papieru układu (bez skalowania)."""
-    page = layout.Page.from_dxf_layout(psp)
+    """Strona PDF, ustawienia i obszar renderu - papier układu 1:1 na stronie.
+
+    Obszar renderu to cały arkusz papieru (lewy dolny róg = minus marginesy wydruku, jak przy
+    wydruku z AutoCADa), a nie obwiednia rysunku - dzięki temu położenie na stronie nie zależy
+    od zawartości i obrazy wklejane osobno (podkład, logotypy) trafiają w to samo miejsce."""
+    from ezdxf.math import BoundingBox2d
+    p = layout.Page.from_dxf_layout(psp)
+    m = p.margins_in_mm
+    page = layout.Page(p.width, p.height, p.units, margins=layout.Margins.all(0))
     ustaw = layout.Settings(fit_page=False, scale=psp.get_plot_unit_scale_factor())
-    return page, ustaw
+    box = BoundingBox2d([(-m.left, -m.bottom), (p.width_in_mm - m.left, p.height_in_mm - m.bottom)])
+    return page, ustaw, box
 
 
 def _konfig(tlo: BackgroundPolicy, skala: float = SKALA_GRUBOSCI) -> Configuration:
@@ -128,7 +136,7 @@ def _rysuj_strone(doc: Drawing, psp, ctx, obrazy_tla, pymupdf):
     rzutni (model: trasa, obrysy arkuszy, numeracja), (3) encje przestrzeni papieru
     (ramka, tabelka z białym tłem, legenda). Warstwy 2 i 3 mają przezroczyste tło,
     żeby podkład był widoczny, a tabelka zasłaniała rysunek z modelu."""
-    page, ustaw = _strona_ukladu(psp)
+    page, ustaw, box = _strona_ukladu(psp)
     na_pt = 72.0 / 25.4
 
     if obrazy_tla:
@@ -142,7 +150,7 @@ def _rysuj_strone(doc: Drawing, psp, ctx, obrazy_tla, pymupdf):
                 _wklej_podklad(strona[0], t, clip, na_pt, pymupdf)
         be_model = ezpdf.PyMuPdfBackend()
         Frontend(ctx, be_model, config=_konfig(BackgroundPolicy.OFF)).draw_layout(psp)
-        model = pymupdf.open("pdf", be_model.get_pdf_bytes(page, settings=ustaw))
+        model = pymupdf.open("pdf", be_model.get_pdf_bytes(page, settings=ustaw, render_box=box))
         _usun_tlo_strony(model)
         strona[0].show_pdf_page(strona[0].rect, model, 0)
         model.close()
@@ -150,7 +158,7 @@ def _rysuj_strone(doc: Drawing, psp, ctx, obrazy_tla, pymupdf):
         # bez podkładu: model od razu jako strona (białe tło)
         be_model = ezpdf.PyMuPdfBackend()
         Frontend(ctx, be_model, config=_konfig(BackgroundPolicy.WHITE)).draw_layout(psp)
-        strona = pymupdf.open("pdf", be_model.get_pdf_bytes(page, settings=ustaw))
+        strona = pymupdf.open("pdf", be_model.get_pdf_bytes(page, settings=ustaw, render_box=box))
 
     # --- warstwa przestrzeni papieru (bez rzutni) na wierzchu, przezroczyste tło;
     # linie ramki, tabelki i legendy renderowane w stałej grubości 0,25 mm
@@ -160,7 +168,7 @@ def _rysuj_strone(doc: Drawing, psp, ctx, obrazy_tla, pymupdf):
         with _StaleGruboscLinii(pap):
             Frontend(ctx, be_pap, config=_konfig(BackgroundPolicy.OFF, skala=1.0)
                      ).draw_entities(pap)
-        wierzch = pymupdf.open("pdf", be_pap.get_pdf_bytes(page, settings=ustaw))
+        wierzch = pymupdf.open("pdf", be_pap.get_pdf_bytes(page, settings=ustaw, render_box=box))
         _usun_tlo_strony(wierzch)
         strona[0].show_pdf_page(strona[0].rect, wierzch, 0)
         wierzch.close()
@@ -179,9 +187,8 @@ def _wklej_obrazy_papieru(strona, psp, page, na_pt) -> None:
             continue
         u, v = e.dxf.u_pixel, e.dxf.v_pixel
         szer, wys = u.x * e.dxf.image_size.x, v.y * e.dxf.image_size.y
-        x0, y0 = e.dxf.insert.x, e.dxf.insert.y
-        gora = page.height - (y0 + wys)
-        strona.insert_image(pymupdf.Rect(x0 * na_pt, gora * na_pt, (x0 + szer) * na_pt, (gora + wys) * na_pt),
+        lx, gora = na_strone(psp)(e.dxf.insert.x, e.dxf.insert.y + wys)
+        strona.insert_image(pymupdf.Rect(lx * na_pt, gora * na_pt, (lx + szer) * na_pt, (gora + wys) * na_pt),
                             filename=str(plik), keep_proportion=False)
 
 
@@ -193,8 +200,17 @@ def _prostokat_rzutni_pt(psp, page, na_pt, pymupdf):
     w, h = vp.dxf.width, vp.dxf.height
     x0 = vp.dxf.center.x - w / 2
     y0 = vp.dxf.center.y - h / 2  # od lewego dolnego rogu arkusza
-    gora = page.height - (y0 + h)  # oś Y: DXF w górę, PDF w dół
-    return pymupdf.Rect(x0 * na_pt, gora * na_pt, (x0 + w) * na_pt, (gora + h) * na_pt)
+    lx, gora = na_strone(psp)(x0, y0 + h)
+    return pymupdf.Rect(lx * na_pt, gora * na_pt, (lx + w) * na_pt, (gora + h) * na_pt)
+
+
+def na_strone(psp):
+    """Przelicznik: punkt papieru układu [mm] -> [mm na stronie PDF, od lewego GÓRNEGO rogu]
+    (zgodnie z obszarem renderu z _strona_ukladu: papier przesunięty o marginesy wydruku)."""
+    p = layout.Page.from_dxf_layout(psp)
+    m = p.margins_in_mm
+    h = p.height_in_mm
+    return lambda x, y: (x + m.left, h - m.bottom - y)
 
 
 def _wklej_podklad(strona, t, clip, na_pt, pymupdf) -> None:
@@ -433,16 +449,15 @@ def tla_z_rzutni(psp, obrazy) -> list[RysunekTla]:
         return []
     skala_x = w_mm / view_w   # mm papieru na metr terenu
     skala_y = h_mm / view_h
-    strona_h_mm = _wysokosc_strony_mm(psp)
+    na_str = na_strone(psp)
 
     def na_papier(mx, my):  # metr terenu -> mm od lewego dolnego rogu arkusza
         return cx_mm + (mx - vcx) * skala_x, cy_mm + (my - vcy) * skala_y
 
     wynik = []
     for plik, x0_m, y0_m, szer_m, wys_m in obrazy:
-        lx_mm, gy_mm = na_papier(x0_m, y0_m + wys_m)  # lewy górny róg obrazu
-        # oś Y: DXF rośnie w górę, PDF w dół -> licz od góry strony
-        wynik.append(RysunekTla(plik, lx_mm, strona_h_mm - gy_mm,
+        lx_mm, gy_mm = na_str(*na_papier(x0_m, y0_m + wys_m))  # lewy górny róg obrazu na stronie
+        wynik.append(RysunekTla(plik, lx_mm, gy_mm,
                                 szer_m * skala_x, wys_m * skala_y))
     return wynik
 
