@@ -10,6 +10,7 @@ Formatowanie szablonu zostaje zachowane.
 from __future__ import annotations
 
 import copy
+import re
 from datetime import date
 from pathlib import Path
 
@@ -75,10 +76,25 @@ def _nastepny_niepusty(paragrafy: list[Paragraph], od: int) -> int | None:
     return None
 
 
+_SKROTY_ULIC = ((r"ul\.|ulica", "ul."), (r"al\.|aleja|aleje", "al."), (r"pl\.|plac", "pl."),
+                (r"os\.|osiedle", "os."), (r"rondo", "rondo"), (r"skwer", "skwer"))
+
+
+def ulica_z_przedrostkiem(ulica: str) -> str:
+    """„Oknicka” -> „ul. Oknicka”; nazwa z przedrostkiem (np. „ulica Oknicka” z PRG/OSM,
+    „aleja Krakowska”) dostaje jeden, skrócony - bez „ul. ulica …”."""
+    t = ulica.strip()
+    for wzor, skrot in _SKROTY_ULIC:
+        m = re.match(rf"(?i)^(?:{wzor})(?:\s+|(?<=\.))", t)
+        if m:
+            return f"{skrot} {t[m.end():].strip()}"
+    return f"ul. {t}"
+
+
 def adres_slupa(w: Wierzcholek) -> str:
     adres = w.miejscowosc or ""
     if w.ulica:
-        adres += f" ul. {w.ulica}"
+        adres += f" {ulica_z_przedrostkiem(w.ulica)}"
     poczta = " ".join(x for x in (w.kod, w.gmina) if x)
     return f"{adres}, {poczta}" if poczta else adres
 

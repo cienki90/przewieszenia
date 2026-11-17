@@ -31,3 +31,14 @@ def test_nazwy_plikow_wt():
     assert p.sciezka(Path(r"C:\x"), "numeracja.dwg").name == "WT PW Cyganka.dwg"
     assert p.sciezka(Path(r"C:\x"), "numeracja.pdf").name == "WT PW Cyganka.pdf"
     assert p.sciezka(Path(r"C:\x"), "pismo.docx").name == "PW Cyganka_pismo.docx"
+
+
+def test_ulica_bez_podwojnego_przedrostka():
+    from generator.warunki.pismo import ulica_z_przedrostkiem as u
+    assert u("Oknicka") == "ul. Oknicka"
+    assert u("ulica Oknicka") == "ul. Oknicka"
+    assert u("ul. Oknicka") == "ul. Oknicka"
+    assert u("ul.Oknicka") == "ul. Oknicka"
+    assert u("aleja Krakowska") == "al. Krakowska"
+    assert u("Plac Wolności") == "pl. Wolności"
+    assert u("Ulicowa") == "ul. Ulicowa"
