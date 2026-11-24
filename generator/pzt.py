@@ -558,6 +558,26 @@ def oznaczenie_stacji(numer, stacje_oznaczenia):
     return stacje_oznaczenia.get(_norm_nr(numer), numer)
 
 
+def _zasieg_blokow_wzorca(sciezka, nazwy):
+    """(lewa krawędź, górna krawędź) [mm papieru] bloków tabelki/legendy w layoucie-wzorcu,
+    wg ich rzeczywistej geometrii; None, gdy nie da się policzyć."""
+    try:
+        import ezdxf
+        from ezdxf import bbox as _bbox
+        doc = ezdxf.readfile(sciezka)
+        lay = next((doc.layouts.get(n) for n in doc.layouts.names()
+                    if n.strip().lower() == NAZWA_WZORCA.lower()), None)
+        if lay is None:
+            return None
+        bl = [e for e in lay if e.dxftype() == "INSERT" and e.dxf.name.strip().lower() in nazwy]
+        ext = _bbox.extents(bl) if bl else None
+        if ext is None or not ext.has_data:
+            return None
+        return ext.extmin.x, ext.extmax.y
+    except Exception:  # noqa: BLE001 - uszkodzony blok itp.: zostaje przybliżenie z punktów wstawienia
+        return None
+
+
 def _wczytaj_wzorzec(sciezka):
     """Z layoutu-wzorca `a`: rozmiar okna rzutni modelu [m] i strefa tabelki/legendy.
 
@@ -609,14 +629,19 @@ def _wczytaj_wzorzec(sciezka):
         if t == "INSERT" and (get(d, 2) or "").strip().lower() in nazwy_tab:
             tab_pts.append((getf(d, 10, 0.0), getf(d, 20, 0.0)))
     if tab_pts:
-        # lewa krawędź najdalej wysuniętego w lewo bloku tabelki/legendy -> prawy dolny róg
-        lewa = min(x for x, _ in tab_pts)
+        # lewa krawędź najdalej wysuniętego w lewo bloku tabelki/legendy -> prawy dolny róg.
+        # Rzeczywisty zasięg bloków (legenda leży zwykle W LEWO od swojego punktu wstawienia);
+        # gdy nie da się go policzyć - punkty wstawienia, jak dawniej.
+        zasieg = _zasieg_blokow_wzorca(sciezka, nazwy_tab)
+        if zasieg:
+            lewa, gora = zasieg
+        else:
+            lewa = min(x for x, _ in tab_pts)
+            gora = max((y for _x, y in tab_pts), default=py0)
         mx0, _my0 = pap_do_model(lewa, py0)
-        mx1, my1 = pap_do_model(px0 + pw, py0 + 0.0)
         # wysokość strefy: ~1/4 arkusza (tabelka+legenda zwykle w dolnym pasie) lub do najwyższego bloku
-        gora = max((y for _x, y in tab_pts), default=py0)
         _mg, zy1 = pap_do_model(lewa, max(gora, py0 + ph * 0.22))
-        zak = (mx0, 0.0, W, zy1)
+        zak = (max(0.0, mx0), 0.0, W, zy1)
     else:
         zak = (W, 0.0, W, 0.0)   # brak tabelki -> brak strefy zakazanej
     return W, H, zak
