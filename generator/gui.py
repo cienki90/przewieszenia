@@ -154,11 +154,12 @@ class Aplikacja:
         # ostatnio użyty numer z historii
         zapisane = self.ust.get("wt", {}) if isinstance(self.ust.get("wt"), dict) else {}
         historia = self._historia_wt()
-        self.wt = {}
-        for m in MODULY_WT:
-            v = tk.StringVar(value=zapisane.get(m) or (historia[0] if historia else ""))
-            v.trace_add("write", lambda *_: self._zaplanuj_zapis())
-            self.wt[m] = v
+        # JEDEN numer WT wspólny dla Opisów, PPW i Zakładek - wpisany w jednym module jest od razu
+        # w pozostałych (to ten sam numer warunków projektu)
+        wspolny = tk.StringVar(value=next((zapisane.get(m) for m in MODULY_WT if zapisane.get(m)), None)
+                               or (historia[0] if historia else ""))
+        wspolny.trace_add("write", lambda *_: self._zaplanuj_zapis())
+        self.wt = {m: wspolny for m in MODULY_WT}
         self.opisy_wt, self.ppw_wt, self.zakladki_wt = (self.wt[m] for m in MODULY_WT)
 
         # pola wypełnione automatycznie wynikami tej sesji: nazwa zmiennej -> wpisana ścieżka
@@ -295,6 +296,8 @@ class Aplikacja:
         self._podpiete.clear()
         self.pdf_folder.set("")                          # brak w starszym projekcie -> podpowiedź
         for k, wartosc in (dane.get("pola") or {}).items():
+            if k.startswith("wt_") and k[3:] in MODULY_WT and not str(wartosc or "").strip():
+                continue                                   # wspólny numer WT: pusty wpis nie kasuje
             if k in pola:
                 try:
                     pola[k].set(wartosc)
