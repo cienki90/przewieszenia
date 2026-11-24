@@ -37,3 +37,23 @@ def test_numeracja_od_stacji_galeziami():
     assert abs(sr[0]) == min(abs(s) for s in sr)
     znaki = [s > 0 for s in sr[1:]]
     assert znaki == sorted(znaki) or znaki == sorted(znaki, reverse=True)
+
+
+def test_strefa_zakazana_obejmuje_cala_legende(tmp_path):
+    """Legenda wstawiona punktem po PRAWEJ stronie (rysunek w lewo od punktu) - strefa liczona
+    z geometrii bloku, nie z punktu wstawienia."""
+    import ezdxf
+    doc = ezdxf.new()
+    leg = doc.blocks.new("legenda")
+    leg.add_lwpolyline([(-50, 0), (0, 0), (0, 58), (-50, 58)], close=True)
+    tab = doc.blocks.new("tabelka")
+    tab.add_lwpolyline([(-83, 0), (0, 0), (0, 65), (-83, 65)], close=True)
+    lay = doc.layouts.new("a")
+    lay.add_viewport(center=(197.5, 143.5), size=(395, 287), view_center_point=(0, 0), view_height=287)
+    lay.add_blockref("tabelka", (395, 0))
+    lay.add_blockref("legenda", (312, 0))
+    plik = tmp_path / "w.dxf"
+    doc.saveas(plik)
+    W, H, zak = pzt._wczytaj_wzorzec(str(plik))
+    assert abs(zak[0] - 262) < 1.0
+    assert abs(zak[3] - 65) < 1.0
