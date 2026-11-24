@@ -47,6 +47,23 @@ except ImportError:  # bezpośrednie uruchomienie bez pakietu
 
 BLAD, UWAGA, INFO = 'BŁĄD', 'UWAGA', 'INFO'
 
+# [m] opis stacji poza obrysem !trafo: do jakiej odległości od obrysu wiązać go z zakresem bez opisu
+TOL_ZAKRES_STACJI = 300.0
+
+
+def _odl_od_wielokata(pt, A):
+    """Odległość punktu od brzegu wielokąta (0, gdy w środku)."""
+    if w_wielokacie(pt, A):
+        return 0.0
+    px, py = pt[0], pt[1]
+    best = float('inf')
+    for (ax, ay), (bx, by) in zip(A, A[1:] + A[:1]):
+        dx, dy = bx - ax, by - ay
+        L2 = dx * dx + dy * dy
+        t = 0.0 if L2 == 0 else max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / L2))
+        best = min(best, math.hypot(px - (ax + t * dx), py - (ay + t * dy)))
+    return best
+
 
 class Model:
     """Zinterpretowany rysunek. Pola:
@@ -119,6 +136,20 @@ class Model:
                     self._U(UWAGA, 'Opis stacji %s leży w zakresie stacji %s (warstwa zakresu).'
                             % (s['nr'], zakres_stacji[s['obszar']]), p=s['p'])
                 zakres_stacji.setdefault(s['obszar'], s['nr'])
+        # zakres !trafo bez opisu stacji w środku (grot opisu postawiony tuż za obrysem) ->
+        # najbliższa stacja, której opis nie leży w żadnym zakresie (jak w module PZT)
+        wolne = [s for s in stacje if s['obszar'] is None]
+        for k, A in enumerate(rys.zakresy):
+            if k in zakres_stacji or not wolne or len(A) < 3:
+                continue
+            d, s = min(((_odl_od_wielokata(s['p'], A), s) for s in wolne), key=lambda t: t[0])
+            if d > TOL_ZAKRES_STACJI:
+                continue
+            zakres_stacji[k] = s['nr']
+            s['obszar'] = k
+            wolne.remove(s)
+            self._U(UWAGA, 'Opis stacji %s leży poza obrysem !trafo (%.0f m) - przypisano mu najbliższy '
+                    'zakres bez opisu stacji.' % (s['nr'], d), p=s['p'], st=s['nr'])
         for s in slupy:
             s['obszar'] = obszar(s['p'])
         self.zakres_stacji = zakres_stacji
