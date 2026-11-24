@@ -1760,6 +1760,10 @@ class Aplikacja:
     # ---- podpinanie wyników tej sesji do kolejnych modułów ----
     def _odbiorcy_wyniku(self, krok, wyjscie):
         """Dla wyniku modułu zwraca (plik, [(moduł, pole, StringVar), ...]) - gdzie go podpiąć."""
+        if krok == "przewieszenia":
+            return wyjscie, [("FINAŁ", "rysunek przewieszeń", self.final_przewieszenia)]
+        if krok == "opisy":
+            return wyjscie, [("FINAŁ", "opisy (folder)", self.final_opisy)]
         if krok == "numeracja":
             return wyjscie, [("Przewieszenia", "plik planu", self.we["przewieszenia"]),
                              ("Zestawienie", "plik planu", self.we["zestawienie"]),
@@ -1778,7 +1782,8 @@ class Aplikacja:
                           ("Zakładki", "zestawienie", self.zakladki_zestawienie)]
         if krok == "pzt":
             return wyjscie, [("Rysunki stałe", "plik PZT (stacje i słupy)", self.orient_zasiegi),
-                             ("PPW", "plik do renumeracji", self.ppw_renumer_dxf)]
+                             ("PPW", "plik do renumeracji", self.ppw_renumer_dxf),
+                             ("FINAŁ", "plik PZT", self.final_pzt)]
         return None, []
 
     def _podepnij_wyniki(self, udane):
@@ -1792,9 +1797,15 @@ class Aplikacja:
                     "ppw": self.ppw_pdf, "ppw_renumer": self.ppw_pdf}.get(k.nazwa)
             if pole is not None and k.wyjscie and os.path.isfile(k.wyjscie):
                 pole.set(os.path.normpath(k.wyjscie))
+        pary = []
         for k in udane:
-            plik, odbiorcy = self._odbiorcy_wyniku(k.nazwa, k.wyjscie) if k.wyjscie else (None, [])
-            if not plik or not os.path.isfile(plik):
+            if not k.wyjscie:
+                continue
+            pary.append(self._odbiorcy_wyniku(k.nazwa, k.wyjscie))
+            if k.nazwa == "orientacje" and os.path.isdir(k.wyjscie):   # FINAŁ bierze cały folder
+                pary.append((k.wyjscie, [("FINAŁ", "rysunki stałe (folder)", self.final_rysunki)]))
+        for plik, odbiorcy in pary:
+            if not plik or not os.path.exists(plik):
                 continue
             plik = os.path.normpath(plik)
             for modul, pole, var in odbiorcy:
