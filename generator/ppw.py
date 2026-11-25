@@ -76,7 +76,7 @@ def _wiersze_xlsx(sciezka, arkusz=None):
     return [[("" if c is None else c) for c in r] for r in ws.iter_rows(values_only=True)], wb
 
 
-def wczytaj_zestawienie_zbiorcze(sciezka):
+def wczytaj_zestawienie_zbiorcze(sciezka, pominiete=None):
     """Z pliku modułu „zestawienie” (arkusz „zestawienie”) zwraca listę (stacja, ilosc, dlugosc)
     dla kolejnych stacji - pomijając wiersz zbiorczy RAZEM i stacje bez rozpoznanej nazwy."""
     wb = openpyxl.load_workbook(sciezka, data_only=True)
@@ -89,6 +89,8 @@ def wczytaj_zestawienie_zbiorcze(sciezka):
         if not stacja or stacja.upper() in ("RAZEM", "SUMA"):
             continue
         if _ascii(stacja).startswith("obszar_") or "?" in stacja:
+            if pominiete is not None:
+                pominiete.append(stacja)
             continue                                 # stacja bez rozpoznanej nazwy
         ilosc = _int(r[1]) if len(r) > 1 else 0
         dlugosc = _int(r[2]) if len(r) > 2 else 0
@@ -301,7 +303,11 @@ def generuj(szablon, zestawienie, zestawienie_stacji=None, wt="", wyjscie=None, 
     if not os.path.isfile(zestawienie):
         raise FileNotFoundError(f"Nie znaleziono zestawienia: {zestawienie}")
 
-    stacje = wczytaj_zestawienie_zbiorcze(zestawienie)
+    pominiete = []
+    stacje = wczytaj_zestawienie_zbiorcze(zestawienie, pominiete)
+    if pominiete:
+        log("UWAGA: pominięto stacje bez rozpoznanej nazwy w zestawieniu: " + ", ".join(pominiete)
+            + " - popraw opis STACJA TRAFO na rysunku i zrób zestawienie ponownie.")
     if not stacje:
         raise ValueError("Zestawienie nie zawiera stacji (arkusz „zestawienie”: stacja|ilość|długość).")
 

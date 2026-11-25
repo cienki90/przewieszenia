@@ -15,7 +15,8 @@ from . import nazwy as mod_nazwy
 from .dxfio import get, mtext_plain, read_tags, split_entities, split_sections
 
 BLOKI_SLUPOW = ("ZN", "E", "R")
-RE_STACJA = re.compile(r"STACJA\s+TRAFO\s*(\d+\s*-\s*\d+|\d{3,4})", re.I)
+WZOR_STACJI = r"STACJA\s+TRAFO\w*[\s:.]*(?:nr\.?\s*)?(?:ST\s+)?(\d{2,3}-\d{3,4}|\d{3,4})(?!\d)"  # = czytaj_dxf
+RE_STACJA = re.compile(WZOR_STACJI, re.I)
 RE_OBWOD = re.compile(r"obw\.?\s*nr\s*\d+", re.I)
 RE_SLUP = re.compile(r"s[łl]up\s*nN", re.I)
 
