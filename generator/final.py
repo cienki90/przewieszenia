@@ -309,6 +309,32 @@ def _dopisz_stacje(slupy, plan: str, log=print, tol: float = 1.0) -> None:
     log(f"Stacje trafo: przypisano {n} z {len(slupy)} słupów")
 
 
+TOL_ADRESU_WT = 5.0      # [m] słup planu <-> słup WT przy przenoszeniu adresu
+
+
+def _adresy_z_wt(slupy, wt_plik: str, log=print) -> list:
+    """Miejscowość, ulica i gmina słupów z pliku WT (najbliższy słup WT do TOL_ADRESU_WT).
+    Zwraca słupy, dla których adresu w WT nie znaleziono."""
+    from . import wt as mod_wt
+    try:
+        zrodlo = mod_wt.plik_adresow_wt(wt_plik)
+        adresy = mod_wt.adresy_z_wt(wt_plik)
+    except (OSError, ValueError) as ex:
+        log(f"Uwaga: nie odczytano adresów z WT ({ex})")
+        return list(slupy)
+    bez = []
+    for w in slupy:
+        a = min(adresy, key=lambda s: (s.x - w.x) ** 2 + (s.y - w.y) ** 2, default=None)
+        if a is None or ((a.x - w.x) ** 2 + (a.y - w.y) ** 2) ** 0.5 > TOL_ADRESU_WT:
+            bez.append(w)
+            continue
+        w.miejscowosc = a.miejscowosc or None
+        w.ulica = a.ulica or None
+        w.gmina = a.gmina or w.gmina
+    log(f"Adresy z WT ({os.path.basename(zrodlo)}): {len(slupy) - len(bez)} z {len(slupy)} słupów")
+    return bez
+
+
 def tabela_projektowa(plan: str, wt_plik: str | None, folder_wyj: str | None = None, adresy: bool = True,
                       log=print) -> str:
     """Tabela projektowa z gotowego (ponumerowanego) planu: numeracja i układ współrzędnych jak we
@@ -324,8 +350,17 @@ def tabela_projektowa(plan: str, wt_plik: str | None, folder_wyj: str | None = N
     p = Projekt(Config())
     p.wczytaj(plan)
     log(f"Plan: {len(p.slupy)} słupów")
-    if adresy:
-        p.geokoduj(lambda i, n: None)
+    # adresy (miejscowość, ulica, gmina) z warunków technicznych - te same co w WT; z internetu
+    # tylko dla słupów, których w WT nie ma (gdy pobieranie adresów jest włączone)
+    bez_adresu = list(p.slupy)
+    if wt_plik:
+        bez_adresu = _adresy_z_wt(p.slupy, wt_plik, log)
+    if adresy and bez_adresu and p.epsg is not None:
+        log(f"Adresy z internetu: {len(bez_adresu)} słupów bez adresu w WT")
+        from .warunki import geocoder
+        g = geocoder.Geokoder(p.epsg, p.cfg.promien_adresu,
+                              plik_cache=p.cfg.plik_slownikow.parent / "cache_geokodowania.json")
+        geocoder.uzupelnij(bez_adresu, g)
     p.zastosuj_stan()
     p.planuj()
     _dopisz_stacje(p.slupy, plan, log)
