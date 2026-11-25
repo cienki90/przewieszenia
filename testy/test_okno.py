@@ -125,10 +125,13 @@ class TestOkno(unittest.TestCase):
             wynik = pipeline.Wynik([pipeline.WynikKroku("opisy", ok=True, wyjscie=wyjscie)])
             with mock.patch.object(app, "_zapisz_projekt"), mock.patch.object(app, "_zapisz_dziennik", return_value=None), \
                     mock.patch.object(app, "_odswiez_stan_projektu"), mock.patch.object(app, "_podepnij_wyniki"), \
-                    mock.patch.object(self.gui.messagebox, "askyesno", return_value=False) as pyt:
+                    mock.patch.object(app, "_okno_gotowe") as okno:
                 app._zakoncz(wynik)
             self.assertEqual(os.path.normcase(app._ostatni_katalog), os.path.normcase(oczekiwany))
-            self.assertIn(oczekiwany, pyt.call_args.args[1])
+            okno.assert_called_once()
+            # „Otwórz plik”: plik wyniku (PPW.docx); folder opisów - brak pojedynczego pliku
+            self.assertEqual(app._ostatni_plik, os.path.normpath(wyjscie) if os.path.isfile(wyjscie) else "")
+            self.assertEqual(str(app.btn_otworz_plik.cget("state")), "normal" if app._ostatni_plik else "disabled")
 
     def test_pliki_wg_ukladu_projektu(self):
         """Układ jak w przykładowym projekcie: puste pola wypełniają się plikami z właściwych podfolderów,
