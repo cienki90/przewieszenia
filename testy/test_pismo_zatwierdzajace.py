@@ -79,8 +79,9 @@ def test_adresy_z_wt_bierze_rozbudowana_z_gmina(tmp_path):
         ws = wb.active
         ws.append(("L.p.", "Gmina", "Miejscowość", "Lokalizacja, ulica", "X", "Y") if gm else
                   ("L.p.", "Miejscowość", "Lokalizacja, ulica", "X", "Y"))
-        ws.append((1, gm, "Góraszka", "Zielona", 5784159.61, 7518582.75) if gm else
-                  (1, "Góraszka", "Zielona", 5784159.61, 7518582.75))
+        for i in range(3):                               # rozpoznanie kolumn współrzędnych: >= 3 wiersze
+            ws.append((i + 1, gm, "Góraszka", "Zielona", 5784159.61 + i * 40, 7518582.75) if gm else
+                      (i + 1, "Góraszka", "Zielona", 5784159.61 + i * 40, 7518582.75))
         wb.save(tmp_path / nazwa)
     plik = str(tmp_path / "plan_uproszczona.xlsx")
     assert wt.plik_adresow_wt(plik).endswith("plan_rozbudowana.xlsx")
