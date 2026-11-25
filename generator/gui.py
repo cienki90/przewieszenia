@@ -714,6 +714,8 @@ class Aplikacja:
         self._zakladka_ppw()
         self._zakladka_zakladki()
         self._zakladka_final()
+        from .zakladka_pismo import ZakladkaPismo
+        self.pismo = ZakladkaPismo(self)
 
         start = self.ust.get("modul")
         self._pokaz(start if start in self._strony else next(iter(self._strony)))
