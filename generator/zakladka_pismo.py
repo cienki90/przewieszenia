@@ -54,12 +54,14 @@ class ZakladkaPismo:
         self.tabela.bind("<Double-1>", self._edytuj)
         pr = ttk.Frame(box)
         pr.pack(fill="x", pady=(4, 0))
-        ttk.Button(pr, text="Dodaj folder projektu…", command=self._wybierz).pack(side="left")
+        ttk.Button(pr, text="Dodaj foldery projektów…", command=self._wybierz).pack(side="left")
         ttk.Button(pr, text="Dodaj otwarty projekt", command=self._dodaj_otwarty).pack(side="left", padx=(6, 0))
         ttk.Button(pr, text="Usuń", command=self._usun).pack(side="left", padx=(6, 0))
         ttk.Button(pr, text="▲", width=3, command=lambda: self._przesun(-1)).pack(side="left", padx=(6, 0))
         ttk.Button(pr, text="▼", width=3, command=lambda: self._przesun(1)).pack(side="left", padx=(2, 0))
         ttk.Button(pr, text="Odczytaj ponownie", command=self._odswiez).pack(side="left", padx=(6, 0))
+        app._podpowiedz(box, "(w oknie wyboru można zaznaczyć kilka folderów naraz — Ctrl / Shift; folder "
+                             "zbiorczy, np. „sierpień 2026”, dodaje wszystkie projekty ze swoich podfolderów)")
 
         box = app._sekcja(f, "Pismo")
         for etykieta, var, podp in (("Rejon Energetyczny:", self.rejon, "(np. Mińsk Mazowiecki — gdy puste, "
@@ -115,10 +117,29 @@ class ZakladkaPismo:
             self._zapamietaj()
 
     def _wybierz(self):
-        start = os.path.dirname(self.projekty[-1].folder) if self.projekty else (self.app.projekt.get() or None)
-        f = filedialog.askdirectory(parent=self.app.root, title="Folder projektu", initialdir=start)
-        if f:
-            self._dodaj(f)
+        """Kilka folderów naraz (systemowe okno Windows, Ctrl / Shift); folder zbiorczy bez własnego
+        zestawienia, np. „sierpień 2026”, dodaje projekty ze swoich podfolderów."""
+        from . import wybor_folderow
+        app = self.app
+        start = os.path.dirname(self.projekty[-1].folder) if self.projekty else (app.projekt.get() or None)
+        foldery = wybor_folderow.wybierz_foldery(app.root, "Foldery projektów — zaznacz kilka (Ctrl / Shift)",
+                                                 start, przycisk="Dodaj")
+        if foldery is None:                         # bez okna systemowego - jeden folder naraz
+            f = filedialog.askdirectory(parent=app.root, title="Folder projektu", initialdir=start)
+            foldery = [f] if f else []
+        if not foldery:
+            return
+        przed = len(self.projekty)
+        app.root.configure(cursor="watch")
+        app.root.update_idletasks()
+        try:
+            for f in foldery:
+                for projekt in pz.foldery_projektow(f):
+                    self._dodaj(projekt, zapisz=False)
+        finally:
+            app.root.configure(cursor="")
+        self._zapamietaj()
+        app.status.configure(text=f"Pismo zatwierdzające: dodano {len(self.projekty) - przed} projekt(ów).")
 
     def _dodaj_otwarty(self):
         f = self.app.projekt.get().strip()
@@ -216,6 +237,7 @@ class ZakladkaPismo:
             filetypes=[("Dokument Word", "*.docx")])
         if not wyjscie:
             return
+        wyjscie = os.path.normpath(wyjscie)              # okno zwraca „D:/…” - w dzienniku i oknie „\”
         self._zapamietaj()
         app._pisz("\n" + "=" * 50 + "\nPISMO ZATWIERDZAJĄCE")
         try:

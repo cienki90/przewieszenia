@@ -174,6 +174,30 @@ def rejon_z_projektu(folder: str) -> str:
     return ""
 
 
+def czy_folder_projektu(folder: str) -> bool:
+    """Folder projektu: ma zestawienie słupów („zestawienie <plan>.xlsx”) albo plik projektu programu."""
+    try:
+        nazwy = [e.name.lower() for e in os.scandir(folder) if e.is_file()]
+    except OSError:
+        return False
+    return any(n == "projekt generatornn.json" or (n.startswith("zestawienie ") and n.endswith(".xlsx"))
+               for n in nazwy)
+
+
+def foldery_projektow(folder: str) -> list[str]:
+    """Wskazany folder, a gdy sam nie jest projektem, ale ma projekty w podfolderach (folder zbiorczy,
+    np. „sierpień 2026”) - te projekty, alfabetycznie."""
+    folder = os.path.normpath(folder)
+    if czy_folder_projektu(folder):
+        return [folder]
+    try:
+        pod = sorted((e.path for e in os.scandir(folder) if e.is_dir() and not e.name.startswith((".", "_"))),
+                     key=lambda p: os.path.basename(p).lower())
+    except OSError:
+        return [folder]
+    return [p for p in pod if czy_folder_projektu(p)] or [folder]
+
+
 def wczytaj_projekt(folder: str) -> Projekt:
     from . import ppw
     if not os.path.isdir(folder):

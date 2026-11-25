@@ -87,3 +87,21 @@ def test_adresy_z_wt_bierze_rozbudowana_z_gmina(tmp_path):
     assert wt.plik_adresow_wt(plik).endswith("plan_rozbudowana.xlsx")
     s = wt.adresy_z_wt(plik)[0]
     assert (s.miejscowosc, s.ulica, s.gmina, round(s.x)) == ("Góraszka", "Zielona", "Wiązowna", 7518583)
+
+
+def test_folder_zbiorczy_dodaje_projekty_z_podfolderow(tmp_path):
+    zb = tmp_path / "sierpień 2026"
+    for n in ("B projekt", "a projekt"):
+        (zb / n).mkdir(parents=True)
+        (zb / n / "zestawienie plan.xlsx").write_bytes(b"")
+    (zb / "inny folder").mkdir()                                  # bez zestawienia - pomijany
+    (zb / "a projekt" / "opisy").mkdir()
+    assert P.foldery_projektow(str(zb)) == [str(zb / "a projekt"), str(zb / "B projekt")]
+    assert P.foldery_projektow(str(zb / "a projekt")) == [str(zb / "a projekt")]     # projekt - sam
+    assert P.foldery_projektow(str(zb / "inny folder")) == [str(zb / "inny folder")]  # nic do rozwinięcia
+
+
+def test_okno_wyboru_poza_windows_zwraca_none(monkeypatch):
+    from generator import wybor_folderow
+    monkeypatch.setattr(wybor_folderow.sys, "platform", "linux")
+    assert wybor_folderow.wybierz_foldery(None, "x") is None      # wtedy zwykłe askdirectory
