@@ -45,6 +45,11 @@ NAZWA_WZORCA = "a"                  # layout-wzorzec w pliku
 BLOKI_TABELKI = ("tabelka", "legenda")   # bloki tabelki/legendy w layoucie (strefa "zakazana")
 PREFIKS_RYS = "2."                  # numer rysunku = 2.n
 
+
+def numer_rysunku(i: int, ile: int) -> str:
+    """Numer rysunku arkusza PZT: „2.1”, „2.2”… - a przy jednym arkuszu stacji samo „2”."""
+    return PREFIKS_RYS.rstrip(".") if ile == 1 else f"{PREFIKS_RYS}{i}"
+
 ZAKLAD = 50.0                       # wspólny odcinek trasy sąsiednich arkuszy [m]
 MARGINES_MM = 10.0                  # odstęp trasy od ramki i tabelki [mm papieru = m terenu w 1:1000]
 GESTOSC = 5.0                       # próbkowanie trasy [m]
@@ -863,7 +868,7 @@ def zaplanuj(we: Wejscie, miejscowosci_stacji=None, tylko=None, zaklad=ZAKLAD, u
             zrodlo = ""
         for i, (x0, y0) in enumerate(narozniki, 1):
             a = Arkusz(x0, y0, W, H, stacja=st.oznaczenie, nr_stacji=nr,
-                       nazwa=f"{nr}-{i}", nr_rys=f"{PREFIKS_RYS}{i}")
+                       nazwa=f"{nr}-{i}", nr_rys=numer_rysunku(i, len(narozniki)))
             a.miejscowosci = miejsc
             arkusze.append(a)
         opis_m = (" - " + ", ".join(miejsc)) if miejsc else ""
