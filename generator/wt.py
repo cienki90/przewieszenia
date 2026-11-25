@@ -78,6 +78,7 @@ class SlupWT:
     y: float            # northing PL-2000 (Y ~ 5.8 mln)
     miejscowosc: str    # "" - tabela bez miejscowości (sama lista współrzędnych) albo pusta komórka
     ulica: str = ""
+    gmina: str = ""     # kolumna „Gmina” (zestawienie rozbudowane WT)
     nr: str = ""
     arkusz: str = ""    # arkusz skoroszytu (skoroszyt operatora: arkusz = numer WT)
 
@@ -195,6 +196,20 @@ def wczytaj_wt(sciezka):
     return wynik
 
 
+def plik_adresow_wt(wt_plik: str) -> str:
+    """Plik WT z adresami słupów: „…_rozbudowana.xlsx” obok wskazanego pliku (ma też gminę),
+    a gdy go nie ma - sam wskazany plik (np. „…_uproszczona.xls”)."""
+    folder, nazwa = os.path.split(wt_plik)
+    rdzen = re.sub(r"_(uproszczona|rozbudowana|tabela_projektowa)$", "", os.path.splitext(nazwa)[0], flags=re.I)
+    rozb = os.path.join(folder, rdzen + "_rozbudowana.xlsx")
+    return rozb if os.path.isfile(rozb) else wt_plik
+
+
+def adresy_z_wt(wt_plik: str) -> list:
+    """Słupy WT z adresem (miejscowość, ulica, gmina) - do tabeli projektowej zamiast geokodowania."""
+    return [s for s in wczytaj_wt(plik_adresow_wt(wt_plik)) if s.miejscowosc or s.ulica]
+
+
 def _znajdz_wiersz_naglowka(rows):
     """Indeks wiersza nagłówka = pierwszy wiersz zawierający 'Miejscowość'."""
     for i, r in enumerate(rows[:20]):
@@ -214,9 +229,10 @@ def _slupy_z_wierszy(rows, wymagaj_miejscowosci=True):
     i_miejsc = next((j for j, h in enumerate(naglowek) if h.startswith(_H_MIEJSCOWOSC)), None)
     i_ulica = next((j for j, h in enumerate(naglowek) if h in _H_ULICA), None)
     i_nr = next((naglowek.index(h) for h in _H_NR if h in naglowek), None)
+    i_gmina = next((j for j, h in enumerate(naglowek) if h == "gmina"), None)
     dane = rows[i_hdr + 1:]
     # kolumny-kandydaci na współrzędne: wszystkie na prawo od miejscowości (oraz ulicy)
-    start = max((x for x in (i_miejsc, i_ulica) if x is not None), default=-1) + 1
+    start = max((x for x in (i_miejsc, i_ulica, i_gmina) if x is not None), default=-1) + 1
     maxc = max((len(r) for r in dane), default=0)
     wykr = _wykryj_kolumny_wsp(dane, list(range(start, maxc)))
     if wykr is None:
@@ -249,7 +265,8 @@ def _slupy_z_wierszy(rows, wymagaj_miejscowosci=True):
                 continue
             x, y = _os_easting_northing(vx, vy)
         # słup bez miejscowości zostaje: liczy się w kontroli zakresu, nazwy biorą tylko te z nazwą
-        slupy.append(SlupWT(x=x, y=y, miejscowosc=tekst(r, i_miejsc), ulica=tekst(r, i_ulica), nr=tekst(r, i_nr)))
+        slupy.append(SlupWT(x=x, y=y, miejscowosc=tekst(r, i_miejsc), ulica=tekst(r, i_ulica), nr=tekst(r, i_nr),
+                            gmina=tekst(r, i_gmina)))
     return slupy
 
 

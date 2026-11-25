@@ -270,8 +270,7 @@ class ZakladkaPismo:
                 b.configure(state="normal")
             if "blad" in wynik:
                 app._pisz(f"BŁĄD tabel projektowych: {wynik['blad']}")
-                messagebox.showerror(app.root.title(), f"Pismo utworzone, ale tabele projektowe nie:
-"
+                messagebox.showerror(app.root.title(), "Pismo utworzone, ale tabele projektowe nie:\n"
                                                        f"{wynik['blad']}", parent=app.root)
             pliki = wynik.get("pliki") or []
             self._koniec(1 + len(pliki))
