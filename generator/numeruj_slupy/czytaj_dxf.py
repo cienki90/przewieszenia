@@ -34,7 +34,10 @@ TOL_MUFA = 5.0                   # [m] maks. odległość bloku mufy od słupa
 DOMYSLNE_OZNACZENIE = 'P'
 
 RE_SLUP = re.compile(r's[łl]up\s*nN(?:\s*/\s*\w+)?\s*\n\s*([A-Za-ząćęłńóśźżĄĆĘŁŃÓŚŹŻ]*)\s*(-.+?)\s*$', re.I | re.S)
-RE_STACJA = re.compile(r'STACJA\s+TRAFO\s*\n\s*(\S+)', re.I)
+# opis stacji: „STACJA TRAFO⏎03-0551” (też w jednej linii, z „:”, „nr”, „ST”) - ten sam wzorzec
+# w pzt.WZOR_STACJI i sprawdz_plan.WZOR_STACJI (pilnuje testy/test_wzorzec_stacji.py)
+WZOR_STACJI = r"STACJA\s+TRAFO\w*[\s:.]*(?:nr\.?\s*)?(?:ST\s+)?(\d{2,3}-\d{3,4}|\d{3,4})(?!\d)"
+RE_STACJA = re.compile(WZOR_STACJI, re.I)
 RE_OBWOD = re.compile(r'obw\.?\s*nr\s*(\d+)', re.I)
 RE_NUMER = re.compile(r'^\d+(\.\d+)*$')
 

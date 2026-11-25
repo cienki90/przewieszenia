@@ -309,11 +309,8 @@ def _poligony_stacji(we, ostrzezenia):
     _pzt.sprawdz_prefiksy_stacji(we)        # 05-0073 i 09-0073 w jednym planie - nie zgadujemy
     oznaczenia = {_pzt._norm_nr(nr): nr for nr, _ in we.stacje}
     poligony_stacji = defaultdict(list)
-    for nazwa_warstwy, pts, _uchwyt in we.poligony:
-        nr = _pzt._norm_nr(nazwa_warstwy) if nazwa_warstwy else None
-        if not nr:
-            nr = _pzt._numer_poligonu(pts, we.stacje, oznaczenia, ostrzezenia)
-            nr = _pzt._norm_nr(nr) if nr else None
+    for (_w, pts, _uchwyt), nr in zip(we.poligony, _pzt.numery_poligonow(we, oznaczenia, ostrzezenia)):
+        nr = _pzt._norm_nr(nr) if nr else None
         if nr:
             poligony_stacji[nr].append(pts)
     return poligony_stacji, oznaczenia

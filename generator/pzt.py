@@ -53,7 +53,8 @@ BB_LIMIT = 200000                   # limit dokładnego przeszukiwania (liczba s
 
 RE_STACJA = re.compile(r"(\d{2,3}-\d{3,4}|\d{3,4})")   # "03-0494" lub "0494"/"494"
 # opis stacji na warstwie bez „trafo” w nazwie (np. multileader wstawiony na „0”): „STACJA TRAFO <nr>”
-RE_OPIS_STACJI = re.compile(r"stacja\s*trafo\w*\W*(\d{2,3}-\d{3,4}|\d{3,4})(?!\d)", re.I)
+WZOR_STACJI = r"STACJA\s+TRAFO\w*[\s:.]*(?:nr\.?\s*)?(?:ST\s+)?(\d{2,3}-\d{3,4}|\d{3,4})(?!\d)"  # = czytaj_dxf
+RE_OPIS_STACJI = re.compile(WZOR_STACJI, re.I)
 RE_NAZWA_PZT = re.compile(r"^\d+-\d+$")                # nazwa layoutu PZT, np. "244-1" / "2-3"
 
 
@@ -698,17 +699,38 @@ def _numer_poligonu(poly, stacje, oznaczenia, ostrzezenia):
                            f"({', '.join(oznaczenia.get(nr, nr) for nr, _ in w_srodku)}) - "
                            f"przyjęto {oznaczenia.get(w_srodku[0][0], w_srodku[0][0])}.")
         return w_srodku[0][0]
-    # 2) najbliższa stacja do poligonu
-    if stacje:
-        nr, dmin = None, None
-        for n, p in stacje:
-            d = dist_pt_poligon(p, poly)
-            if dmin is None or d < dmin:
-                nr, dmin = n, d
-        ostrzezenia.append(f"Poligon !trafo bez opisu STACJA TRAFO w środku - przypisano "
-                           f"najbliższą stację {oznaczenia.get(nr, nr)} ({dmin:.0f} m).")
-        return nr
     return None
+
+
+# [m] jak numeruj_slupy.model.TOL_ZAKRES_STACJI - poligon bez opisu stacji wiązany z opisem za obrysem
+TOL_ZAKRES_STACJI = 300.0
+
+
+def numery_poligonow(we, oznaczenia, ostrzezenia):
+    """Numer stacji (pełny lub z warstwy) dla każdego poligonu we.poligony; None = nieustalony.
+
+    Ta sama reguła co w numeracji i zestawieniu: nazwa warstwy !trafo_<nr>, opis STACJA TRAFO
+    w poligonie, a dla poligonu bez opisu - najbliższa stacja, której opis nie leży w żadnym
+    poligonie, nie dalej niż TOL_ZAKRES_STACJI od obrysu."""
+    wynik = []
+    for nazwa_warstwy, pts, _u in we.poligony:
+        wynik.append(nazwa_warstwy or _numer_poligonu(pts, we.stacje, oznaczenia, ostrzezenia))
+    wolne = [(nr, p) for nr, p in we.stacje if not any(w_poligonie(p, pts) for _n, pts, _u in we.poligony)]
+    for k, (_n, pts, _u) in enumerate(we.poligony):
+        if wynik[k]:
+            continue
+        if wolne:
+            d, (nr, p) = min(((dist_pt_poligon(p, pts), (nr, p)) for nr, p in wolne), key=lambda t: t[0])
+            if d <= TOL_ZAKRES_STACJI:
+                wolne.remove((nr, p))
+                wynik[k] = nr
+                ostrzezenia.append(f"Poligon !trafo bez opisu STACJA TRAFO w środku - przypisano "
+                                   f"najbliższą stację {oznaczenia.get(nr, nr)} ({d:.0f} m).")
+                continue
+        x, y = pts[0][:2]
+        ostrzezenia.append(f"Poligon !trafo bez opisu STACJA TRAFO (ok. {x:.0f}, {y:.0f}) i bez wolnej "
+                           f"stacji w promieniu {TOL_ZAKRES_STACJI:.0f} m - pominięto (dopisz opis stacji).")
+    return wynik
 
 
 @dataclass
@@ -739,11 +761,8 @@ def dane_stacji(we: Wejscie, ostrzezenia=None):
     oznaczenia = {_norm_nr(nr): nr for nr, _ in we.stacje}      # 494 -> 03-0494
     poligony = []
     poligony_stacji = {}          # nr -> [uchwyty poligonów tej stacji]
-    for nazwa_warstwy, pts, uchwyt in we.poligony:
-        nr = _norm_nr(nazwa_warstwy) if nazwa_warstwy else None
-        if not nr:
-            nr = _numer_poligonu(pts, we.stacje, oznaczenia, ostrzezenia)
-            nr = _norm_nr(nr) if nr else None
+    for (_w, pts, uchwyt), nr in zip(we.poligony, numery_poligonow(we, oznaczenia, ostrzezenia)):
+        nr = _norm_nr(nr) if nr else None
         if nr:
             poligony.append((nr, pts))
             if uchwyt:
