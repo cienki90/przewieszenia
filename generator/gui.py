@@ -103,6 +103,7 @@ class Aplikacja:
         self._kolejka: queue.Queue = queue.Queue()
         self._ostatni_wynik = None
         self._ostatni_katalog = ""
+        self._ostatni_plik = ""                            # plik wygenerowany ostatnio (przycisk „Otwórz plik”)
 
         # per-moduł: plik wejściowy
         self.we = {k: tk.StringVar() for k in pipeline.KROKI}
@@ -1461,7 +1462,10 @@ class Aplikacja:
         self.btn_otworz = ttk.Button(akcja, text="Otwórz folder wyniku",
                                      command=self._otworz_folder, state="disabled")
         self.btn_otworz.grid(row=0, column=1, padx=(10, 0))
-        ttk.Button(akcja, text="Kopiuj dziennik", command=self._kopiuj_dziennik).grid(row=0, column=2, padx=(6, 0))
+        self.btn_otworz_plik = ttk.Button(akcja, text="Otwórz plik wyniku",
+                                          command=self._otworz_plik, state="disabled")
+        self.btn_otworz_plik.grid(row=0, column=2, padx=(6, 0))
+        ttk.Button(akcja, text="Kopiuj dziennik", command=self._kopiuj_dziennik).grid(row=0, column=3, padx=(6, 0))
 
         box = ttk.Frame(dol)
         box.grid(row=3, column=0, sticky="nsew", pady=(2, 0))
@@ -1662,6 +1666,7 @@ class Aplikacja:
         for b in self._przyciski:
             b.configure(state="disabled")
         self.btn_otworz.configure(state="disabled")
+        self.btn_otworz_plik.configure(state="disabled")
         self.pasek.start(40)                               # co 40 ms - płynnie, bez obciążania CPU
         self.log.configure(state="normal")
         self.log.delete("1.0", "end")
@@ -1845,6 +1850,7 @@ class Aplikacja:
             if k.wyjscie and os.path.exists(k.wyjscie):
                 self._ostatni_katalog = k.wyjscie if os.path.isdir(k.wyjscie) else os.path.dirname(k.wyjscie)
                 break
+        self._ostatni_plik = _plik_wyniku(udane)
         self._pisz("\n" + "=" * 50)
         self._pisz("PODSUMOWANIE:")
         for k in wynik.kroki:
@@ -1856,11 +1862,10 @@ class Aplikacja:
         if dziennik:
             self._pisz(f"\nDziennik zapisano: {dziennik}")
         self.btn_otworz.configure(state="normal" if udane else "disabled")
+        self.btn_otworz_plik.configure(state="normal" if self._ostatni_plik else "disabled")
         if not nieudane:
             self.status.configure(text=f"Gotowe — utworzono {len(udane)} wynik(ów).")
-            if messagebox.askyesno(TYTUL, f"Gotowe! Utworzono {len(udane)} wynik(ów) w:\n{self._ostatni_katalog}"
-                                          "\n\nOtworzyć folder z wynikami?", parent=self.root):
-                self._otworz_folder()
+            self._okno_gotowe(len(udane))
         else:
             self.status.configure(text=f"Zakończono z problemami: {len(udane)} OK, {len(nieudane)} błędów.")
             powody = "\n".join(f"• {k.nazwa}: {_skroc(k.blad, 300)}" for k in nieudane if k.blad)
@@ -1868,21 +1873,76 @@ class Aplikacja:
                                           + (f"\n\n{powody}" if powody else "")
                                           + "\n\nSzczegóły w oknie „Przebieg”.", parent=self.root)
 
+    def _okno_gotowe(self, ile):
+        """„Gotowe!” z przyciskami: Otwórz plik / Otwórz folder / Zamknij."""
+        okno = tk.Toplevel(self.root)
+        okno.title(TYTUL)
+        okno.transient(self.root)
+        okno.resizable(False, False)
+        tekst = f"Gotowe! Utworzono {ile} wynik(ów) w:\n{self._ostatni_katalog}"
+        if self._ostatni_plik:
+            tekst += f"\n\nPlik: {os.path.basename(self._ostatni_plik)}"
+        ttk.Label(okno, text=tekst, justify="left", wraplength=520).pack(padx=16, pady=(14, 10), anchor="w")
+        przyciski = ttk.Frame(okno)
+        przyciski.pack(padx=16, pady=(0, 14), anchor="e")
+
+        def zrob(akcja):
+            okno.destroy()
+            if akcja:
+                akcja()
+        pierwszy = None
+        if self._ostatni_plik:
+            pierwszy = ttk.Button(przyciski, text="Otwórz plik", command=lambda: zrob(self._otworz_plik))
+            pierwszy.pack(side="left", padx=(0, 6))
+        b = ttk.Button(przyciski, text="Otwórz folder", command=lambda: zrob(self._otworz_folder))
+        b.pack(side="left", padx=(0, 6))
+        ttk.Button(przyciski, text="Zamknij", command=lambda: zrob(None)).pack(side="left")
+        okno.bind("<Escape>", lambda _e: zrob(None))
+        (pierwszy or b).focus_set()
+        okno.bind("<Return>", lambda _e: (pierwszy or b).invoke())
+        okno.update_idletasks()
+        x = self.root.winfo_rootx() + (self.root.winfo_width() - okno.winfo_width()) // 2
+        y = self.root.winfo_rooty() + (self.root.winfo_height() - okno.winfo_height()) // 3
+        okno.geometry(f"+{max(x, 0)}+{max(y, 0)}")
+        okno.grab_set()
+
+    def _otworz_plik(self):
+        plik = self._ostatni_plik
+        if not plik or not os.path.exists(plik):
+            messagebox.showinfo(TYTUL, "Nie ma wygenerowanego pliku do otwarcia.", parent=self.root)
+            return
+        self._otworz_sciezke(plik)
+
     def _otworz_folder(self):
         folder = self._ostatni_katalog or self.katalog.get()
         if not folder or not os.path.isdir(folder):
             return
+        self._otworz_sciezke(folder)
+
+    def _otworz_sciezke(self, sciezka):
         try:
             if sys.platform.startswith("win"):
-                os.startfile(folder)  # noqa: S606
+                os.startfile(sciezka)  # noqa: S606
             elif sys.platform == "darwin":
                 import subprocess
-                subprocess.Popen(["open", folder])
+                subprocess.Popen(["open", sciezka])
             else:
                 import subprocess
-                subprocess.Popen(["xdg-open", folder])
+                subprocess.Popen(["xdg-open", sciezka])
         except Exception:  # noqa: BLE001
-            messagebox.showinfo(TYTUL, f"Wyniki zapisano w:\n{folder}", parent=self.root)
+            messagebox.showinfo(TYTUL, f"Nie udało się otworzyć:\n{sciezka}", parent=self.root)
+
+
+def _plik_wyniku(udane) -> str:
+    """Plik do przycisku „Otwórz plik”: wynik ostatniego udanego kroku będący plikiem, a gdy krok
+    zwrócił folder (np. PDF, FINAŁ) - ostatni z jego dodatkowych plików."""
+    for k in reversed(udane):
+        if k.wyjscie and os.path.isfile(k.wyjscie):
+            return os.path.normpath(k.wyjscie)
+        pliki = [p for p in (k.dodatkowe or []) if isinstance(p, str) and os.path.isfile(p)]
+        if pliki:
+            return os.path.normpath(pliki[-1])
+    return ""
 
 
 def _skroc(tekst, n):
