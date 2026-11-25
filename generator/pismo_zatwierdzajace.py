@@ -202,6 +202,55 @@ def wczytaj_projekt(folder: str) -> Projekt:
     return p
 
 
+# ------------------------------------------------------------------ tabele projektowe
+def tabele_dostepne() -> bool:
+    """Tabela projektowa wymaga modułu warunków technicznych (wersja „PGE MAKER + WT”)."""
+    try:
+        from . import final
+        from .warunki import projekt as _p  # noqa: F401
+    except ImportError:
+        return False
+    return hasattr(final, "tabela_projektowa")
+
+
+def _nazwa_wt(wt: str) -> str:
+    return re.sub(r'[\\/:*?"<>|]+', "-", wt).strip(" -") or "bez numeru WT"
+
+
+def tabele_projektowe(projekty: list[Projekt], folder_wyj: str, adresy: bool = True, log=print) -> list[str]:
+    """Osobna tabela projektowa dla każdego WT (projektu): z pliku PZT projektu, z numeracją jak
+    w pliku warunków technicznych projektu („…_uproszczona.xls”). Pliki „Tabela projektowa <WT>.xlsx”
+    w folderze_wyj (obok pisma). Zwraca listę utworzonych plików."""
+    import shutil
+    import tempfile
+    from . import final
+    os.makedirs(folder_wyj, exist_ok=True)
+    wyniki, uzyte = [], set()
+    for p in projekty:
+        pzt = uklad.znajdz(p.folder, "final_pzt")
+        if not pzt:
+            log(f"UWAGA - {p.nazwa}: brak pliku PZT - pominięto tabelę projektową.")
+            continue
+        wt_plik = uklad.znajdz(p.folder, "wt_plik")
+        if not wt_plik:
+            log(f"UWAGA - {p.nazwa}: brak pliku warunków technicznych - numeracja od 1, WGS 84.")
+        nazwa = f"Tabela projektowa {_nazwa_wt(p.wt)}"
+        if nazwa.lower() in uzyte:                         # ten sam WT w dwóch projektach
+            nazwa += f" - {p.nazwa}"
+        uzyte.add(nazwa.lower())
+        log(f"\n{p.nazwa} (WT {p.wt or '?'}): {os.path.basename(pzt)}")
+        tmp = tempfile.mkdtemp(prefix="tabela_")
+        try:
+            cel = final.tabela_projektowa(pzt, wt_plik, folder_wyj=tmp, adresy=adresy, log=log)
+            wynik = os.path.join(folder_wyj, nazwa + ".xlsx")
+            shutil.move(cel, wynik)
+            wyniki.append(wynik)
+            log(f"  -> {wynik}")
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+    return wyniki
+
+
 # ------------------------------------------------------------------ treść pisma
 def data_slownie(d: datetime.date | None = None) -> str:
     d = d or datetime.date.today()
