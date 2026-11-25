@@ -70,3 +70,19 @@ def test_word_z_szablonu(tmp_path):
     assert teksty[0] == "Nagłówek 24 lipca 2026 r."
     assert sum(t.startswith("- Podwieszenie") for t in teksty) == 2 and "*projekty*" not in teksty
     assert teksty[-1] == "Razem 78 słupów, RE Mińsk Mazowiecki."
+
+
+def test_adresy_z_wt_bierze_rozbudowana_z_gmina(tmp_path):
+    from generator import wt
+    for nazwa, gm in (("plan_uproszczona.xlsx", None), ("plan_rozbudowana.xlsx", "Wiązowna")):
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.append(("L.p.", "Gmina", "Miejscowość", "Lokalizacja, ulica", "X", "Y") if gm else
+                  ("L.p.", "Miejscowość", "Lokalizacja, ulica", "X", "Y"))
+        ws.append((1, gm, "Góraszka", "Zielona", 5784159.61, 7518582.75) if gm else
+                  (1, "Góraszka", "Zielona", 5784159.61, 7518582.75))
+        wb.save(tmp_path / nazwa)
+    plik = str(tmp_path / "plan_uproszczona.xlsx")
+    assert wt.plik_adresow_wt(plik).endswith("plan_rozbudowana.xlsx")
+    s = wt.adresy_z_wt(plik)[0]
+    assert (s.miejscowosc, s.ulica, s.gmina, round(s.x)) == ("Góraszka", "Zielona", "Wiązowna", 7518583)
