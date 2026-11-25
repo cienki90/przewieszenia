@@ -790,7 +790,7 @@ class Aplikacja:
 
     def _wybierz_wg_ukladu(self, var, tytul, typy):
         """„Wybierz…”: okno w miejscu, w którym w układzie projektu leży ten plik (np. szablon opisu -
-        <projekt>\opisy), z podpowiedzią pasującego pliku."""
+        <projekt>\\opisy), z podpowiedzią pasującego pliku."""
         from . import uklad_projektu as uklad
         proj, klucz = self.projekt.get().strip(), self._klucz_pola(var)
         folder = uklad.folder_pola(proj, klucz) if proj and klucz else None
