@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import datetime
 import os
+import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
@@ -25,6 +26,7 @@ class ZakladkaPismo:
         self.rejon = tk.StringVar(value=app.ust.get("pismo_rejon", ""))
         self.miejscowosc = tk.StringVar(value=app.ust.get("pismo_miejscowosc", ""))
         self.szablon = tk.StringVar(value=app.ust.get("pismo_szablon", ""))
+        self.tabele = tk.BooleanVar(value=bool(app.ust.get("pismo_tabele", False)) and pz.tabele_dostepne())
         self._zbuduj()
         for f in app.ust.get("pismo_foldery") or []:
             if os.path.isdir(f):
@@ -72,6 +74,12 @@ class ZakladkaPismo:
                         typy=[("Dokument Word", "*.docx"), ("Wszystkie pliki", "*.*")])
         app._podpowiedz(box, "(opcjonalny — dokument z akapitem „*projekty*” w miejscu listy projektów; "
                              "może mieć też *data*, *rejon*, *razem*. Puste = prosty dokument)")
+        dostepne = pz.tabele_dostepne()
+        ttk.Checkbutton(box, text="Utwórz też tabele projektowe (osobno dla każdego WT)", variable=self.tabele,
+                        state="normal" if dostepne else "disabled").pack(anchor="w", pady=(8, 0))
+        app._podpowiedz(box, "(jak w module FINAŁ: z pliku PZT projektu, Lp i współrzędne jak w jego warunkach "
+                             "technicznych; pliki „Tabela projektowa <WT>.xlsx” obok pisma)" if dostepne else
+                        "(tabela projektowa jest dostępna w wersji programu z modułem warunków technicznych)")
         app._przycisk_generuj(f, "Utwórz pismo", self._generuj)
 
     # ------------------------------------------------------------------ lista projektów
@@ -90,6 +98,7 @@ class ZakladkaPismo:
         self.app.ust["pismo_rejon"] = self.rejon.get().strip()
         self.app.ust["pismo_miejscowosc"] = self.miejscowosc.get().strip()
         self.app.ust["pismo_szablon"] = self.szablon.get().strip()
+        self.app.ust["pismo_tabele"] = bool(self.tabele.get())
         self.app._zaplanuj_zapis()
 
     def _dodaj(self, folder, zapisz=True):
@@ -220,7 +229,50 @@ class ZakladkaPismo:
             messagebox.showerror(tytul, f"Nie udało się utworzyć pisma:\n{ex}", parent=app.root)
             return
         app._ostatni_plik, app._ostatni_katalog = plik, os.path.dirname(plik)
+        if self.tabele.get() and pz.tabele_dostepne():
+            self._tabele_w_tle(os.path.dirname(plik))
+            return
+        self._koniec(1)
+
+    def _koniec(self, ile):
+        app = self.app
         app.btn_otworz.configure(state="normal")
         app.btn_otworz_plik.configure(state="normal")
-        app.status.configure(text="Gotowe — utworzono pismo zatwierdzające.")
-        app._okno_gotowe(1)
+        app.status.configure(text=f"Gotowe — utworzono pismo zatwierdzające ({ile} plik(ów)).")
+        app._okno_gotowe(ile)
+
+    def _tabele_w_tle(self, folder):
+        """Tabele projektowe (geokodowanie adresów trwa) - w osobnym wątku, dziennik przez kolejkę okna."""
+        app = self.app
+        projekty = list(self.projekty)
+        adresy = bool(app.adresy_on.get())
+        wynik = {}
+        app.pracuje = True
+        for b in app._przyciski:
+            b.configure(state="disabled")
+        app.pasek.start(40)
+        app.status.configure(text="Trwa tworzenie tabel projektowych…")
+
+        def log(t):
+            app.root.after(0, app._pisz, str(t))
+
+        def praca():
+            try:
+                wynik["pliki"] = pz.tabele_projektowe(projekty, folder, adresy=adresy, log=log)
+            except Exception as ex:  # noqa: BLE001
+                wynik["blad"] = ex
+            app.root.after(0, koniec)
+
+        def koniec():
+            app.pracuje = False
+            app.pasek.stop()
+            for b in app._przyciski:
+                b.configure(state="normal")
+            if "blad" in wynik:
+                app._pisz(f"BŁĄD tabel projektowych: {wynik['blad']}")
+                messagebox.showerror(app.root.title(), f"Pismo utworzone, ale tabele projektowe nie:
+"
+                                                       f"{wynik['blad']}", parent=app.root)
+            pliki = wynik.get("pliki") or []
+            self._koniec(1 + len(pliki))
+        threading.Thread(target=praca, daemon=True).start()
