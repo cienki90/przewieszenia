@@ -57,3 +57,9 @@ def test_strefa_zakazana_obejmuje_cala_legende(tmp_path):
     W, H, zak = pzt._wczytaj_wzorzec(str(plik))
     assert abs(zak[0] - 262) < 1.0
     assert abs(zak[3] - 65) < 1.0
+
+
+def test_jeden_arkusz_to_sam_numer_2():
+    from generator.pzt import numer_rysunku
+    assert numer_rysunku(1, 1) == "2"
+    assert [numer_rysunku(i, 3) for i in (1, 2, 3)] == ["2.1", "2.2", "2.3"]
