@@ -28,8 +28,10 @@ except ImportError as _ex:          # ezdxf jest OPCJONALNY - potrzebny tylko do
     ezdxf = None
     _EZDXF_BLAD = _ex
 
-# paleta kolorów ACI dla kolejnych obwodów (pomijamy biały/czarny 7 i czerwień 1 zarezerw.)
-PALETA_ACI = [1, 3, 5, 6, 2, 4, 30, 150, 190, 210, 40, 90, 230, 8, 250, 170]
+# paleta kolorów ACI dla kolejnych obwodów (pomijamy biały/czarny 7; bez pomarańczowych 10-49 -
+# pomarańcz zostaje dla rysunku, linie kontrolne nie mogą się z nim mylić)
+PALETA_ACI = [1, 3, 5, 6, 2, 4, 120, 150, 190, 210, 140, 90, 230, 8, 250, 170]
+assert not any(10 <= k < 50 for k in PALETA_ACI), "paleta linii kontrolnych bez pomarańczowego"
 WYS_TEKSTU = 2.5                   # [j. rysunku] stała wysokość numeru słupa
 ODSTEP_OD_LINII = 2.0              # [j. rysunku] odstęp górnej krawędzi cyfry od linii !tele
 
