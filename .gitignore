@@ -39,3 +39,6 @@ przyklady/Obliczenia - zestawienie *.xlsx
 przyklady/rysunki stałe/
 przyklady/opisy/
 przyklady/*.dwg
+
+# wersja przeglądarkowa: zadania (wgrane pliki i wyniki)
+_web/

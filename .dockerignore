@@ -1,0 +1,7 @@
+.git
+_web
+_test*
+przyklady
+testy
+__pycache__
+*.pyc

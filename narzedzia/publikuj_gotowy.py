@@ -32,6 +32,13 @@ PLIKI_PROGRAMU = [
     "generator_gui.py",
     "generator_gui.pyw",
     "generator_cli.py",
+    # wersja przeglądarkowa (serwer WWW, np. na NAS)
+    "generator_web.py",
+    "uruchom_web.bat",
+    "uruchom_web.sh",
+    "Dockerfile",
+    "docker-compose.yml",
+    ".dockerignore",
     "uruchom.bat",
     "generuj.bat",
     "setup.bat",

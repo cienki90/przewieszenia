@@ -218,6 +218,36 @@ inną lokalizację wskazuje się przyciskiem **„Wskaż ODA…”** w oknie (za
 działa **LibreDWG** (`dwg2dxf`/`dxf2dwg`, katalog w `GENERATOR_LIBREDWG`). Bez konwertera program działa
 na DXF jak dotąd.
 
+## Wersja przeglądarkowa (NAS)
+
+Ten sam program działa też **w przeglądarce** — serwer uruchamia się na NAS (albo dowolnym
+komputerze w sieci), a pracuje się z każdego komputera w biurze, bez instalowania Pythona.
+Są w niej moduły: numeracja, przewieszenia, zestawienie, obliczenia, rysunki stałe, arkusze PZT,
+opisy, PPW (z renumeracją), zakładki i PDF z rysunków. Każde uruchomienie to osobne zadanie
+w osobnym procesie, więc kilka osób może pracować jednocześnie.
+
+**Praca na folderach komputera.** W Chrome i Edge można wskazać **folder projektu** na swoim
+komputerze: pliki wejściowe wybiera się wtedy z listy plików tego folderu, a wyniki zapisują się
+od razu obok pliku planu (jak w wersji okienkowej). Przeglądarka pozwala na to tylko, gdy strona
+jest otwarta przez **https://** (np. odwrotne proxy NAS z certyfikatem — Synology: Panel
+sterowania → Portal logowania → Zaawansowane → Odwrotny serwer proxy) albo przez `localhost`.
+Przez zwykłe `http://` oraz w Firefoksie pliki się wgrywa, a wyniki pobiera (pojedynczo albo ZIP).
+
+Uruchomienie na NAS z Dockerem (Synology Container Manager, QNAP Container Station) — w folderze
+programu:
+
+```bash
+docker compose up -d
+```
+
+Bez Dockera (NAS z Pythonem 3.10+): `python3 -m pip install -r requirements.txt`, potem
+`./uruchom_web.sh` (Windows: `uruchom_web.bat`). Strona: `http://<adres NAS>:8765`.
+
+Opcje serwera: `--port`, `--dane` (folder zadań; domyślnie `_web`), `--haslo` (hasło dostępu —
+zalecane, gdy NAS jest widoczny spoza sieci lokalnej; w Dockerze zmienna `GENERATOR_HASLO`),
+`--rownolegle` (ile modułów naraz, domyślnie 2), `--dni` (po ilu dniach usuwać stare zadania,
+domyślnie 7). Zapis DWG wymaga ODA File Converter na serwerze; bez niego wyniki są w DXF.
+
 ## Program dla Windows (.exe)
 
 Plik `GeneratorNN.exe` buduje GitHub Actions (zakładka **Releases**). Uruchom go dwuklikiem — pliki

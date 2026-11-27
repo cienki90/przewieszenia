@@ -1,0 +1,422 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Generator projektów nN</title>
+<style>
+:root {
+  --tlo: #f3f3f3; --panel: #ffffff; --panel2: #ebebeb; --tekst: #1f2328; --szary: #6b6f76;
+  --akcent: #005fb8; --akcent-tekst: #ffffff; --ramka: #d6d6d6; --ok: #0f7b0f; --blad: #c42b1c;
+  --log-tlo: #ffffff; --log-tekst: #1f2328;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-motyw="jasny"]) {
+    --tlo: #202020; --panel: #2b2b2b; --panel2: #262626; --tekst: #e6e6e6; --szary: #a3a8af;
+    --akcent: #60cdff; --akcent-tekst: #000000; --ramka: #3d3d3d; --ok: #6ccb5f; --blad: #ff99a4;
+    --log-tlo: #1c1c1c; --log-tekst: #e6e6e6; color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--tlo); color: var(--tekst);
+  font: 14px/1.45 "Segoe UI", system-ui, -apple-system, sans-serif; }
+header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
+  padding: 14px 20px; border-bottom: 1px solid var(--ramka); background: var(--panel); }
+header h1 { margin: 0; font-size: 18px; font-weight: 600; }
+header .wersja { color: var(--szary); font-size: 12px; }
+.uklad { display: grid; grid-template-columns: 220px minmax(0, 1fr); min-height: calc(100vh - 54px); }
+nav { background: var(--panel2); border-right: 1px solid var(--ramka); padding: 8px; }
+nav button { display: block; width: 100%; text-align: left; padding: 8px 12px; margin: 2px 0;
+  border: 0; border-radius: 6px; background: transparent; color: var(--tekst); font: inherit; cursor: pointer; }
+nav button:hover { background: var(--ramka); }
+nav button.wybrany { background: var(--panel); font-weight: 600; box-shadow: inset 3px 0 0 var(--akcent); }
+main { padding: 18px 24px 40px; max-width: 980px; }
+.karta { background: var(--panel); border: 1px solid var(--ramka); border-radius: 8px; padding: 16px 18px; margin-bottom: 14px; }
+h2 { margin: 0 0 4px; font-size: 18px; font-weight: 600; }
+h3 { margin: 0 0 8px; font-size: 14px; font-weight: 600; }
+.opis, .podpowiedz { color: var(--szary); }
+.podpowiedz { font-size: 12.5px; }
+.pole { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 4px 12px; align-items: center; padding: 6px 0; }
+.pole label { font-weight: 500; }
+.pole .wymagane::after { content: " *"; color: var(--blad); }
+.pole .wartosc { display: flex; gap: 8px; align-items: center; min-width: 0; flex-wrap: wrap; }
+input[type=text], input[type=number], select { font: inherit; color: var(--tekst); background: var(--panel);
+  border: 1px solid var(--ramka); border-radius: 5px; padding: 5px 8px; min-width: 0; }
+input[type=file] { font: inherit; color: var(--tekst); max-width: 100%; }
+select { max-width: 100%; }
+.flaga { display: flex; gap: 8px; align-items: center; padding: 5px 0; }
+button.glowny, button.zwykly { font: inherit; border-radius: 6px; padding: 7px 16px; cursor: pointer; }
+button.glowny { background: var(--akcent); color: var(--akcent-tekst); border: 1px solid var(--akcent); font-weight: 600; }
+button.zwykly { background: var(--panel); color: var(--tekst); border: 1px solid var(--ramka); }
+a.link-przycisk { display: inline-block; text-decoration: none; color: var(--tekst); background: var(--panel);
+  border: 1px solid var(--ramka); border-radius: 6px; padding: 7px 16px; }
+button:disabled { opacity: .5; cursor: default; }
+.folder { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.folder .nazwa { font-weight: 600; }
+#przebieg { background: var(--log-tlo); color: var(--log-tekst); border: 1px solid var(--ramka); border-radius: 6px;
+  padding: 10px; height: 280px; overflow: auto; white-space: pre-wrap; word-break: break-word;
+  font: 12.5px/1.4 Consolas, "Cascadia Mono", ui-monospace, monospace; margin: 0; }
+.stan { font-weight: 600; }
+.stan.ok { color: var(--ok); } .stan.blad { color: var(--blad); }
+.wyniki { list-style: none; padding: 0; margin: 8px 0 0; }
+.wyniki li { padding: 4px 0; border-top: 1px solid var(--ramka); display: flex; justify-content: space-between; gap: 10px; }
+.wyniki a { color: var(--akcent); word-break: break-all; }
+.wyniki .rozmiar { color: var(--szary); white-space: nowrap; }
+.akcje { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 14px; }
+.ukryty { display: none !important; }
+@media (max-width: 760px) {
+  .uklad { grid-template-columns: 1fr; }
+  nav { display: flex; overflow-x: auto; gap: 4px; border-right: 0; border-bottom: 1px solid var(--ramka); }
+  nav button { white-space: nowrap; width: auto; }
+  main { padding: 14px 16px 32px; }
+  .pole { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>Generator projektów nN</h1>
+  <span class="wersja" id="wersja"></span>
+</header>
+<div class="uklad">
+  <nav id="moduly" aria-label="Moduły"></nav>
+  <main>
+    <section class="karta">
+      <h3>Folder projektu</h3>
+      <div id="folder-dostepny" class="ukryty">
+        <div class="folder">
+          <button class="zwykly" id="wybierz-folder" type="button">Wybierz folder projektu…</button>
+          <span class="nazwa" id="folder-nazwa"></span>
+          <button class="zwykly ukryty" id="odlacz-folder" type="button">Odłącz</button>
+        </div>
+        <p class="podpowiedz">Pliki wejściowe wybierasz z folderu projektu na swoim komputerze, a wyniki
+          zapisują się od razu w tym folderze (jak w wersji okienkowej).</p>
+      </div>
+      <p class="podpowiedz" id="folder-niedostepny">Praca bezpośrednio na folderach komputera działa w Chrome
+        i Edge, gdy strona jest otwarta przez <b>https://</b> (albo na tym samym komputerze przez localhost).
+        Teraz pliki wgrywasz przyciskami „Wybierz plik”, a wyniki pobierasz z listy poniżej.</p>
+    </section>
+
+    <section class="karta">
+      <h2 id="modul-nazwa"></h2>
+      <p class="opis" id="modul-opis"></p>
+      <form id="formularz" autocomplete="off"></form>
+      <div class="akcje">
+        <button class="glowny" id="start" type="button">▶ Uruchom</button>
+        <button class="zwykly ukryty" id="przerwij" type="button">Przerwij</button>
+        <span class="stan" id="stan"></span>
+      </div>
+    </section>
+
+    <section class="karta">
+      <h3>Przebieg</h3>
+      <pre id="przebieg" aria-live="polite"></pre>
+    </section>
+
+    <section class="karta ukryty" id="karta-wyniki">
+      <h3>Wyniki</h3>
+      <p class="podpowiedz" id="wyniki-folder"></p>
+      <div class="akcje"><a id="zip" class="link-przycisk" href="#" download>Pobierz wszystko (ZIP)</a></div>
+      <ul class="wyniki" id="wyniki"></ul>
+    </section>
+  </main>
+</div>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+let MODULY = [], modul = null, folder = null, plikiFolderu = [], zadanie = null, odczytano = 0, zegar = null;
+let katalogWynikow = "";   // podfolder projektu na wyniki: tam, gdzie leży plik główny (jak w wersji okienkowej)
+const MOZNA_FOLDER = !!(window.showDirectoryPicker && window.isSecureContext);
+const PAMIEC = "generator-nn-web";
+
+function pamiec() { try { return JSON.parse(localStorage.getItem(PAMIEC)) || {}; } catch { return {}; } }
+function zapamietaj(zmiany) { try { localStorage.setItem(PAMIEC, JSON.stringify({ ...pamiec(), ...zmiany })); } catch {} }
+
+async function api(sciezka, opcje = {}) {
+  const r = await fetch(sciezka, opcje);
+  const dane = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(dane.blad || `Błąd serwera (${r.status})`);
+  return dane;
+}
+
+// ---------------------------------------------------------------- folder projektu (Chrome/Edge)
+async function indeksujFolder(uchwyt, sciezka = "", glebokosc = 0, wynik = []) {
+  for await (const [nazwa, h] of uchwyt.entries()) {
+    if (nazwa.startsWith(".")) continue;
+    const wzgl = sciezka ? `${sciezka}/${nazwa}` : nazwa;
+    if (h.kind === "file") wynik.push({ sciezka: wzgl, uchwyt: h, folder: sciezka });
+    else if (glebokosc < 3) await indeksujFolder(h, wzgl, glebokosc + 1, wynik);
+  }
+  return wynik;
+}
+
+async function ustawFolder(uchwyt) {
+  folder = uchwyt;
+  plikiFolderu = uchwyt ? await indeksujFolder(uchwyt) : [];
+  plikiFolderu.sort((a, b) => a.sciezka.localeCompare(b.sciezka, "pl"));
+  $("folder-nazwa").textContent = uchwyt ? uchwyt.name : "";
+  $("odlacz-folder").classList.toggle("ukryty", !uchwyt);
+  pokazModul(modul.id);
+}
+
+function pasuje(nazwa, typy) {
+  const n = nazwa.toLowerCase();
+  return !typy || typy.split(",").some((t) => n.endsWith(t.trim()));
+}
+
+// ---------------------------------------------------------------- formularz modułu
+function poleFormularza(p) {
+  const wiersz = document.createElement("div");
+  const id = `pole-${p.id}`;
+  if (p.rodzaj === "flaga") {
+    wiersz.className = "flaga";
+    wiersz.innerHTML = `<input type="checkbox" id="${id}"><label for="${id}"></label>`;
+    wiersz.querySelector("label").textContent = p.etykieta;
+    wiersz.querySelector("input").checked = !!p.domyslnie;
+    return wiersz;
+  }
+  wiersz.className = "pole";
+  const etykieta = document.createElement("label");
+  etykieta.htmlFor = id;
+  etykieta.textContent = p.etykieta;
+  if (p.wymagane) etykieta.classList.add("wymagane");
+  const wartosc = document.createElement("div");
+  wartosc.className = "wartosc";
+  wiersz.append(etykieta, wartosc);
+
+  if (p.rodzaj === "plik" || p.rodzaj === "pliki") {
+    if (folder) {
+      const lista = document.createElement("select");
+      lista.id = id;
+      const pusta = new Option(p.rodzaj === "pliki" ? "— wybierz folder z rysunkami —" : "— brak —", "");
+      lista.add(pusta);
+      if (p.rodzaj === "pliki") {
+        const foldery = [...new Set(plikiFolderu.filter((f) => pasuje(f.sciezka, p.typy)).map((f) => f.folder))];
+        for (const f of foldery) lista.add(new Option(f || "(folder projektu)", "dir:" + f));
+      } else {
+        for (const f of plikiFolderu.filter((f) => pasuje(f.sciezka, p.typy))) lista.add(new Option(f.sciezka, f.sciezka));
+      }
+      const zapamietane = (pamiec().wybory || {})[`${folder.name}|${modul.id}|${p.id}`];
+      if (zapamietane && [...lista.options].some((o) => o.value === zapamietane)) lista.value = zapamietane;
+      wartosc.append(lista);
+    } else {
+      const wejscie = document.createElement("input");
+      wejscie.type = "file";
+      wejscie.id = id;
+      if (p.typy) wejscie.accept = p.typy;
+      if (p.rodzaj === "pliki") wejscie.multiple = true;
+      wartosc.append(wejscie);
+    }
+  } else if (p.rodzaj === "wybor") {
+    const lista = document.createElement("select");
+    lista.id = id;
+    for (const o of p.opcje) lista.add(new Option(o, o));
+    lista.value = p.domyslnie || p.opcje[0];
+    wartosc.append(lista);
+  } else {
+    const pole = document.createElement("input");
+    pole.type = "text";
+    pole.inputMode = p.rodzaj === "liczba" ? "decimal" : "text";
+    pole.id = id;
+    pole.value = p.domyslnie || (p.id === "wt_nr" ? pamiec().wt || "" : "");
+    pole.size = p.rodzaj === "liczba" ? 8 : 30;
+    wartosc.append(pole);
+  }
+  return wiersz;
+}
+
+function pokazModul(mid) {
+  modul = MODULY.find((m) => m.id === mid) || MODULY[0];
+  zapamietaj({ modul: modul.id });
+  for (const b of $("moduly").children) b.classList.toggle("wybrany", b.dataset.id === modul.id);
+  $("modul-nazwa").textContent = modul.nazwa;
+  $("modul-opis").textContent = modul.opis;
+  const f = $("formularz");
+  f.replaceChildren(...modul.pola.map(poleFormularza));
+}
+
+// pliki do wgrania: [{pole, nazwa, plik(Blob)}]
+async function zbierzPliki() {
+  const wynik = [], wybory = {};
+  katalogWynikow = "";
+  for (const p of modul.pola.filter((p) => p.rodzaj === "plik" || p.rodzaj === "pliki")) {
+    const el = $(`pole-${p.id}`);
+    if (folder) {
+      const v = el.value;
+      wybory[`${folder.name}|${modul.id}|${p.id}`] = v;
+      if (!v) continue;
+      const wybrane = v.startsWith("dir:")
+        ? plikiFolderu.filter((f) => f.folder === v.slice(4) && pasuje(f.sciezka, p.typy))
+        : plikiFolderu.filter((f) => f.sciezka === v);
+      for (const f of wybrane) wynik.push({ pole: p.id, nazwa: f.sciezka.split("/").pop(), plik: await f.uchwyt.getFile() });
+      if (p.plan && !katalogWynikow && wybrane.length) katalogWynikow = wybrane[0].folder;
+    } else {
+      for (const plik of el.files) wynik.push({ pole: p.id, nazwa: plik.name, plik });
+    }
+    if (p.wymagane && !wynik.some((w) => w.pole === p.id)) throw new Error(`Wskaż: ${p.etykieta}`);
+  }
+  if (folder) zapamietaj({ wybory: { ...(pamiec().wybory || {}), ...wybory } });
+  return wynik;
+}
+
+function zbierzOpcje() {
+  const opcje = {};
+  for (const p of modul.pola) {
+    const el = $(`pole-${p.id}`);
+    if (!el || p.rodzaj === "plik" || p.rodzaj === "pliki") continue;
+    opcje[p.id] = p.rodzaj === "flaga" ? el.checked : el.value;
+    if (p.id === "wt_nr" && el.value.trim()) zapamietaj({ wt: el.value.trim() });
+  }
+  return opcje;
+}
+
+// ---------------------------------------------------------------- uruchomienie
+function dopisz(tekst) {
+  const log = $("przebieg");
+  const naDole = log.scrollTop + log.clientHeight >= log.scrollHeight - 20;
+  log.textContent += tekst;
+  if (naDole) log.scrollTop = log.scrollHeight;
+}
+
+function ustawStan(tekst, klasa = "") {
+  $("stan").textContent = tekst;
+  $("stan").className = "stan " + klasa;
+}
+
+function pracuje(tak) {
+  $("start").disabled = tak;
+  $("przerwij").classList.toggle("ukryty", !tak);
+  for (const b of $("moduly").children) b.disabled = tak;
+  for (const el of $("formularz").elements) el.disabled = tak;
+  $("wybierz-folder").disabled = tak;
+}
+
+async function start() {
+  $("przebieg").textContent = "";
+  $("karta-wyniki").classList.add("ukryty");
+  try {
+    const pliki = await zbierzPliki();
+    const opcje = zbierzOpcje();
+    pracuje(true);
+    ustawStan("Wgrywanie plików…");
+    zadanie = (await api("/api/zadanie", { method: "POST" })).id;
+    for (const [i, w] of pliki.entries()) {
+      ustawStan(`Wgrywanie plików… (${i + 1}/${pliki.length})`);
+      await api(`/api/zadanie/${zadanie}/plik?pole=${encodeURIComponent(w.pole)}&nazwa=${encodeURIComponent(w.nazwa)}`,
+        { method: "PUT", body: w.plik });
+    }
+    await api(`/api/zadanie/${zadanie}/start`, { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ modul: modul.id, opcje }) });
+    odczytano = 0;
+    ustawStan("Trwa generowanie…");
+    zegar = setTimeout(sprawdz, 500);
+  } catch (e) {
+    pracuje(false);
+    ustawStan(e.message, "blad");
+  }
+}
+
+async function sprawdz() {
+  try {
+    const s = await api(`/api/zadanie/${zadanie}?od=${odczytano}`);
+    if (s.przebieg) dopisz(s.przebieg);
+    odczytano = s.od;
+    if (s.pliki) return koniec(s);
+    ustawStan(s.stan === "w kolejce" ? "W kolejce (inne zadanie jest w toku)…" : "Trwa generowanie…");
+  } catch (e) {
+    ustawStan("Brak połączenia z serwerem – ponawiam…", "blad");
+  }
+  zegar = setTimeout(sprawdz, 1000);
+}
+
+async function koniec(s) {
+  pracuje(false);
+  const ok = s.stan === "gotowe";
+  ustawStan(ok ? "Gotowe." : s.stan === "przerwane" ? "Przerwano." : "Zakończono z błędem – szczegóły w przebiegu.",
+    ok ? "ok" : "blad");
+  const lista = $("wyniki");
+  lista.replaceChildren();
+  for (const w of s.pliki) {
+    const li = document.createElement("li");
+    const a = document.createElement("a");
+    a.href = `/api/zadanie/${zadanie}/plik/${w.sciezka.split("/").map(encodeURIComponent).join("/")}`;
+    a.textContent = w.nazwa;
+    a.download = w.nazwa.split("/").pop();
+    const r = document.createElement("span");
+    r.className = "rozmiar";
+    r.textContent = rozmiar(w.rozmiar);
+    li.append(a, r);
+    lista.append(li);
+  }
+  $("zip").href = `/api/zadanie/${zadanie}/wyniki.zip`;
+  $("karta-wyniki").classList.toggle("ukryty", !s.pliki.length);
+  $("wyniki-folder").textContent = "";
+  if (folder && s.pliki.length) await zapiszWFolderze(s.pliki);
+}
+
+async function zapiszWFolderze(pliki) {
+  try {
+    if ((await folder.queryPermission({ mode: "readwrite" })) !== "granted"
+        && (await folder.requestPermission({ mode: "readwrite" })) !== "granted") {
+      $("wyniki-folder").textContent = "Brak zgody na zapis w folderze – pobierz wyniki z listy.";
+      return;
+    }
+    let baza = folder;
+    for (const c of katalogWynikow ? katalogWynikow.split("/") : []) baza = await baza.getDirectoryHandle(c);
+    const gdzie = katalogWynikow ? `${folder.name}/${katalogWynikow}` : folder.name;
+    for (const w of pliki) {
+      const czesci = w.nazwa.split("/");
+      let kat = baza;
+      for (const c of czesci.slice(0, -1)) kat = await kat.getDirectoryHandle(c, { create: true });
+      const r = await fetch(`/api/zadanie/${zadanie}/plik/${w.sciezka.split("/").map(encodeURIComponent).join("/")}`);
+      if (!r.ok) throw new Error(`nie udało się pobrać ${w.nazwa}`);
+      const zapis = await (await kat.getFileHandle(czesci.at(-1), { create: true })).createWritable();
+      await r.body.pipeTo(zapis);
+      dopisz(`-> zapisano w folderze projektu: ${gdzie}/${w.nazwa}\n`);
+    }
+    $("wyniki-folder").textContent = `Wyniki zapisano w folderze „${gdzie}”.`;
+    await ustawFolder(folder);   // nowe pliki od razu na listach wyboru
+  } catch (e) {
+    $("wyniki-folder").textContent = `Nie udało się zapisać w folderze (${e.message}) – pobierz wyniki z listy.`;
+  }
+}
+
+function rozmiar(b) {
+  return b > 1048576 ? (b / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(b / 1024)) + " kB";
+}
+
+// ---------------------------------------------------------------- start strony
+async function init() {
+  $("folder-dostepny").classList.toggle("ukryty", !MOZNA_FOLDER);
+  $("folder-niedostepny").classList.toggle("ukryty", MOZNA_FOLDER);
+  try {
+    const dane = await api("/api/moduly");
+    MODULY = dane.moduly;
+    $("wersja").textContent = dane.wersja ? `wersja ${dane.wersja}` : "";
+  } catch (e) {
+    ustawStan(e.message, "blad");
+    return;
+  }
+  for (const m of MODULY) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = m.nazwa;
+    b.dataset.id = m.id;
+    b.addEventListener("click", () => pokazModul(m.id));
+    $("moduly").append(b);
+  }
+  pokazModul(pamiec().modul);
+  $("start").addEventListener("click", start);
+  $("przerwij").addEventListener("click", () => zadanie && api(`/api/zadanie/${zadanie}/przerwij`, { method: "POST" }));
+  $("wybierz-folder").addEventListener("click", async () => {
+    try { await ustawFolder(await window.showDirectoryPicker({ id: "projekt", mode: "readwrite" })); }
+    catch (e) { if (e.name !== "AbortError") ustawStan(e.message, "blad"); }
+  });
+  $("odlacz-folder").addEventListener("click", () => ustawFolder(null));
+}
+init();
+</script>
+</body>
+</html>

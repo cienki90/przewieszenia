@@ -1,0 +1,12 @@
+# Generator projektów nN w przeglądarce - np. Synology Container Manager / QNAP Container Station.
+services:
+  generator:
+    build: .
+    container_name: generator-nn
+    restart: unless-stopped
+    ports:
+      - "8765:8765"
+    volumes:
+      - ./_web:/dane                  # zadania (wgrane pliki i wyniki); stare usuwane po 7 dniach
+    environment:
+      - GENERATOR_HASLO=              # wpisz hasło, jeśli NAS jest widoczny poza siecią lokalną
