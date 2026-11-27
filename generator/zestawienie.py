@@ -32,12 +32,12 @@ from xml.sax.saxutils import escape
 # Odczyt planu (słupy, opisy, numery, wymiary, zasięgi stacji, sieć !tele) jest wspólny z modułem
 # numeracji słupów - jedna wersja kodu, żeby poprawki odczytu trafiały do obu modułów naraz.
 try:
-    from .numeruj_slupy.czytaj_dxf import (
+    from .numeruj_slupy.czytaj_dxf import (  # noqa: I001 - zwarty zapis listy
         DOMYSLNE_OZNACZENIE, RE_OBWOD, RE_SLUP, RE_STACJA, TOL_DUPLIKAT, TOL_MUFA, TOL_NUMER, TOL_STACJA,
         TOL_WYMIAR, WARSTWA_ZAKRESOW, Rysunek, graf_sieci, w_wielokacie)
 except ImportError:                 # uruchomienie pliku wprost (python zestawienie.py)
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    from numeruj_slupy.czytaj_dxf import (  # noqa: E402
+    from numeruj_slupy.czytaj_dxf import (  # noqa: E402, I001
         DOMYSLNE_OZNACZENIE, RE_OBWOD, RE_SLUP, RE_STACJA, TOL_DUPLIKAT, TOL_MUFA, TOL_NUMER, TOL_STACJA,
         TOL_WYMIAR, WARSTWA_ZAKRESOW, Rysunek, graf_sieci, w_wielokacie)
 

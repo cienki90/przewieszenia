@@ -247,6 +247,7 @@ def tabele_projektowe(projekty: list[Projekt], folder_wyj: str, adresy: bool = T
     w folderze_wyj (obok pisma). Zwraca listę utworzonych plików."""
     import shutil
     import tempfile
+
     from . import final
     os.makedirs(folder_wyj, exist_ok=True)
     wyniki, uzyte = [], set()

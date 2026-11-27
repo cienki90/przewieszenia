@@ -418,8 +418,8 @@ def _wczytaj_odnosniki(doc, dxf: str, folder: str | None = None, log=None) -> li
     Zwraca listę nazw odnośników, których nie udało się wczytać (rysunek bez nich, jak dotąd)."""
     import tempfile
 
-    import ezdxf
     from ezdxf import xref as ezxref
+
     from . import dwg as mod_dwg
 
     bledy = []

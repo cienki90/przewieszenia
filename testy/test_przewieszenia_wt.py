@@ -10,7 +10,8 @@ import unittest
 KORZEN = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, KORZEN)
 
-from generator import pipeline, plan as plan_mod  # noqa: E402
+from generator import pipeline  # noqa: E402
+from generator import plan as plan_mod
 
 PLAN = os.path.join(KORZEN, "przyklady", "przewieszenia plan.dxf")
 

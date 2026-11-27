@@ -95,7 +95,7 @@ def nazwy_z_dxf(sciezka: str) -> list[str]:
 # ---------------------------------------------------------------- dokumenty
 def nazwy_z_docx(sciezka: str) -> list[str]:
     """Nazwy firm z dokumentu Word: po nagłówku „Inwestor:” / w wierszu „Pełna nazwa”."""
-    import docx                                   # python-docx jest opcjonalny - ImportError łapie nazwy_z_pliku
+    import docx  # python-docx jest opcjonalny - ImportError łapie nazwy_z_pliku
     dok = docx.Document(sciezka)
     znalezione = []
 

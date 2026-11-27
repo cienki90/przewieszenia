@@ -12,8 +12,8 @@ Użycie z wiersza poleceń:
 from __future__ import annotations
 
 import argparse
-import io
 import functools
+import io
 import operator
 import os
 import sys
@@ -346,7 +346,8 @@ def uruchom(opcje: Opcje) -> Wynik:
     # PDF z JEDNEGO rysunku (zbiorczy PDF arkuszy PZT wszystkich stacji) - przed zamianą DWG na
     # tymczasowy DXF, żeby odnośniki (XREF) i obrazy były szukane w folderze ORYGINAŁU;
     # bez layoutu-wzorca „a”
-    if set(opcje.kroki) <= {"pdf"} and opcje.plan and os.path.isfile(opcje.plan)             and opcje.plan.lower().endswith((".dxf", ".dwg")):
+    if set(opcje.kroki) <= {"pdf"} and opcje.plan and os.path.isfile(opcje.plan) \
+            and opcje.plan.lower().endswith((".dxf", ".dwg")):
         return Wynik(kroki=[_krok_pdf(os.path.dirname(opcje.plan), opcje, pliki=[opcje.plan],
                                       wybierz=functools.partial(operator.ne, mod_pzt.NAZWA_WZORCA))])
     # PDF rysunku przewieszeń (osobno na stację + zbiorczy) - jak w FINALE, odnośniki z folderu oryginału

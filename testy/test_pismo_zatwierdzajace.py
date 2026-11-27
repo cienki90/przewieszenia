@@ -1,7 +1,6 @@
 """Pismo zatwierdzające: dane z folderu projektu, zapamiętanie numeru WT, Word z szablonem i bez."""
 import datetime
 import json
-import os
 
 import docx
 import openpyxl

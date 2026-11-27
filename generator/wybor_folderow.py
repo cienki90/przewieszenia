@@ -42,7 +42,7 @@ class _GUID(ctypes.Structure):
                 ("Data4", ctypes.c_ubyte * 8)]
 
     @classmethod
-    def z(cls, tekst: str) -> "_GUID":
+    def z(cls, tekst: str) -> _GUID:
         u = uuid.UUID(tekst)
         return cls(u.time_low, u.time_mid, u.time_hi_version, (ctypes.c_ubyte * 8)(*u.bytes[8:]))
 
